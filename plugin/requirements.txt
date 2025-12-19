@@ -1,0 +1,18 @@
+# Testing dependencies for sync_calimob plugin
+
+# Core testing framework
+pytest>=7.4.0
+pytest-mock>=3.11.0
+pytest-qt>=4.2.0
+pytest-cov>=4.1.0
+
+# HTTP mocking
+responses>=0.23.0
+
+# Test utilities
+freezegun>=1.2.0  # For time mocking
+faker>=19.0.0     # For fake data generation
+
+# Optional: for better test output
+pytest-html>=3.2.0
+pytest-xdist>=3.3.0  # Parallel test execution
