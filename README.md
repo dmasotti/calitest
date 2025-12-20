@@ -49,6 +49,20 @@ Tests backward compatibility:
 
 **Tests:** ~3 test cases
 
+### 4. Plugin Tests (`tests/plugin/`)
+
+Tests Calibre plugin sync_calimob:
+
+**Coverage:**
+- ✅ Integration tests (with calibre-debug)
+- ✅ Scenario tests (standalone)
+- ✅ Protocol compliance
+- ✅ Payload validation
+- ✅ Hash calculation
+- ✅ Client ID handling
+
+**Tests:** 11 test cases
+
 ## 🚀 Usage
 
 ### Quick Start - Run All Tests
@@ -87,6 +101,15 @@ DISCOVERY_URL="https://your-server.com" \
 TEST_USER_EMAIL="user@example.com" \
 TEST_USER_PASSWORD="your-password" \
 ./tests/server/test_legacy_book.sh
+```
+
+**Plugin Tests:**
+```bash
+# Integration tests (requires Calibre)
+/Applications/calibre.app/Contents/MacOS/calibre-debug -e tests/plugin/test_plugin_integration.py
+
+# Scenario tests (no Calibre required)
+python tests/plugin/test_sync_scenarios.py
 ```
 
 ## ⚙️ Configuration

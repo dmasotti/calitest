@@ -1,281 +1,218 @@
-# Test Suite Plugin Calibre - sync_calimob
+# sync_calimob Plugin Tests
 
-Strategia completa di testing per il plugin Calibre `sync_calimob`.
+Test suite per il plugin Calibre sync_calimob.
 
-## 🎯 Strategia di Testing
+## 🎯 Tipologie di Test
 
-### Livelli di Test
+### 1. **Integration Tests** (`test_plugin_integration.py`)
+Test che girano dentro l'ambiente Calibre usando `calibre-debug`.
 
-1. **Unit Test** - Funzioni pure senza dipendenze esterne
-2. **Integration Test** - Componenti con dipendenze mockate
-3. **End-to-End Test** - Flussi completi con server mockato
+**Coverage:**
+- ✅ Cover hash calculation
+- ✅ Client ID extraction
+- ✅ Delete payload structure
+- ✅ Idempotency key generation
+- ✅ Protocol compliance
 
-## 📋 Componenti da Testare
+### 2. **Scenario Tests** (`test_sync_scenarios.py`)
+Test di scenari di sync senza database Calibre.
 
-### 1. Unit Test (Funzioni Pure)
+**Coverage:**
+- ✅ Create book scenario
+- ✅ Update book scenario
+- ✅ Delete book scenario
+- ✅ Pull response validation
+- ✅ Push batch validation
+- ✅ Conflict detection
 
-#### `sync_mapper.py`
-- ✅ `calibre_to_json_item()` - Conversione metadati Calibre → JSON
-- ✅ `json_item_to_calibre()` - Conversione JSON → metadati Calibre
-- ✅ `calculate_cover_hash()` - Calcolo hash SHA256 copertine
-- ✅ Gestione custom columns (progress_percent, favorite)
-- ✅ Mappatura tag → status
+## 🚀 Come Eseguire i Test
 
-#### `library_utils.py`
-- ✅ `_read_library_metadata()` - Lettura metadata.db
-- ✅ `get_calibre_library_id()` - Estrazione UUID libreria
-- ✅ `get_calibre_library_name()` - Estrazione nome libreria
-- ✅ `_normalize_path()` - Normalizzazione path
-- ✅ `_find_config_dirs()` - Trovare directory config Calibre
+### Prerequisiti
 
-### 2. Integration Test (Con Mock)
+1. **Calibre installato** con `calibre-debug` disponibile
+2. **Plugin installato** in Calibre
 
-#### `rest_client.py`
-- ✅ `RestApiClient.__init__()` - Inizializzazione con config
-- ✅ `_normalize_endpoint()` - Normalizzazione URL endpoint
-- ✅ `_get_headers()` - Generazione headers HTTP
-- ✅ `_request()` - Chiamate HTTP con retry/backoff
-- ✅ `test_connection()` - Test connessione server
-- ✅ `get_libraries()` - Lista librerie
-- ✅ `create_library()` - Creazione libreria
-- ✅ `pull_changes()` - Pull modifiche server
-- ✅ `push_changes()` - Push modifiche client
-- ✅ `upload_cover()` - Upload copertina
-- ✅ `download_cover()` - Download copertina
-- ✅ Gestione errori HTTP (401, 403, 404, 500)
-- ✅ Retry logic con exponential backoff
-
-#### `sync_worker.py`
-- ✅ `SyncWorker.__init__()` - Inizializzazione worker
-- ✅ `pull_sync()` - Sincronizzazione pull (server → Calibre)
-- ✅ `push_sync()` - Sincronizzazione push (Calibre → server)
-- ✅ `sync()` - Sincronizzazione bidirezionale completa
-- ✅ `full_sync()` - Sincronizzazione completa (ignora cursor)
-- ✅ Gestione cursor (save/get/reset)
-- ✅ Gestione conflitti
-- ✅ Upload/download copertine batch
-- ✅ Gestione errori e recovery
-
-#### `config.py`
-- ✅ `ConfigWidget` - UI configurazione
-- ✅ Salvataggio/caricamento impostazioni
-- ✅ Validazione endpoint URL
-- ✅ Validazione token
-- ✅ Associazione librerie
-
-### 3. End-to-End Test (Con Server Mockato)
-
-#### Flussi Completi
-- ✅ Sincronizzazione completa (pull + push)
-- ✅ Creazione nuovo libro su server
-- ✅ Aggiornamento libro esistente
-- ✅ Eliminazione libro
-- ✅ Upload copertina
-- ✅ Download copertina
-- ✅ Gestione conflitti (stesso libro modificato su entrambi i lati)
-- ✅ Sincronizzazione incrementale (con cursor)
-- ✅ Sincronizzazione completa (senza cursor)
-- ✅ Gestione errori di rete
-- ✅ Recovery dopo errore
-
-## 🛠️ Strumenti e Librerie
-
-### Framework di Test
-- **pytest** - Framework principale per test Python
-- **pytest-mock** - Mocking avanzato
-- **pytest-qt** - Test per componenti Qt
-- **responses** - Mock HTTP requests
-- **unittest.mock** - Mock standard library
-
-### Mock Necessari
-
-#### Calibre
-- `calibre.gui2` - GUI components
-- `calibre.db` - Database Calibre
-- `calibre.ebooks.metadata` - Metadata objects
-- `calibre.utils.config` - Config storage
-
-#### Qt
-- `qt.core` / `PyQt5.Qt` - Widget Qt
-- `QApplication` - Application Qt
-
-#### HTTP
-- `httplib2` - HTTP client
-- Server REST API responses
-
-## 📁 Struttura Directory
-
-```
-tests/
-├── plugin/                          # Test plugin Calibre
-│   ├── README.md                    # Questo file
-│   ├── conftest.py                  # Fixtures comuni pytest
-│   ├── unit/                        # Unit test (funzioni pure)
-│   │   ├── test_sync_mapper.py
-│   │   └── test_library_utils.py
-│   ├── integration/                 # Integration test (con mock)
-│   │   ├── test_rest_client.py
-│   │   ├── test_sync_worker.py
-│   │   └── test_config.py
-│   ├── e2e/                        # End-to-end test
-│   │   ├── test_sync_flows.py
-│   │   └── test_conflict_resolution.py
-│   ├── fixtures/                    # Dati di test
-│   │   ├── sample_books.json
-│   │   ├── sample_metadata.db
-│   │   └── sample_covers/
-│   └── mocks/                       # Mock helpers
-│       ├── calibre_mock.py
-│       ├── qt_mock.py
-│       └── server_mock.py
-└── ...
-```
-
-## 🧪 Esempi di Test
-
-### Unit Test - sync_mapper
-
-```python
-def test_calibre_to_json_item_basic():
-    """Test conversione base metadati Calibre → JSON"""
-    from calibre.ebooks.metadata.book.base import Metadata
-    from sync_calimob.sync_mapper import calibre_to_json_item
-    
-    metadata = Metadata('Test Book')
-    metadata.authors = ['Author One', 'Author Two']
-    metadata.series = 'Test Series'
-    metadata.series_index = 1.0
-    
-    item = calibre_to_json_item(123, metadata, 'lib-uuid')
-    
-    assert item['title'] == 'Test Book'
-    assert len(item['authors']) == 2
-    assert item['series']['name'] == 'Test Series'
-    assert item['series']['index'] == 1.0
-```
-
-### Integration Test - rest_client
-
-```python
-import responses
-from sync_calimob.rest_client import RestApiClient
-
-@responses.activate
-def test_get_libraries_success():
-    """Test recupero librerie dal server"""
-    responses.add(
-        responses.GET,
-        'https://api.example.com/api/libraries',
-        json={'libraries': [{'id': '1', 'name': 'Test Lib'}]},
-        status=200
-    )
-    
-    client = RestApiClient()
-    client.endpoint = 'https://api.example.com/api'
-    client.token = 'test-token'
-    
-    result = client.get_libraries()
-    
-    assert 'libraries' in result
-    assert len(result['libraries']) == 1
-```
-
-### E2E Test - Sync Flow
-
-```python
-def test_full_sync_flow(mock_calibre_db, mock_server):
-    """Test flusso completo di sincronizzazione"""
-    worker = SyncWorker(mock_calibre_db.gui, mock_calibre_db.db, 'lib-id', 'calimob-lib-id')
-    
-    # Setup: server ha 2 libri, Calibre ha 1 libro diverso
-    mock_server.add_book({'id': 1, 'title': 'Server Book 1'})
-    mock_server.add_book({'id': 2, 'title': 'Server Book 2'})
-    mock_calibre_db.add_book({'id': 3, 'title': 'Local Book 1'})
-    
-    # Esegui sync
-    summary = worker.sync()
-    
-    # Verifica: Calibre ha tutti e 3 i libri
-    assert len(mock_calibre_db.get_all_books()) == 3
-    # Verifica: server ha tutti e 3 i libri
-    assert len(mock_server.get_all_books()) == 3
-```
-
-## 🚀 Setup e Esecuzione
-
-### Installazione Dipendenze
+### Eseguire Integration Tests
 
 ```bash
-pip install pytest pytest-mock pytest-qt responses
+# From project root
+/Applications/calibre.app/Contents/MacOS/calibre-debug -e tests/plugin/test_plugin_integration.py
+
+# On Linux
+calibre-debug -e tests/plugin/test_plugin_integration.py
+
+# On Windows
+calibre-debug.exe -e tests/plugin/test_plugin_integration.py
 ```
 
-### Esecuzione Test
+**Output atteso:**
+```
+============================================================
+  sync_calimob Plugin Integration Tests
+============================================================
+✓ Plugin modules loaded successfully
+
+[TEST] Cover hash calculation
+  ✓ Hash calculated: d2f0e6b2...
+...
+============================================================
+  Test Results: 5 passed, 0 failed
+============================================================
+```
+
+### Eseguire Scenario Tests
 
 ```bash
-# Tutti i test plugin
-pytest tests/plugin/
+# From project root
+python tests/plugin/test_sync_scenarios.py
 
-# Solo unit test
-pytest tests/plugin/unit/
-
-# Solo integration test
-pytest tests/plugin/integration/
-
-# Solo e2e test
-pytest tests/plugin/e2e/
-
-# Con coverage
-pytest tests/plugin/ --cov=sync_calimob --cov-report=html
-
-# Test specifico
-pytest tests/plugin/unit/test_sync_mapper.py::test_calibre_to_json_item_basic
+# Or with calibre-debug
+/Applications/calibre.app/Contents/MacOS/calibre-debug -e tests/plugin/test_sync_scenarios.py
 ```
 
-## 📊 Coverage Target
+**Output atteso:**
+```
+============================================================
+  Sync Scenario Tests
+============================================================
 
-- **Unit Test**: 80%+ coverage su funzioni pure
-- **Integration Test**: 70%+ coverage su componenti principali
-- **E2E Test**: Copertura di tutti i flussi critici
-
-## 🔍 Mock Strategy
-
-### Calibre Mock
-- Mock database senza file system reale
-- Mock metadata objects
-- Mock GUI components (senza Qt reale)
-
-### Server Mock
-- `responses` per mock HTTP requests
-- Server fake con stato in-memory
-- Simulazione errori di rete
-
-### Qt Mock
-- `pytest-qt` per test Qt senza GUI reale
-- Mock QApplication
-- Mock dialog/widget
-
-## 📝 Note
-
-- I test NON richiedono Calibre installato (usa mock)
-- I test NON richiedono Qt GUI reale (usa pytest-qt)
-- I test possono essere eseguiti in CI/CD
-- Database Calibre mockato in-memory
-- Server REST mockato con `responses`
-
-## 🐛 Debugging
-
-### Eseguire test con output verbose
-```bash
-pytest tests/plugin/ -v -s
+[SCENARIO] Client creates new book
+  ✓ Create payload structure valid
+  ✓ Book ID: 1001
+  ✓ Title: New Book Title
+...
+============================================================
+  Scenario Results: 6 passed, 0 failed
+============================================================
 ```
 
-### Eseguire test con debugger
-```bash
-pytest tests/plugin/ --pdb
-```
+## 📋 Test Coverage
 
-### Eseguire test specifico con breakpoint
+| Area | Integration | Scenario | Total |
+|------|-------------|----------|-------|
+| Payload Structure | ✅ | ✅ | 2 |
+| Protocol Compliance | ✅ | ✅ | 2 |
+| Hash Calculation | ✅ | - | 1 |
+| Client ID Handling | ✅ | - | 1 |
+| Create Operations | - | ✅ | 1 |
+| Update Operations | - | ✅ | 1 |
+| Delete Operations | ✅ | ✅ | 2 |
+| Batch Operations | - | ✅ | 1 |
+| Conflict Detection | - | ✅ | 1 |
+| **Total** | **5** | **6** | **11** |
+
+## 🧪 Aggiungere Nuovi Test
+
+### Integration Test
+
 ```python
-import pytest
-pytest.set_trace()  # Breakpoint nel test
+def test_new_feature():
+    """Test description"""
+    print("\n[TEST] New feature")
+    
+    # Test logic
+    result = some_plugin_function()
+    
+    assert result is not None, "Result should not be None"
+    print(f"  ✓ Feature works: {result}")
+    
+    return True
 ```
+
+### Scenario Test
+
+```python
+def test_scenario_new_case():
+    """Test: Description"""
+    print("\n[SCENARIO] New case")
+    
+    # Setup scenario
+    payload = {
+        'op': 'create',
+        'item': {...}
+    }
+    
+    # Validate
+    assert 'op' in payload
+    print("  ✓ Scenario valid")
+    
+    return True
+```
+
+## 🐛 Debugging Failed Tests
+
+### Verbose Output
+
+Modifica il test per aggiungere più debug:
+
+```python
+print(f"DEBUG: Variable value = {variable}")
+import json
+print(json.dumps(payload, indent=2))
+```
+
+### Run Single Test
+
+Commenta gli altri test in `run_all_tests()`:
+
+```python
+tests = [
+    # ("Other Test", test_other),
+    ("My Test", test_my_feature),  # Solo questo
+]
+```
+
+## 🔍 Test Checklist
+
+Prima di committare verificare:
+
+- [ ] Tutti i test integration passano
+- [ ] Tutti i test scenario passano
+- [ ] Aggiunto test per nuova feature
+- [ ] Test documenta il comportamento atteso
+- [ ] Nessuna dipendenza esterna oltre Calibre
+
+## 📝 Limitazioni
+
+**Integration Tests:**
+- ❌ Non possono testare UI del plugin
+- ❌ Non hanno accesso a database Calibre reale
+- ❌ Non possono testare network calls (mock necessario)
+- ✅ Testano logica core e data structures
+
+**Scenario Tests:**
+- ❌ Non testano codice che usa API Calibre
+- ✅ Testano protocollo e payload structure
+- ✅ Possono girare senza Calibre
+
+## 🚦 CI/CD
+
+Per integrare in CI/CD serve ambiente con Calibre:
+
+```yaml
+# GitHub Actions example
+- name: Install Calibre
+  run: |
+    sudo apt-get update
+    sudo apt-get install -y calibre
+    
+- name: Install Plugin
+  run: |
+    calibre-customize -a sync_calimob.zip
+    
+- name: Run Tests
+  run: |
+    cd sync_calimob
+    calibre-debug -e test_plugin_integration.py
+    calibre-debug -e test_sync_scenarios.py
+```
+
+## 📚 Risorse
+
+- [Calibre Plugin Development](https://manual.calibre-ebook.com/creating_plugins.html)
+- [calibre-debug Documentation](https://manual.calibre-ebook.com/generated/en/calibre-debug.html)
+- Protocollo Sync: `../docs/server/PROTOCOLLO_SYNC_AGGIORNATO1.md`
+
+## 📄 License
+
+Same as parent project.
