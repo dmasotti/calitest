@@ -85,10 +85,19 @@ fi
 
 # Check for success
 STATUS=$(echo "$LEGACY_RESP" | jq -r '.results[0].status // empty')
-if [ "$STATUS" == "created" ] || [ "$STATUS" == "ok" ]; then
-  echo "✅ SUCCESS: Book created via legacy endpoint!"
-  echo "   Fix is working correctly!"
-  exit 0
+if [ "$STATUS" == "created" ] || [ "$STATUS" == "ok" ] || [ "$STATUS" == "merged" ] || [ "$STATUS" == "applied" ]; then
+  echo "✅ SUCCESS: Book created/applied via legacy endpoint (status: $STATUS)!"
+  
+  # Verify id field is set correctly
+  BOOK_ID=$(echo "$LEGACY_RESP" | jq -r '.results[0].server_item.id // empty')
+  if [ -n "$BOOK_ID" ] && [ "$BOOK_ID" != "null" ]; then
+    echo "   ✅ Book ID (Calibre book ID) is set: $BOOK_ID"
+    echo "   Fix is working correctly!"
+    exit 0
+  else
+    echo "   ❌ Book ID is missing or null"
+    exit 1
+  fi
 elif [ "$STATUS" == "error" ]; then
   ERROR=$(echo "$LEGACY_RESP" | jq -r '.results[0].error')
   if [ "$ERROR" == "id is required in item" ]; then
