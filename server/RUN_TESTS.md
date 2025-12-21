@@ -221,3 +221,13 @@ Verifica che `phpunit.xml` abbia:
 - Database SQLite in-memory per velocità
 - Config mockato per controllare limiti
 - Factory create per tutti i modelli necessari
+
+## Script E2E Sync (manuali)
+
+Questi script colpiscono le API reali (richiedono server attivo):
+
+```bash
+DISCOVERY_URL=https://example.com TEST_USER_EMAIL=user@example.com TEST_USER_PASSWORD=secret ./tests/server/sync_comprehensive_test.sh
+DISCOVERY_URL=https://example.com TEST_USER_EMAIL=user@example.com TEST_USER_PASSWORD=secret ./tests/server/sync_protocol_contract_test.sh
+DISCOVERY_URL=https://example.com TEST_USER_EMAIL=user@example.com TEST_USER_PASSWORD=secret ./tests/server/sync_pull_post_inventory_test.sh
+```

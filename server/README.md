@@ -89,3 +89,13 @@ php artisan test --testsuite=Server --coverage-html=coverage
 - Tutti i test usano `RefreshDatabase` per isolamento
 - I test mockano la config subscription per controllare i limiti
 - I test verificano sia successi che fallimenti (edge cases)
+
+## Sync E2E (script manuali)
+
+Script end-to-end che colpiscono le API reali (richiedono server attivo).
+
+```bash
+DISCOVERY_URL=https://example.com TEST_USER_EMAIL=user@example.com TEST_USER_PASSWORD=secret ./tests/server/sync_comprehensive_test.sh
+DISCOVERY_URL=https://example.com TEST_USER_EMAIL=user@example.com TEST_USER_PASSWORD=secret ./tests/server/sync_protocol_contract_test.sh
+DISCOVERY_URL=https://example.com TEST_USER_EMAIL=user@example.com TEST_USER_PASSWORD=secret ./tests/server/sync_pull_post_inventory_test.sh
+```
