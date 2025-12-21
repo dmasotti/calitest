@@ -86,6 +86,18 @@ python tests/plugin/test_sync_scenarios.py
 ============================================================
 ```
 
+### Smoke test headless (CLI)
+Richiede variabili d'ambiente e un file config già pronto:
+- `CALIMOB_DISCOVERY_URL`, `CALIMOB_LIBRARY_PATH`, `CALIMOB_LIBRARY_ID`, `CALIMOB_SERVER_LIBRARY_ID`, `CALIMOB_CONFIG_JSON`
+- opzionale `CALIMOB_FULL_SYNC=1` per forzare il full sync
+
+```bash
+# From project root
+tests/plugin/integration/headless_sync_smoke.sh
+```
+
+Il test usa `calibre-debug -e sync_calimob/cli.py` con una config temporanea. Se mancano prerequisiti stampa “SKIP”; fallisce solo se il comando esce in errore o se `jq` trova errori nei blocchi `pull`/`push`.
+
 ## 📋 Test Coverage
 
 | Area | Integration | Scenario | Total |
