@@ -98,6 +98,21 @@ tests/plugin/integration/headless_sync_smoke.sh
 
 Il test usa `calibre-debug -e sync_calimob/cli.py` con una config temporanea. Se mancano prerequisiti stampa “SKIP”; fallisce solo se il comando esce in errore o se `jq` trova errori nei blocchi `pull`/`push`.
 
+### Headless E2E (scenari approfonditi)
+Script: `tests/plugin/integration/headless_e2e.py`
+
+Verifica:
+- Full sync (opzionale) restituisce `inventory` compresso
+- Incrementale restituisce `inventory_hint`
+- Cursor monotono (non regredisce)
+
+```bash
+CALIMOB_RUN_FULL=1 \\
+python tests/plugin/integration/headless_e2e.py
+```
+
+Se `CALIMOB_RUN_FULL` non è impostato, esegue solo l’incrementale.
+
 ## 📋 Test Coverage
 
 | Area | Integration | Scenario | Total |
