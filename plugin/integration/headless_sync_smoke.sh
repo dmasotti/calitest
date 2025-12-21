@@ -58,30 +58,26 @@ fi
 
 JSON_OUT=$(mktemp)
 python - <<'PY' "$OUTPUT" "$JSON_OUT"
-import io, json, sys
+import json, sys
 src = open(sys.argv[1], "r", errors="ignore").read()
-marker = '\n{\n  "pull"'
-idx = src.rfind(marker)
-if idx == -1:
-    # fallback: last line starting with '{'
-    lines = src.splitlines()
-    start = None
-    for i in range(len(lines)-1, -1, -1):
-        if lines[i].lstrip().startswith('{'):
-            start = i
-            break
-    if start is None:
-        sys.exit(1)
-    data = "\n".join(lines[start:])
-else:
-    data = src[idx+1:]
-try:
-    json.loads(data)
-    open(sys.argv[2], "w").write(data)
-except Exception:
-    # if parse fails, still write for debugging
-    open(sys.argv[2], "w").write(data)
+
+# Find last valid JSON object by scanning backwards for '{'
+start = None
+for i in range(len(src) - 1, -1, -1):
+    if src[i] != '{':
+        continue
+    try:
+        obj = json.loads(src[i:])
+        start = i
+        break
+    except Exception:
+        continue
+
+if start is None:
     sys.exit(1)
+
+obj = json.loads(src[start:])
+open(sys.argv[2], "w").write(json.dumps(obj))
 PY
 
 if command -v jq >/dev/null 2>&1; then
