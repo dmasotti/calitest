@@ -5,6 +5,7 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 CALIBRE_DEBUG="${CALIBRE_DEBUG:-/Applications/calibre.app/Contents/MacOS/calibre-debug}"
+CALIBRE_CUSTOMIZE="${CALIBRE_CUSTOMIZE:-/Applications/calibre.app/Contents/MacOS/calibre-customize}"
 
 REQUIRED=(CALIMOB_DISCOVERY_URL CALIMOB_LIBRARY_PATH CALIMOB_LIBRARY_ID CALIMOB_SERVER_LIBRARY_ID CALIMOB_CONFIG_JSON)
 for v in "${REQUIRED[@]}"; do
@@ -18,6 +19,10 @@ if [[ ! -x "$CALIBRE_DEBUG" ]]; then
   echo "SKIP: calibre-debug not found at $CALIBRE_DEBUG" >&2
   exit 0
 fi
+if [[ ! -x "$CALIBRE_CUSTOMIZE" ]]; then
+  echo "SKIP: calibre-customize not found at $CALIBRE_CUSTOMIZE" >&2
+  exit 0
+fi
 if [[ ! -f "$CALIMOB_CONFIG_JSON" ]]; then
   echo "SKIP: CALIMOB_CONFIG_JSON missing ($CALIMOB_CONFIG_JSON)" >&2
   exit 0
@@ -26,6 +31,12 @@ fi
 TMP_CFG=$(mktemp -d)
 mkdir -p "$TMP_CFG/plugins"
 cp "$CALIMOB_CONFIG_JSON" "$TMP_CFG/plugins/sync_calimob.json"
+
+# Install plugin in the temp Calibre config so calibre-debug can import it
+CALIBRE_CONFIG_DIRECTORY="$TMP_CFG" "$CALIBRE_CUSTOMIZE" -b "$ROOT/sync_calimob" >/dev/null 2>&1 || {
+  echo "SKIP: failed to install plugin into temp config" >&2
+  exit 0
+}
 
 OUTPUT=$(mktemp)
 set +e
