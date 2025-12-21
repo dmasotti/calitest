@@ -41,6 +41,34 @@ Test per limiti durante sync:
 - Dry run non applica limiti
 - Stima corretta storage da files
 
+### `SyncInventoryTest.php`
+Test per inventario compresso:
+- `buildCalibreInventory()` comprime range correttamente
+- `expandInventoryIds()` gestisce active/missing
+
+### `SyncPullTest.php`
+Test per pull sync:
+- `last_modified` precede `updated_at`
+- `inventory_hint` solo nelle pagine delta
+- `POST /sync/pull` filtra tombstone con client_inventory
+- Paginazione e `has_more`
+
+### `SyncPushTest.php`
+Test per push sync:
+- Idempotency (riuso stesso payload)
+- Idempotency con payload diverso (errore)
+- `sync_mappings` per books
+- Conflitti e `/api/sync/conflicts` + resolve
+
+### `SyncItemMappingTest.php`
+Test per mapping di relazioni:
+- `buildItemFromUserBook()` include ID autore/tag/serie
+
+### `TombstoneAdminTest.php`
+Test per workflow tombstone superadmin:
+- Cleanup tombstone rimuove record e mapping
+- Resolve tombstone crea mapping
+
 ### `StorageCalculationTest.php`
 Test per calcolo storage:
 - Include file ebook uploaded

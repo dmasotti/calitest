@@ -164,22 +164,37 @@ Usa lo script `scripts/upTest` che si connette al server e esegue i test:
 - Verifica stima storage
 - Verifica dry run
 
-### 6. StorageCalculationTest (6 test)
+### 6. SyncInventoryTest (3 test)
+- Test inventario compresso e espansione ranges
+
+### 7. SyncPullTest (5 test)
+- Test cursor/last_modified, inventory_hint, POST /sync/pull, pagination
+
+### 8. SyncPushTest (4 test)
+- Test idempotency, sync_mappings, conflitti e resolve
+
+### 9. SyncItemMappingTest (1 test)
+- Test ID autori/tag/serie in buildItemFromUserBook
+
+### 10. TombstoneAdminTest (2 test)
+- Test cleanup tombstone e resolve mapping (superadmin)
+
+### 11. StorageCalculationTest (6 test)
 - Test calcolo storage
 - Verifica inclusione/esclusione file
 - Verifica gestione errori
 
-### 7. SubscriptionConfigTest (7 test)
+### 12. SubscriptionConfigTest (7 test)
 - Test configurazione
 - Verifica limiti tier
 - Verifica pricing
 
-### 8. SubscriptionIntegrationTest (4 test)
+### 13. SubscriptionIntegrationTest (4 test)
 - Test integrazione end-to-end
 - Test upgrade subscription
 - Test flussi completi
 
-**Totale: ~54 test**
+**Totale: ~69 test**
 
 ## Troubleshooting
 

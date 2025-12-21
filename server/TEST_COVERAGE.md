@@ -53,7 +53,32 @@ Suite completa di test per verificare il funzionamento corretto di subscription,
 - ✅ POST /api/sync - Dry run non applica limiti
 - ✅ Sync stima storage correttamente da files
 
-### 6. `StorageCalculationTest.php` (6 test)
+### 6. `SyncInventoryTest.php` (3 test)
+- ✅ buildCalibreInventory comprime range correttamente
+- ✅ expandInventoryIds usa active quando presente
+- ✅ expandInventoryIds calcola active da missing
+
+### 7. `SyncPullTest.php` (5 test)
+- ✅ last_modified precede updated_at (no false positives)
+- ✅ updated_at usato se last_modified null
+- ✅ inventory_hint solo su delta
+- ✅ POST /sync/pull filtra tombstone con client_inventory
+- ✅ paginazione + has_more
+
+### 8. `SyncPushTest.php` (4 test)
+- ✅ Idempotency: stesso payload riusato
+- ✅ Idempotency: payload diverso → error
+- ✅ sync_mappings creati per books
+- ✅ conflitto crea record e API conflicts + resolve
+
+### 9. `SyncItemMappingTest.php` (1 test)
+- ✅ buildItemFromUserBook include ID autore/tag/serie
+
+### 10. `TombstoneAdminTest.php` (2 test)
+- ✅ cleanup tombstone rimuove record e mapping
+- ✅ resolve tombstone crea mapping
+
+### 11. `StorageCalculationTest.php` (6 test)
 - ✅ Storage include file ebook
 - ✅ Storage include multipli file ebook
 - ✅ Storage include cover locali
@@ -61,7 +86,7 @@ Suite completa di test per verificare il funzionamento corretto di subscription,
 - ✅ Storage esclude file non uploaded
 - ✅ Storage gestisce file cover mancanti
 
-### 7. `SubscriptionConfigTest.php` (7 test)
+### 12. `SubscriptionConfigTest.php` (7 test)
 - ✅ Config subscription caricato correttamente
 - ✅ Free tier ha limiti corretti
 - ✅ Basic tier ha limiti corretti
@@ -71,13 +96,13 @@ Suite completa di test per verificare il funzionamento corretto di subscription,
 - ✅ Trial days config esiste
 - ✅ Default tier config esiste
 
-### 8. `SubscriptionIntegrationTest.php` (4 test)
+### 13. `SubscriptionIntegrationTest.php` (4 test)
 - ✅ Utente free raggiunge tutti i limiti
 - ✅ Upgrade da free a basic sblocca limiti
 - ✅ Storage limit enforcement durante sync
 - ✅ Subscription status riflette usage corrente
 
-## Totale Test: ~54 test
+## Totale Test: ~69 test
 
 ## Esecuzione
 
