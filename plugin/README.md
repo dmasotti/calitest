@@ -113,6 +113,24 @@ python tests/plugin/integration/headless_e2e.py
 
 Se `CALIMOB_RUN_FULL` non è impostato, esegue solo l’incrementale.
 
+### Headless Deep Suite (server → Calibre con verifica DB locale)
+Script: `tests/plugin/integration/headless_deep_suite.sh`
+
+Verifica:
+- Crea/riusa una libreria server per la libreria Calibre locale
+- Push di un libro lato server → pull con plugin → verifica titolo nel `metadata.db`
+- Update lato server → pull → verifica titolo aggiornato e vecchio titolo assente
+- Verifica che `discoveryCache`/`restEndpoint` vengano salvati nella config
+
+Richiede:
+- `CALIMOB_DISCOVERY_URL`, `TEST_USER_EMAIL`, `TEST_USER_PASSWORD`
+- `CALIMOB_LIBRARY_PATH`, `CALIMOB_LIBRARY_ID`, `CALIMOB_CONFIG_JSON`
+- `sqlite3`, `calibre-debug`, `calibre-customize`
+
+```bash
+tests/plugin/integration/headless_deep_suite.sh
+```
+
 ### Scenari specifici (headless)
 Script disponibili:
 - `tests/plugin/integration/headless_scenario_conflict.sh`
