@@ -137,6 +137,6 @@ echo "✅ PASSED: Sync loop finished in $ITERATIONS iterations."
 
 
 echo "Cleaning up test library"
-general_curl "$API_URL/library/$LIB_ID" -X DELETE -H "$AUTH_HEADER" || true
+curl -sS -X DELETE -H "$AUTH_HEADER" "$API_URL/library/$LIB_ID" >/dev/null || true
 
 echo "Test finished"
