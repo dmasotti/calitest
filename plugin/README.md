@@ -120,6 +120,9 @@ Script disponibili:
 - `tests/plugin/integration/headless_scenario_cover_upload.sh`
   - Crea un libro via `/api/sync`, poi carica una copertina con `PUT /api/items/{id}/cover` e verifica il download.
   - Richiede `CALIMOB_COVER_IMAGE` (file jpg/png locale).
+- `tests/plugin/integration/headless_scenario_cover_missing.sh`
+  - Imposta `cover_missing=1` via `tools/sql`, verifica che il flag compaia in pull e si azzeri dopo l’upload cover.
+  - Richiede `CALIMOB_SUPERADMIN_TOKEN` (superadmin) e `CALIMOB_COVER_IMAGE` opzionale (se mancante crea una PNG temporanea).
 - `tests/plugin/integration/headless_scenario_library_mismatch.sh`
   - Lancia headless con `calibre_library_id` sbagliato → attesa risposta 403 “Library ID mismatch”.
 
@@ -127,6 +130,16 @@ Variabili richieste (oltre a quelle già usate negli altri test):
 - `DISCOVERY_URL`, `TEST_USER_EMAIL`, `TEST_USER_PASSWORD` (lettura anche da `tests/server/.env`)
 - `CALIMOB_LIBRARY_ID`, `CALIBRE_LIBRARY_ID` opzionali; se assenti usa la prima libreria dell’utente
 - `CALIMOB_COVER_IMAGE` per il test cover upload
+- `CALIMOB_SUPERADMIN_TOKEN` per il test cover_missing (tools/sql)
+
+### Setup libreria di test (API)
+Script: `tests/plugin/integration/headless_setup_library.sh`
+
+- Crea (o riusa) una libreria in base a `CALIBRE_LIBRARY_ID`.
+- Stampa le variabili `CALIMOB_LIBRARY_ID`, `CALIMOB_SERVER_LIBRARY_ID`, `CALIBRE_LIBRARY_ID`.
+- Opzionale seeding via `/api/sync`:
+  - `SEED_BOOKS=1` o `SEED_BOOKS_COUNT=<n>`
+  - `CALIMOB_LIBRARY_NAME` per impostare un nome esplicito
 
 ## 📋 Test Coverage
 
