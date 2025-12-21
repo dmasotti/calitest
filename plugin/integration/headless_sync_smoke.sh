@@ -81,8 +81,13 @@ open(sys.argv[2], "w").write(json.dumps(obj))
 PY
 
 if command -v jq >/dev/null 2>&1; then
-  if ! jq -e '.pull.errors|length==0 and .push.errors|length==0' "$JSON_OUT" >/dev/null; then
-    echo "FAIL: errors reported in headless sync" >&2
+  if ! jq -e '.pull.errors|length==0' "$JSON_OUT" >/dev/null; then
+    echo "FAIL: pull errors reported in headless sync" >&2
+    cat "$OUTPUT" >&2
+    exit 1
+  fi
+  if ! jq -e '.push.errors|length==0' "$JSON_OUT" >/dev/null; then
+    echo "FAIL: push errors reported in headless sync" >&2
     cat "$OUTPUT" >&2
     exit 1
   fi
