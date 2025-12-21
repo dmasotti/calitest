@@ -115,6 +115,28 @@ class TestRestApiClientRequests:
         assert response is not None
         assert 'status' in response
         assert response['status'] == 'ok'
+
+    @responses.activate
+    def test_post_sync_pull(self, rest_client_instance):
+        """Test POST /sync/pull with client_inventory."""
+        responses.add(
+            responses.POST,
+            'https://api.example.com/api/sync/pull',
+            json={'new_cursor': 'abc', 'has_more': False, 'changes': []},
+            status=200
+        )
+
+        response = rest_client_instance.post_sync_pull(
+            cursor=None,
+            limit=1,
+            library_id=35,
+            calibre_library_id='lib-uuid',
+            include_inventory=True,
+            include_inventory_hint=True,
+            client_inventory={'min': 1, 'max': 2, 'active': [1, 2], 'missing': []}
+        )
+
+        assert response['new_cursor'] == 'abc'
     
     @responses.activate
     def test_get_request_404(self, rest_client_instance):

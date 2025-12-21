@@ -179,6 +179,37 @@ def test_scenario_pull_response():
     return True
 
 
+def test_scenario_pull_with_inventory():
+    """Test: Pull response including inventory hint and client inventory usage"""
+    print("\n[SCENARIO] Server pull response with inventory hint")
+    
+    response = {
+        'changes': [],
+        'new_cursor': 'opaque-token-xyz',
+        'has_more': False,
+        'inventory_hint': {
+            'version': 'opaque-token-xyz',
+            'min': 1,
+            'max': 10,
+            'active': ['1-3', 7, '9-10'],
+            'missing': ['4-6', 8]
+        }
+    }
+    
+    inv = response.get('inventory_hint')
+    assert inv is not None
+    assert inv['min'] == 1
+    assert inv['max'] == 10
+    assert 'active' in inv
+    assert 'missing' in inv
+    
+    print("  ✓ Inventory hint structure valid")
+    print(f"  ✓ Active ranges: {inv['active']}")
+    print(f"  ✓ Missing ranges: {inv['missing']}")
+    
+    return True
+
+
 def test_scenario_push_batch():
     """Test: Client pushes batch of changes"""
     print("\n[SCENARIO] Client pushes batch")
