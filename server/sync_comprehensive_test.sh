@@ -112,6 +112,7 @@ LIBRARY_COUNT=$(echo "$LIBRARIES" | jq -r 'if type=="array" then length else 0 e
 if [[ "$LIBRARY_COUNT" -gt 0 ]]; then
     log_pass "Found $LIBRARY_COUNT libraries"
     LIBRARY_ID=$(echo "$LIBRARIES" | jq -r '.[0].id')
+    CALIBRE_LIBRARY_ID=$(echo "$LIBRARIES" | jq -r '.[0].calibre_library_id // empty')
 else
     log_fail "No libraries found"
     exit 1
@@ -123,15 +124,14 @@ echo "=== Sync Operations ==="
 # Test 4: Get sync cursor
 log_test "Getting sync cursor"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
-CURSOR_RESPONSE=$(api_get "/sync/cursor?library_id=$LIBRARY_ID")
-CURSOR=$(echo "$CURSOR_RESPONSE" | jq -r '.cursor // empty')
+CURSOR_RESPONSE=$(api_get "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID&limit=1")
+CURSOR=$(echo "$CURSOR_RESPONSE" | jq -r '.new_cursor // .cursor // empty')
 log_pass "Got cursor: ${CURSOR:-none}"
 
 # Test 5: Pull sync (get server changes)
 log_test "Pull sync - fetching server changes"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
-PULL_PAYLOAD='{"library_id":'$LIBRARY_ID',"device_uuid":"test-device-'$(date +%s)'"}'
-PULL_RESPONSE=$(api_post "/sync/pull" "$PULL_PAYLOAD")
+PULL_RESPONSE=$(api_get "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID&limit=50")
 CHANGES_COUNT=$(echo "$PULL_RESPONSE" | jq -r '.changes | length')
 log_pass "Received $CHANGES_COUNT changes from server"
 
@@ -169,7 +169,7 @@ PUSH_PAYLOAD=$(cat <<EOF
 EOF
 )
 
-PUSH_RESPONSE=$(api_post "/sync/push" "$PUSH_PAYLOAD")
+PUSH_RESPONSE=$(api_post "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID" "$PUSH_PAYLOAD")
 PUSH_STATUS=$(echo "$PUSH_RESPONSE" | jq -r '.results[0].status')
 if [[ "$PUSH_STATUS" == "applied" || "$PUSH_STATUS" == "merged" ]]; then
     log_pass "Book created successfully (status: $PUSH_STATUS)"
@@ -192,7 +192,6 @@ UPDATE_PAYLOAD=$(cat <<EOF
             "id": $CREATED_BOOK_ID,
             "title": "Updated Test Book $TIMESTAMP",
             "status": "reading",
-            "progress_percent": 50,
             "timestamps": {
                 "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
             }
@@ -203,7 +202,7 @@ UPDATE_PAYLOAD=$(cat <<EOF
 EOF
 )
 
-UPDATE_RESPONSE=$(api_post "/sync/push" "$UPDATE_PAYLOAD")
+UPDATE_RESPONSE=$(api_post "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID" "$UPDATE_PAYLOAD")
 UPDATE_STATUS=$(echo "$UPDATE_RESPONSE" | jq -r '.results[0].status')
 if [[ "$UPDATE_STATUS" == "applied" || "$UPDATE_STATUS" == "merged" ]]; then
     log_pass "Book updated successfully"
@@ -214,8 +213,8 @@ fi
 # Test 8: Pull to verify changes
 log_test "Pull sync - verifying changes"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
-PULL2_RESPONSE=$(api_post "/sync/pull" "$PULL_PAYLOAD")
-FOUND_BOOK=$(echo "$PULL2_RESPONSE" | jq -r ".changes[] | select(.item.id == $CREATED_BOOK_ID) | .item.title")
+USER_BOOKS_AFTER=$(api_get "/user-books")
+FOUND_BOOK=$(echo "$USER_BOOKS_AFTER" | jq -r ".[] | select(.id == $CREATED_BOOK_ID) | .title // empty")
 if [[ "$FOUND_BOOK" == *"Updated"* ]]; then
     log_pass "Verified book changes on server"
 else
@@ -228,15 +227,15 @@ echo "=== Search & Filter ==="
 # Test 9: Search books
 log_test "Searching books"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
-SEARCH_RESPONSE=$(api_get "/books?library_id=$LIBRARY_ID&q=Test")
-SEARCH_COUNT=$(echo "$SEARCH_RESPONSE" | jq -r 'if type=="object" then .data | length else length end')
-log_pass "Search returned $SEARCH_COUNT results"
+SEARCH_RESPONSE=$(api_get "/user-books")
+SEARCH_COUNT=$(echo "$SEARCH_RESPONSE" | jq -r 'length')
+log_pass "User-books listing returned $SEARCH_COUNT results"
 
 # Test 10: Filter by status
 log_test "Filtering by status"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
-STATUS_RESPONSE=$(api_get "/books?library_id=$LIBRARY_ID&status=reading")
-STATUS_COUNT=$(echo "$STATUS_RESPONSE" | jq -r 'if type=="object" then .data | length else length end')
+STATUS_RESPONSE=$(api_get "/user-books")
+STATUS_COUNT=$(echo "$STATUS_RESPONSE" | jq -r '[.[] | select(.status == "reading")] | length')
 log_pass "Status filter returned $STATUS_COUNT books"
 
 echo ""
@@ -245,8 +244,8 @@ echo "=== Metadata Operations ==="
 # Test 11: Get book details
 log_test "Getting book details"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
-BOOK_DETAIL=$(api_get "/books/$CREATED_BOOK_ID?library_id=$LIBRARY_ID")
-BOOK_TITLE=$(echo "$BOOK_DETAIL" | jq -r '.title // empty')
+BOOK_DETAIL=$(api_get "/user-books")
+BOOK_TITLE=$(echo "$BOOK_DETAIL" | jq -r ".[] | select(.id == $CREATED_BOOK_ID) | .title // empty")
 if [[ -n "$BOOK_TITLE" ]]; then
     log_pass "Got book details: $BOOK_TITLE"
 else
@@ -277,7 +276,7 @@ DELETE_PAYLOAD=$(cat <<EOF
 EOF
 )
 
-DELETE_RESPONSE=$(api_post "/sync/push" "$DELETE_PAYLOAD")
+DELETE_RESPONSE=$(api_post "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID" "$DELETE_PAYLOAD")
 DELETE_STATUS=$(echo "$DELETE_RESPONSE" | jq -r '.results[0].status')
 if [[ "$DELETE_STATUS" == "applied" ]]; then
     log_pass "Book deleted successfully"
