@@ -113,6 +113,21 @@ python tests/plugin/integration/headless_e2e.py
 
 Se `CALIMOB_RUN_FULL` non è impostato, esegue solo l’incrementale.
 
+### Scenari specifici (headless)
+Script disponibili:
+- `tests/plugin/integration/headless_scenario_conflict.sh`
+  - Crea un libro via `/api/sync`, poi invia un update con `version` più vecchia → atteso `status=conflict`.
+- `tests/plugin/integration/headless_scenario_cover_upload.sh`
+  - Crea un libro via `/api/sync`, poi carica una copertina con `PUT /api/items/{id}/cover` e verifica il download.
+  - Richiede `CALIMOB_COVER_IMAGE` (file jpg/png locale).
+- `tests/plugin/integration/headless_scenario_library_mismatch.sh`
+  - Lancia headless con `calibre_library_id` sbagliato → attesa risposta 403 “Library ID mismatch”.
+
+Variabili richieste (oltre a quelle già usate negli altri test):
+- `DISCOVERY_URL`, `TEST_USER_EMAIL`, `TEST_USER_PASSWORD` (lettura anche da `tests/server/.env`)
+- `CALIMOB_LIBRARY_ID`, `CALIBRE_LIBRARY_ID` opzionali; se assenti usa la prima libreria dell’utente
+- `CALIMOB_COVER_IMAGE` per il test cover upload
+
 ## 📋 Test Coverage
 
 | Area | Integration | Scenario | Total |
