@@ -110,6 +110,11 @@ $CALIBRE_CUSTOMIZE -b "$ROOT_DIR/sync_calimob" >/dev/null 2>&1 || {
 }
 
 BOOK_ID=$((RANDOM + 940000))
+BOOK_UUID=$(python - <<'PY'
+import uuid
+print(str(uuid.uuid4()))
+PY
+)
 TITLE_1="DeepSuite Pull $(date -u +%Y%m%d%H%M%S)-$BOOK_ID"
 TITLE_2="DeepSuite Updated $(date -u +%Y%m%d%H%M%S)-$BOOK_ID"
 NOW_TS=$(date -u +%s)
@@ -124,6 +129,7 @@ CREATE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "deep-create-$BOOK_ID",
       "item": {
         "id": $BOOK_ID,
+        "uuid": "$BOOK_UUID",
         "title": "$TITLE_1",
         "authors": [{"name": "DeepSuite"}],
         "last_modified": $NOW_TS
@@ -190,6 +196,7 @@ UPDATE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "deep-update-$BOOK_ID",
       "item": {
         "id": $BOOK_ID,
+        "uuid": "$BOOK_UUID",
         "title": "$TITLE_2",
         "authors": [{"name": "DeepSuite"}],
         "last_modified": $UPDATE_TS

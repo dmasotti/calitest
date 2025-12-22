@@ -8,6 +8,7 @@ use App\Models\UserBook;
 use App\Models\Device;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 use Laravel\Sanctum\Sanctum;
 
@@ -53,6 +54,7 @@ class SyncLimitsTest extends TestCase
                     'op' => 'create',
                     'item' => [
                         'calibre_book_id' => 999,
+                        'uuid' => (string) Str::uuid(),
                         'title' => 'New Book',
                         'authors' => ['Test Author'],
                     ],
@@ -103,6 +105,7 @@ class SyncLimitsTest extends TestCase
                     'op' => 'create',
                     'item' => [
                         'calibre_book_id' => 999,
+                        'uuid' => (string) Str::uuid(),
                         'title' => 'New Book',
                         'authors' => ['Test Author'],
                         'files' => [
@@ -145,6 +148,7 @@ class SyncLimitsTest extends TestCase
                     'op' => 'create',
                     'item' => [
                         'calibre_book_id' => 1,
+                        'uuid' => (string) Str::uuid(),
                         'title' => 'Test Book',
                         'authors' => ['Test Author'],
                     ],
@@ -183,6 +187,7 @@ class SyncLimitsTest extends TestCase
                     'op' => 'create',
                     'item' => [
                         'calibre_book_id' => 999,
+                        'uuid' => (string) Str::uuid(),
                         'title' => 'New Book',
                         'authors' => ['Test Author'],
                     ],
@@ -216,6 +221,7 @@ class SyncLimitsTest extends TestCase
                     'op' => 'create',
                     'item' => [
                         'calibre_book_id' => 1,
+                        'uuid' => (string) Str::uuid(),
                         'title' => 'Test Book',
                         'authors' => ['Test Author'],
                         'files' => [

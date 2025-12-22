@@ -105,6 +105,11 @@ $CALIBRE_CUSTOMIZE -b "$ROOT_DIR/sync_calimob" >/dev/null 2>&1 || {
 }
 
 BOOK_ID=$((RANDOM + 950000))
+BOOK_UUID=$(python - <<'PY'
+import uuid
+print(str(uuid.uuid4()))
+PY
+)
 TITLE_1="Conflict Seed $(date -u +%Y%m%d%H%M%S)-$BOOK_ID"
 TITLE_LOCAL="Conflict Local Update $(date -u +%Y%m%d%H%M%S)-$BOOK_ID"
 NOW_TS=$(date -u +%s)
@@ -119,6 +124,7 @@ CREATE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "conflict-create-$BOOK_ID",
       "item": {
         "id": $BOOK_ID,
+        "uuid": "$BOOK_UUID",
         "title": "$TITLE_1",
         "authors": [{"name": "ConflictSuite"}],
         "last_modified": $NOW_TS
@@ -179,6 +185,7 @@ DELETE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "conflict-delete-$BOOK_ID",
       "item": {
         "id": $BOOK_ID,
+        "uuid": "$BOOK_UUID",
         "last_modified": $NOW_TS
       }
     }

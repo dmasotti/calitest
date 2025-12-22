@@ -17,6 +17,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 
 
 REQUIRED = [
@@ -25,6 +27,8 @@ REQUIRED = [
     'CALIMOB_LIBRARY_ID',
     'CALIMOB_SERVER_LIBRARY_ID',
     'CALIMOB_CONFIG_JSON',
+    'TEST_USER_EMAIL',
+    'TEST_USER_PASSWORD',
 ]
 
 
@@ -65,6 +69,48 @@ def _extract_json(output):
     if start is None:
         raise ValueError('No JSON summary found in output')
     return json.loads(output[start:])
+
+
+def _json_request(url, method='GET', data=None, headers=None):
+    body = None
+    if data is not None:
+        body = json.dumps(data).encode('utf-8')
+    request = urllib.request.Request(url, data=body, method=method)
+    if headers:
+        for name, value in headers.items():
+            request.add_header(name, value)
+    if data is not None:
+        request.add_header('Content-Type', 'application/json')
+    try:
+        with urllib.request.urlopen(request) as response:
+            return json.loads(response.read().decode('utf-8'))
+    except urllib.error.HTTPError as exc:
+        payload = exc.read().decode('utf-8', errors='ignore')
+        raise RuntimeError(f'{method} {url} -> {exc.code} {exc.reason}: {payload}') from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f'{method} {url} failed: {exc}') from exc
+
+
+def _discover_api_url(base_url):
+    for suffix in ('/discovery.php', '/api/discovery'):
+        candidate = base_url.rstrip('/') + suffix
+        try:
+            data = _json_request(candidate)
+        except RuntimeError:
+            continue
+        api_url = data.get('api_url') or data.get('apiUrl')
+        if api_url:
+            return api_url
+    raise RuntimeError(f'discovery failed for {base_url}')
+
+
+def _login(api_url, email, password):
+    payload = {'email': email, 'password': password}
+    data = _json_request(api_url.rstrip('/') + '/auth/login', method='POST', data=payload)
+    token = data.get('token')
+    if not token:
+        raise RuntimeError('login failed: %s' % json.dumps(data))
+    return token
 
 
 def _decode_cursor(cur):
@@ -126,11 +172,32 @@ def main():
         _skip('calibre-customize not found at %s' % env['CALIBRE_CUSTOMIZE'])
 
     env['ROOT'] = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+    api_url = _discover_api_url(env['CALIMOB_DISCOVERY_URL'])
+    token = _login(api_url, env['TEST_USER_EMAIL'], env['TEST_USER_PASSWORD'])
 
     tmp_cfg = tempfile.mkdtemp(prefix='calimob_cfg_')
     try:
         os.makedirs(os.path.join(tmp_cfg, 'plugins'))
-        shutil.copy(env['CALIMOB_CONFIG_JSON'], os.path.join(tmp_cfg, 'plugins', 'sync_calimob.json'))
+        cfg_path = os.path.join(tmp_cfg, 'plugins', 'sync_calimob.json')
+        shutil.copy(env['CALIMOB_CONFIG_JSON'], cfg_path)
+        data = json.load(open(cfg_path, 'r'))
+        lm = data.get('LibraryMappings', {})
+        lm[env['CALIMOB_LIBRARY_ID']] = {
+            'syncEnabled': True,
+            'calibreLibraryId': env['CALIMOB_LIBRARY_ID'],
+            'calimobLibraryId': int(env['CALIMOB_SERVER_LIBRARY_ID']),
+            'calimobLibraryName': 'Headless E2E'
+        }
+        data['LibraryMappings'] = lm
+        store = data.get('Goodreads', {})
+        store['discoveryUrl'] = env['CALIMOB_DISCOVERY_URL']
+        store['restToken'] = token
+        store.pop('deviceToken', None)
+        store.pop('restEndpoint', None)
+        store.pop('discoveryCache', None)
+        data['Goodreads'] = store
+        with open(cfg_path, 'w') as f:
+            json.dump(data, f, indent=2, sort_keys=True)
         _install_plugin(tmp_cfg, env['ROOT'], env['CALIBRE_CUSTOMIZE'])
 
         # Track cursor before

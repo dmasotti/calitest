@@ -77,6 +77,7 @@ fail() { echo "✗ $1"; exit 1; }
 
 NOW=$(date +%s)
 BOOK_ID=$((900000 + (RANDOM % 10000)))
+BOOK_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
 
 log "Create test book $BOOK_ID"
 CREATE_PAYLOAD=$(cat <<EOF
@@ -87,6 +88,7 @@ CREATE_PAYLOAD=$(cat <<EOF
     "op": "create",
     "item": {
       "id": $BOOK_ID,
+      "uuid": "$BOOK_UUID",
       "title": "Inventory Filter Test $NOW",
       "authors": [{"name":"Tester","role":"author"}],
       "timestamps": {
@@ -122,7 +124,7 @@ DELETE_PAYLOAD=$(cat <<EOF
   "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "changes": [{
     "op": "delete",
-    "item": {"id": $BOOK_ID, "last_modified": $(date -u +%s)},
+    "item": {"id": $BOOK_ID, "uuid": "$BOOK_UUID", "last_modified": $(date -u +%s)},
     "idempotency_key": "inv-delete-$NOW"
   }]
 }

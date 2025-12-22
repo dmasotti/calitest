@@ -27,6 +27,14 @@ Test di scenari di sync senza database Calibre.
 
 ## 🚀 Come Eseguire i Test
 
+### ⚠️ Requisiti protocollo
+
+Gli script/integration tests che inviano payload al server devono includere:
+- `changes.*.idempotency_key` (stringa ≤191) per ogni modifica
+- `changes.*.item.uuid`: il valore UUID dei metadati Calibre (lo script usa `uuid.uuid4()` per le creazioni ad hoc)
+
+I server headless/script di scenario generano `uuid` dinamici prima di fare `POST /api/sync` per rimanere allineati con la validazione lato API.
+
 ### Prerequisiti
 
 1. **Calibre installato** con `calibre-debug` disponibile
@@ -105,6 +113,16 @@ Verifica:
 - Full sync (opzionale) restituisce `inventory` compresso
 - Incrementale restituisce `inventory_hint`
 - Cursor monotono (non regredisce)
+Richiede:
+- `CALIMOB_DISCOVERY_URL`
+- `CALIMOB_LIBRARY_PATH`
+- `CALIMOB_LIBRARY_ID`
+- `CALIMOB_SERVER_LIBRARY_ID`
+- `CALIMOB_CONFIG_JSON`
+- `TEST_USER_EMAIL`
+- `TEST_USER_PASSWORD`
+
+Lo script esegue un login (`POST /auth/login`) per ottenere un `restToken` temporaneo e aggiorna `plugins/sync_calimob.json` (discoveryUrl + restToken + mapping della libreria) prima di lanciare `calibre-debug`.
 
 ```bash
 CALIMOB_RUN_FULL=1 \\

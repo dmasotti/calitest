@@ -3,6 +3,10 @@
 
 set -euo pipefail
 
+if [[ -f "$(dirname "$0")/.env" ]]; then
+  source "$(dirname "$0")/.env"
+fi
+
 DISCOVERY_URL=${DISCOVERY_URL:-http://localhost}
 TEST_EMAIL=${TEST_USER_EMAIL:-}
 TEST_PASSWORD=${TEST_USER_PASSWORD:-}
@@ -76,12 +80,14 @@ for i in $(seq 1 $NUM_BOOKS); do
   CLIENT_BOOK_ID=$((100000 + i))
   CLIENT_TITLE="Book $i"
   CLIENT_CREATE_KEY="create_$i"
+  BOOK_UUID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$RANDOM")
   CHANGE=$(cat <<JSON
     {
       "op": "create",
       "idempotency_key": "$CLIENT_CREATE_KEY",
       "item": {
         "id": $CLIENT_BOOK_ID,
+        "uuid": "$BOOK_UUID",
         "title": "$CLIENT_TITLE",
         "client_ids": { "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID": "$CLIENT_BOOK_ID" },
         "last_modified": $(date -u +%s)
@@ -113,14 +119,19 @@ echo "$CREATE_RESP" | jq '.'
 
 # Test steps for infinite loop will be added here
 echo "Starting pull loop to detect infinite loop..."
-CURSOR=null
+CURSOR=""
 HAS_MORE=true
 ITERATIONS=0
 MAX_ITERATIONS=$((NUM_BOOKS / 200 + 5))
 
 while [ "$HAS_MORE" = "true" ]; do
   echo "Iteration $ITERATIONS, cursor: $CURSOR"
-  PULL_RESP=$(curl "$API_URL/sync&cursor=$CURSOR")
+  if [ -n "$CURSOR" ] && [ "$CURSOR" != "null" ]; then
+    PULL_URL="$API_URL/sync?library_id=$LIB_ID&calibre_library_uuid=$CALIBRE_LIB_UUID&cursor=$CURSOR&limit=200"
+  else
+    PULL_URL="$API_URL/sync?library_id=$LIB_ID&calibre_library_uuid=$CALIBRE_LIB_UUID&limit=200"
+  fi
+  PULL_RESP=$(curl "$PULL_URL")
   
   HAS_MORE=$(echo "$PULL_RESP" | jq -r '.has_more')
   CURSOR=$(echo "$PULL_RESP" | jq -r '.new_cursor')

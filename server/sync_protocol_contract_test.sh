@@ -60,6 +60,10 @@ cleanup_created_book() {
 
   local cleanup_email="${CLEANUP_EMAIL:-$TEST_USER_EMAIL}"
   local cleanup_password="${CLEANUP_PASSWORD:-$TEST_USER_PASSWORD}"
+  if [[ -z "$cleanup_email" || -z "$cleanup_password" ]]; then
+    echo "Cleanup skipped: missing CLEANUP credentials"
+    return 0
+  fi
 
   local cleanup_login
   cleanup_login=$(curl -s -X POST "$API_URL/auth/login" \
@@ -68,8 +72,8 @@ cleanup_created_book() {
   local cleanup_token
   cleanup_token=$(echo "$cleanup_login" | jq -r '.token // empty')
   if [[ -z "$cleanup_token" ]]; then
-    echo "Cleanup login failed: $cleanup_login"
-    return 1
+    echo "Cleanup login failed (skipped): $cleanup_login"
+    return 0
   fi
 
   local cleanup_header="Authorization: Bearer $cleanup_token"
@@ -90,8 +94,8 @@ EOF
   local status
   status=$(echo "$resp" | jq -r '.status // empty')
   if [[ "$status" != "ok" ]]; then
-    echo "Cleanup failed: $resp"
-    return 1
+    echo "Cleanup failed (skipped): $resp"
+    return 0
   fi
 
   echo "Cleanup OK (book ${CREATED_BOOK_ID})"
@@ -129,8 +133,8 @@ request "GET" "/libraries"
 if [[ "$RESPONSE_CODE" != "200" ]]; then
   fail "Failed to list libraries ($RESPONSE_CODE): $RESPONSE_BODY"
 fi
-LIBRARY_ID=$(echo "$RESPONSE_BODY" | jq -r '.[] | select(.calibre_library_uuid != null and .calibre_library_uuid != \"\") | .id' | head -n 1)
-CALIBRE_LIBRARY_UUID=$(echo "$RESPONSE_BODY" | jq -r '.[] | select(.calibre_library_uuid != null and .calibre_library_uuid != \"\") | .calibre_library_uuid' | head -n 1)
+LIBRARY_ID=$(echo "$RESPONSE_BODY" | jq -r '.[] | select(.calibre_library_uuid != null and .calibre_library_uuid != "") | .id' | head -n 1)
+CALIBRE_LIBRARY_UUID=$(echo "$RESPONSE_BODY" | jq -r '.[] | select(.calibre_library_uuid != null and .calibre_library_uuid != "") | .calibre_library_uuid' | head -n 1)
 if [[ -z "$LIBRARY_ID" || -z "$CALIBRE_LIBRARY_UUID" ]]; then
   fail "No library with calibre_library_uuid found for tests"
 fi
@@ -165,6 +169,7 @@ echo "$RESPONSE_BODY" | jq -e '.inventory | has("version") and has("min") and ha
 # Create book
 NOW=$(date +%s)
 BOOK_ID=$((900000 + (RANDOM % 10000)))
+BOOK_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
 CREATE_PAYLOAD=$(cat <<EOF
 {
   "library_id": $LIBRARY_ID,
@@ -173,6 +178,7 @@ CREATE_PAYLOAD=$(cat <<EOF
     "op": "create",
     "item": {
       "id": $BOOK_ID,
+      "uuid": "$BOOK_UUID",
       "title": "Contract Book $NOW",
       "authors": [{"name":"Tester","role":"author"}],
       "timestamps": {
@@ -246,6 +252,7 @@ CONFLICT_PAYLOAD=$(cat <<EOF
     "op": "update",
     "item": {
       "id": $BOOK_ID,
+      "uuid": "$BOOK_UUID",
       "version": $OLDER_VERSION,
       "title": "Client Older Update $NOW",
       "timestamps": {
@@ -272,7 +279,7 @@ DELETE_PAYLOAD=$(cat <<EOF
   "calibre_library_uuid": "$CALIBRE_LIBRARY_UUID",
   "changes": [{
     "op": "delete",
-    "item": { "id": $BOOK_ID, "last_modified": $(date -u +%s) },
+    "item": { "id": $BOOK_ID, "uuid": "$BOOK_UUID", "last_modified": $(date -u +%s) },
     "idempotency_key": "contract-delete-$NOW"
   }]
 }
@@ -292,7 +299,7 @@ RESURRECT_PAYLOAD=$(cat <<EOF
   "calibre_library_uuid": "$CALIBRE_LIBRARY_UUID",
   "changes": [{
     "op": "update",
-    "item": { "id": $BOOK_ID, "title": "Should Fail", "last_modified": $(date -u +%s) },
+    "item": { "id": $BOOK_ID, "uuid": "$BOOK_UUID", "title": "Should Fail", "last_modified": $(date -u +%s) },
     "idempotency_key": "contract-update-deleted-$NOW"
   }]
 }

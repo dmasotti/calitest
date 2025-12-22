@@ -84,21 +84,23 @@ if [[ -n "${SEED_BOOKS:-}" || -n "${SEED_BOOKS_COUNT:-}" ]]; then
   CHANGES=$(python - <<PY
 import json
 import time
+import uuid
 from datetime import datetime, timezone
 
 count = int("$COUNT")
 base = int(time.time()) % 1000000
 now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 changes = []
-for i in range(count):
-    bid = base + i + 100000
-    changes.append({
-        "op": "create",
-        "idempotency_key": f"seed-{bid}",
-        "item": {
-            "id": bid,
-            "title": f"Seed Book {i+1}",
-            "authors": [{"name": "Seeder"}],
+    for i in range(count):
+        bid = base + i + 100000
+        changes.append({
+            "op": "create",
+            "idempotency_key": f"seed-{bid}",
+            "item": {
+                "id": bid,
+                "uuid": str(uuid.uuid4()),
+                "title": f"Seed Book {i+1}",
+                "authors": [{"name": "Seeder"}],
             "tags": ["seed"],
             "last_modified": int(time.time())
         }

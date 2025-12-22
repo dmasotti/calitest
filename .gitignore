@@ -1,4 +1,5 @@
 .env
+*.log
 server/run_sync_debug.log
 server/run_sync_fixed.log
 server/run_sync_http.log

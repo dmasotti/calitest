@@ -74,6 +74,11 @@ PY
 fi
 
 BOOK_ID=$((RANDOM + 930000))
+BOOK_UUID=$(python - <<'PY'
+import uuid
+print(str(uuid.uuid4()))
+PY
+)
 NOW_TS=$(date -u +%s)
 
 CREATE_PAYLOAD=$(cat <<JSON
@@ -86,6 +91,7 @@ CREATE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "cover-missing-$BOOK_ID",
       "item": {
         "id": $BOOK_ID,
+        "uuid": "$BOOK_UUID",
         "title": "Cover Missing Test",
         "authors": [{"name": "Tester"}],
         "cover": {"has_cover": true},

@@ -8,6 +8,7 @@ use App\Models\SyncMapping;
 use App\Models\User;
 use App\Models\UserBook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -21,6 +22,7 @@ class SyncPushTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         Sanctum::actingAs($user);
 
+        $uuid = (string) Str::uuid();
         $payload = [
             'library_id' => $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
@@ -29,6 +31,7 @@ class SyncPushTest extends TestCase
                     'op' => 'create',
                     'item' => [
                         'id' => 123,
+                        'uuid' => $uuid,
                         'title' => 'Idempotent',
                         'authors' => [['name' => 'Tester', 'role' => 'author']],
                         'last_modified' => now()->timestamp,
@@ -57,6 +60,7 @@ class SyncPushTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         Sanctum::actingAs($user);
 
+        $uuid = (string) Str::uuid();
         $payload = [
             'library_id' => $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
@@ -65,6 +69,7 @@ class SyncPushTest extends TestCase
                     'op' => 'create',
                     'item' => [
                         'id' => 124,
+                        'uuid' => $uuid,
                         'title' => 'First',
                         'authors' => [['name' => 'Tester', 'role' => 'author']],
                         'last_modified' => now()->timestamp,
@@ -90,6 +95,7 @@ class SyncPushTest extends TestCase
         Sanctum::actingAs($user);
 
         $clientKey = 'calibre:' . $library->calibre_library_id . ':200';
+        $uuid = (string) Str::uuid();
         $payload = [
             'library_id' => $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
@@ -98,6 +104,7 @@ class SyncPushTest extends TestCase
                     'op' => 'create',
                     'item' => [
                         'id' => 200,
+                        'uuid' => $uuid,
                         'title' => 'Mapping Book',
                         'authors' => [['name' => 'Tester', 'role' => 'author']],
                         'client_ids' => [$clientKey => '200'],
@@ -128,6 +135,7 @@ class SyncPushTest extends TestCase
         $book = UserBook::create([
             'user_id' => $user->id,
             'library_id' => $library->id,
+            'uuid' => (string) Str::uuid(),
             'id' => 300,
             'title' => 'Server Title',
             'last_modified' => now(),
@@ -142,6 +150,7 @@ class SyncPushTest extends TestCase
                     'op' => 'update',
                     'item' => [
                         'id' => 300,
+                        'uuid' => $book->uuid,
                         'version' => $olderVersion,
                         'title' => 'Client Older',
                         'timestamps' => [

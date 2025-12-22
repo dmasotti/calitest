@@ -56,6 +56,11 @@ if [[ -z "$CALIMOB_LIBRARY_ID" || -z "$CALIBRE_LIBRARY_ID" || "$CALIMOB_LIBRARY_
 fi
 
 BOOK_ID=$((RANDOM + 910000))
+BOOK_UUID=$(python - <<'PY'
+import uuid
+print(str(uuid.uuid4()))
+PY
+)
 NOW_TS=$(date -u +%s)
 
 CREATE_PAYLOAD=$(cat <<JSON
@@ -68,6 +73,7 @@ CREATE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "cover-create-$BOOK_ID",
       "item": {
         "id": $BOOK_ID,
+        "uuid": "$BOOK_UUID",
         "title": "Cover Test",
         "authors": [{"name": "Tester"}],
         "cover": {"has_cover": true},

@@ -51,6 +51,11 @@ if [[ -z "$CALIMOB_LIBRARY_ID" || -z "$CALIBRE_LIBRARY_ID" || "$CALIMOB_LIBRARY_
 fi
 
 BOOK_ID=$((RANDOM + 900000))
+BOOK_UUID=$(python - <<'PY'
+import uuid
+print(str(uuid.uuid4()))
+PY
+)
 NOW_TS=$(date -u +%s)
 
 CREATE_PAYLOAD=$(cat <<JSON
@@ -63,6 +68,7 @@ CREATE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "conflict-create-$BOOK_ID",
       "item": {
         "id": $BOOK_ID,
+        "uuid": "$BOOK_UUID",
         "title": "Conflict Test A",
         "authors": [{"name": "Tester"}],
         "last_modified": $NOW_TS
@@ -97,6 +103,7 @@ UPDATE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "conflict-update-$BOOK_ID",
       "item": {
         "id": $BOOK_ID,
+        "uuid": "$BOOK_UUID",
         "title": "Conflict Test B",
         "version": $OLDER_VERSION,
         "last_modified": $NOW_TS

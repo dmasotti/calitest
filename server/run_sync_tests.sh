@@ -5,6 +5,49 @@
 
 set -euo pipefail
 
+LOGFILE="run_sync_http.log"
+rm -f "$LOGFILE"
+
+LAST_CURL_URL=""
+LAST_CURL_STATUS=""
+LAST_CURL_BODY=""
+TEST_DEBUG="${TEST_DEBUG:-0}"
+
+handle_failure() {
+  local exit_code=$1
+  local line_no=${2:-?}
+  trap - ERR
+  set +e
+  echo ""
+  echo "=== TEST FAILURE === (exit code $exit_code at line $line_no)"
+  if [[ -n "$LAST_CURL_STATUS" ]]; then
+    echo "Last API URL: ${LAST_CURL_URL:-<unknown>}"
+    echo "HTTP Status: $LAST_CURL_STATUS"
+    echo "Response body:"
+    printf '%s\n' "$LAST_CURL_BODY"
+    if [[ "${TEST_DEBUG}" == "1" && -n "$LAST_CURL_BODY" ]]; then
+      if command -v jq >/dev/null 2>&1; then
+        local trace
+        trace=$(printf '%s\n' "$LAST_CURL_BODY" | jq -r '.trace? // empty' 2>/dev/null || true)
+        if [[ -n "$trace" && "$trace" != "[]" && "$trace" != "null" ]]; then
+          echo "Stack trace from server (debug mode enabled):"
+          printf '%s\n' "$trace"
+        fi
+      fi
+    fi
+  else
+    echo "No API call logged yet."
+  fi
+  if [[ -f "$LOGFILE" ]]; then
+    echo ""
+    echo "=== Last lines of $LOGFILE ==="
+    tail -n 400 "$LOGFILE" || true
+  fi
+  exit "$exit_code"
+}
+
+trap 'handle_failure $? $LINENO' ERR
+
 DISCOVERY_URL=${DISCOVERY_URL:-http://localhost}
 TEST_EMAIL=${TEST_USER_EMAIL:-}
 TEST_PASSWORD=${TEST_USER_PASSWORD:-}
@@ -19,9 +62,6 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 # HTTP wrapper: log all requests and responses (including errors) to run_sync_http.log
-LOGFILE="run_sync_http.log"
-rm -f "$LOGFILE"
-
 curl() {
   # Wrapper around system curl that saves response body and HTTP status to log file.
   # Usage: curl [args...]
@@ -45,12 +85,24 @@ curl() {
   echo '--- CURL STDERR ---' >>"$LOGFILE"
   printf '%s\n' "$out_clean" >>"$LOGFILE"
   echo '--- CURL BODY ---' >>"$LOGFILE"
-  cat "$tmp" >>"$LOGFILE"
+  local response_body
+  response_body=$(cat "$tmp")
+  printf '%s\n' "$response_body" >>"$LOGFILE"
+  LAST_CURL_BODY="$response_body"
+  LAST_CURL_STATUS="$code"
+  local request_url=""
+  for arg in "$@"; do
+    if [[ "$arg" =~ ^https?:// ]]; then
+      request_url="$arg"
+      break
+    fi
+  done
+  LAST_CURL_URL="$request_url"
   echo "" >>"$LOGFILE"
   printf '__HTTP_STATUS__:%s\n' "$code" >>"$LOGFILE"
 
   # Print body to stdout for script consumption
-  cat "$tmp"
+  printf '%s\n' "$response_body"
   # Only print HTTP_STATUS to stdout if stdout is a terminal (avoid breaking pipes to jq)
   if [ -t 1 ]; then
     echo "HTTP_STATUS:$code"
@@ -129,7 +181,7 @@ echo "Created library id=$LIB_ID calibre_uuid=$CALIBRE_LIB_UUID"
 echo "Creating legacy book via /api/sync/books"
 LEGACY_LOCAL_ID=$((RANDOM % 9000 + 1000))  # ID tra 1000-9999
 LEGACY_BOOK_TITLE="Legacy Book $(date +%s)"
-LEGACY_PAYLOAD=$(jq -n --arg lib "$LIB_ID" --arg uuid "$CALIBRE_LIB_UUID" --arg local_id "$LEGACY_LOCAL_ID" --arg title "$LEGACY_BOOK_TITLE" '{ device_uuid: "test-device", library_id: ($lib|tonumber), calibre_library_uuid: $uuid, library_name: "test", books: [{ local_book_id: $local_id, title: $title }] }')
+LEGACY_PAYLOAD=$(jq -n --arg lib "$LIB_ID" --arg uuid "$CALIBRE_LIB_UUID" --arg local_id "$LEGACY_LOCAL_ID" --arg title "$LEGACY_BOOK_TITLE" --argjson series_index 1 '{ device_uuid: "test-device", library_id: ($lib|tonumber), calibre_library_uuid: $uuid, library_name: "test", books: [{ local_book_id: $local_id, title: $title, series_index: $series_index }] }')
 LEGACY_RESP=$(curl -sS -X POST "$API_URL/sync/books" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$LEGACY_PAYLOAD")
 echo "$LEGACY_RESP" | jq '.'
 
@@ -137,7 +189,8 @@ echo "$LEGACY_RESP" | jq '.'
 CLIENT_BOOK_ID=100000
 CLIENT_TITLE="Sync Created Book $(date +%s)"
 CLIENT_CHANGE_KEY="c_$(date +%s)"
-CHANGE_PAYLOAD=$(jq -n --arg id "$CLIENT_BOOK_ID" --arg title "$CLIENT_TITLE" --arg client_key "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID" '{ client_cursor: null, library_id: ($env.LIB_ID|tonumber), calibre_library_uuid: $env.CALIBRE_LIB_UUID, changes: [ { op: "create", idempotency_key: ($env.CLIENT_CHANGE_KEY), item: { id: ($env.CLIENT_BOOK_ID|tonumber), title: $env.CLIENT_TITLE, client_ids: { ($env.CLIENT_KEY): ($env.CLIENT_BOOK_ID|tostring) }, last_modified: (now | floor) } } ] }' 2>/dev/null || true)
+CLIENT_UUID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "client-$(date +%s)-$RANDOM")
+CHANGE_PAYLOAD=$(jq -n --arg id "$CLIENT_BOOK_ID" --arg title "$CLIENT_TITLE" --arg client_key "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID" --arg uuid "$CLIENT_UUID" '{ client_cursor: null, library_id: ($env.LIB_ID|tonumber), calibre_library_uuid: $env.CALIBRE_LIB_UUID, changes: [ { op: "create", idempotency_key: ($env.CLIENT_CHANGE_KEY), item: { id: ($env.CLIENT_BOOK_ID|tonumber), uuid: $uuid, title: $env.CLIENT_TITLE, client_ids: { ($env.CLIENT_KEY): ($env.CLIENT_BOOK_ID|tostring) }, last_modified: (now | floor) } } ] }' 2>/dev/null || true)
 # fallback simpler payload if jq complex interpolation fails
 CHANGE_PAYLOAD=$(cat <<JSON
 {
@@ -148,12 +201,13 @@ CHANGE_PAYLOAD=$(cat <<JSON
     {
       "op": "create",
       "idempotency_key": "$CLIENT_CHANGE_KEY",
-      "item": {
-        "id": $CLIENT_BOOK_ID,
-        "title": "$CLIENT_TITLE",
-        "client_ids": { "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID": "$CLIENT_BOOK_ID" },
-        "last_modified": $(date -u +%s)
-      }
+    "item": {
+      "id": $CLIENT_BOOK_ID,
+      "uuid": "$CLIENT_UUID",
+      "title": "$CLIENT_TITLE",
+      "client_ids": { "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID": "$CLIENT_BOOK_ID" },
+      "last_modified": $(date -u +%s)
+    }
     }
   ]
 }
@@ -189,6 +243,7 @@ DELETE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "del_$(date +%s)",
       "item": {
         "id": $CLIENT_BOOK_ID,
+        "uuid": "$CLIENT_UUID",
         "last_modified": $(date -u +%s)
       }
     }
@@ -207,6 +262,7 @@ echo "$ITEM_RESP" | jq '.'
 
 # 8) Real conflict test - modify same critical field (title) with different values
 REAL_CONFLICT_BOOK_ID=$((400000 + RANDOM % 10000))  # Random ID to avoid conflicts with previous test runs
+REAL_CONFLICT_UUID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "conflict-$(date +%s)-$RANDOM")
 CONFLICT2_TITLE="Real Conflict Book $(date +%s)"
 CONFLICT2_CREATE_PAYLOAD=$(cat <<JSON
 {
@@ -219,6 +275,7 @@ CONFLICT2_CREATE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "real_conf_create_$(date +%s)",
       "item": {
         "id": $REAL_CONFLICT_BOOK_ID,
+        "uuid": "$REAL_CONFLICT_UUID",
         "title": "$CONFLICT2_TITLE",
         "last_modified": $(date -u +%s)
       }
@@ -229,7 +286,13 @@ JSON
 )
 
 echo "Creating real conflict book"
-api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CONFLICT2_CREATE_PAYLOAD" | jq '.'
+REAL_CONFLICT_CREATE_RESP=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CONFLICT2_CREATE_PAYLOAD")
+echo "$REAL_CONFLICT_CREATE_RESP" | jq '.'
+REAL_CONFLICT_UUID=$(echo "$REAL_CONFLICT_CREATE_RESP" | jq -r '.results[0].server_item.uuid // empty')
+if [[ -z "$REAL_CONFLICT_UUID" ]]; then
+  echo "Failed to capture real conflict uuid from server response"
+  exit 6
+fi
 
 # Update server-side with one title and same other fields
 SERVER_TITLE_A="Server Title A"
@@ -243,13 +306,14 @@ SERVER_TITLE_UPDATE=$(cat <<JSON
     {
       "op": "update",
       "idempotency_key": "server_title_a_$(date +%s)",
-      "item": {
-        "id": $REAL_CONFLICT_BOOK_ID,
-        "title": "$SERVER_TITLE_A",
-        "publisher": "Test Publisher",
-        "page_count": 200,
-        "last_modified": $SERVER_TITLE_A_TS
-      }
+        "item": {
+          "id": $REAL_CONFLICT_BOOK_ID,
+          "uuid": "$REAL_CONFLICT_UUID",
+          "title": "$SERVER_TITLE_A",
+          "publisher": "Test Publisher",
+          "page_count": 200,
+          "last_modified": $SERVER_TITLE_A_TS
+        }
     }
   ]
 }
@@ -272,14 +336,15 @@ CLIENT_TITLE_UPDATE=$(cat <<JSON
     {
       "op": "update",
       "idempotency_key": "client_title_b_$(date +%s)",
-      "item": {
-        "id": $REAL_CONFLICT_BOOK_ID,
-        "title": "$CLIENT_TITLE_B",
-        "publisher": "Test Publisher",
-        "page_count": 200,
-        "last_modified": $CLIENT_TITLE_B_TS,
-        "version": 1
-      }
+        "item": {
+          "id": $REAL_CONFLICT_BOOK_ID,
+          "uuid": "$REAL_CONFLICT_UUID",
+          "title": "$CLIENT_TITLE_B",
+          "publisher": "Test Publisher",
+          "page_count": 200,
+          "last_modified": $CLIENT_TITLE_B_TS,
+          "version": 1
+        }
     }
   ]
 }

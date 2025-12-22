@@ -127,3 +127,7 @@ DISCOVERY_URL=https://example.com TEST_USER_EMAIL=user@example.com TEST_USER_PAS
 DISCOVERY_URL=https://example.com TEST_USER_EMAIL=user@example.com TEST_USER_PASSWORD=secret ./tests/server/sync_protocol_contract_test.sh
 DISCOVERY_URL=https://example.com TEST_USER_EMAIL=user@example.com TEST_USER_PASSWORD=secret ./tests/server/sync_pull_post_inventory_test.sh
 ```
+
+### Debugging API failures
+
+Gli script nella directory `tests/server/` ora mostrano automaticamente l’ultima risposta API quando un comando fallisce. Il log `run_sync_http.log` viene tailato alla fine per fornire contesto aggiuntivo e, se impostato `TEST_DEBUG=1`, viene anche estratto il campo `trace` JSON (quando presente, server in modalità `APP_DEBUG=true`) per visualizzare lo stack trace restituito dall’API. Questa modalità aiuta a identificare immediatamente l’end-point e la payload responsabile del fallimento.
