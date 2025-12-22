@@ -179,6 +179,7 @@ if [[ "$COUNT_1" -lt 1 ]]; then
   exit 1
 fi
 
+UPDATE_TS=$(date -u +%s)
 UPDATE_PAYLOAD=$(cat <<JSON
 {
   "library_id": $CALIMOB_SERVER_LIBRARY_ID,
@@ -191,7 +192,7 @@ UPDATE_PAYLOAD=$(cat <<JSON
         "id": $BOOK_ID,
         "title": "$TITLE_2",
         "authors": [{"name": "DeepSuite"}],
-        "last_modified": $NOW_TS
+        "last_modified": $UPDATE_TS
       }
     }
   ]
