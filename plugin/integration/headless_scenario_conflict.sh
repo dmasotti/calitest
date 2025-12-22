@@ -51,11 +51,7 @@ if [[ -z "$CALIMOB_LIBRARY_ID" || -z "$CALIBRE_LIBRARY_ID" || "$CALIMOB_LIBRARY_
 fi
 
 BOOK_ID=$((RANDOM + 900000))
-NOW_ISO=$(python - <<'PY'
-import datetime
-print(datetime.datetime.utcnow().replace(microsecond=0).isoformat()+"+00:00")
-PY
-)
+NOW_TS=$(date -u +%s)
 
 CREATE_PAYLOAD=$(cat <<JSON
 {
@@ -69,7 +65,7 @@ CREATE_PAYLOAD=$(cat <<JSON
         "id": $BOOK_ID,
         "title": "Conflict Test A",
         "authors": [{"name": "Tester"}],
-        "timestamps": {"updated_at": "$NOW_ISO", "updated_at_unix": 0}
+        "last_modified": $NOW_TS
       }
     }
   ]
@@ -103,7 +99,7 @@ UPDATE_PAYLOAD=$(cat <<JSON
         "id": $BOOK_ID,
         "title": "Conflict Test B",
         "version": $OLDER_VERSION,
-        "timestamps": {"updated_at": "$NOW_ISO", "updated_at_unix": 0}
+        "last_modified": $NOW_TS
       }
     }
   ]

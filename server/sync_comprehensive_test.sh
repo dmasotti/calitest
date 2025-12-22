@@ -158,13 +158,13 @@ PUSH_PAYLOAD=$(cat <<EOF
             "tags": [{"name": "Test"}],
             "languages": ["eng"],
             "publisher": "Test Publisher",
-            "pubdate": "2025-01-01",
+            "pubdate": 1735689600,
             "description": "A test book for comprehensive testing",
             "cover": {"has_cover": false},
             "timestamps": {
-                "created_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)",
-                "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
+                "created_at": $TIMESTAMP
             },
+            "last_modified": $TIMESTAMP,
             "client_ids": {"calibre:$LIBRARY_ID:$BOOK_ID": "$BOOK_ID"}
         },
         "idempotency_key": "test-create-$TIMESTAMP"
@@ -197,9 +197,7 @@ UPDATE_PAYLOAD=$(cat <<EOF
             "id": $CREATED_BOOK_ID,
             "title": "Updated Test Book $TIMESTAMP",
             "status": "reading",
-            "timestamps": {
-                "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
-            }
+            "last_modified": $(date -u +%s)
         },
         "idempotency_key": "test-update-$TIMESTAMP"
     }]
@@ -272,9 +270,7 @@ DELETE_PAYLOAD=$(cat <<EOF
         "op": "delete",
         "item": {
             "id": $CREATED_BOOK_ID,
-            "timestamps": {
-                "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
-            }
+            "last_modified": $(date -u +%s)
         },
         "idempotency_key": "test-delete-$TIMESTAMP"
     }]
@@ -298,7 +294,7 @@ log_test "Verifying triplet-based matching"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 # Try to create book with same ID but different library (should create separate book)
 OTHER_LIB_ID=$((LIBRARY_ID + 1))
-TRIPLET_TEST='{"library_id":'$OTHER_LIB_ID',"calibre_library_uuid":"'$CALIBRE_LIBRARY_ID'","device_uuid":"test-device-'$TIMESTAMP'","changes":[{"op":"create","item":{"id":'$BOOK_ID',"title":"Same ID Different Library","timestamps":{"created_at":"'$(date -u +%Y-%m-%dT%H:%M:%S+00:00)'"}},"idempotency_key":"test-triplet-'$TIMESTAMP'"}]}'
+TRIPLET_TEST='{"library_id":'$OTHER_LIB_ID',"calibre_library_uuid":"'$CALIBRE_LIBRARY_ID'","device_uuid":"test-device-'$TIMESTAMP'","changes":[{"op":"create","item":{"id":'$BOOK_ID',"title":"Same ID Different Library","timestamps":{"created_at":'$(date -u +%s)'},"last_modified":'$(date -u +%s)'},"idempotency_key":"test-triplet-'$TIMESTAMP'"}]}'
 # This should either fail (library doesn't exist) or create separate book - both OK
 log_pass "Triplet matching protocol verified"
 

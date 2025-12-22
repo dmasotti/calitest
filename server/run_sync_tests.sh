@@ -137,7 +137,7 @@ echo "$LEGACY_RESP" | jq '.'
 CLIENT_BOOK_ID=100000
 CLIENT_TITLE="Sync Created Book $(date +%s)"
 CLIENT_CHANGE_KEY="c_$(date +%s)"
-CHANGE_PAYLOAD=$(jq -n --arg id "$CLIENT_BOOK_ID" --arg title "$CLIENT_TITLE" --arg client_key "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID" --argjson ts "$(date -u +%Y-%m-%dT%H:%M:%SZ | sed 's/.*/"&"/')" '{ client_cursor: null, library_id: ($env.LIB_ID|tonumber), calibre_library_uuid: $env.CALIBRE_LIB_UUID, changes: [ { op: "create", idempotency_key: ($env.CLIENT_CHANGE_KEY), item: { id: ($env.CLIENT_BOOK_ID|tonumber), title: $env.CLIENT_TITLE, client_ids: { ($env.CLIENT_KEY): ($env.CLIENT_BOOK_ID|tostring) }, timestamps: { updated_at: (now | tostring) } } } ] }' 2>/dev/null || true)
+CHANGE_PAYLOAD=$(jq -n --arg id "$CLIENT_BOOK_ID" --arg title "$CLIENT_TITLE" --arg client_key "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID" '{ client_cursor: null, library_id: ($env.LIB_ID|tonumber), calibre_library_uuid: $env.CALIBRE_LIB_UUID, changes: [ { op: "create", idempotency_key: ($env.CLIENT_CHANGE_KEY), item: { id: ($env.CLIENT_BOOK_ID|tonumber), title: $env.CLIENT_TITLE, client_ids: { ($env.CLIENT_KEY): ($env.CLIENT_BOOK_ID|tostring) }, last_modified: (now | floor) } } ] }' 2>/dev/null || true)
 # fallback simpler payload if jq complex interpolation fails
 CHANGE_PAYLOAD=$(cat <<JSON
 {
@@ -152,7 +152,7 @@ CHANGE_PAYLOAD=$(cat <<JSON
         "id": $CLIENT_BOOK_ID,
         "title": "$CLIENT_TITLE",
         "client_ids": { "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID": "$CLIENT_BOOK_ID" },
-        "timestamps": { "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)" }
+        "last_modified": $(date -u +%s)
       }
     }
   ]
@@ -189,7 +189,7 @@ DELETE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "del_$(date +%s)",
       "item": {
         "id": $CLIENT_BOOK_ID,
-        "timestamps": { "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)" }
+        "last_modified": $(date -u +%s)
       }
     }
   ]
@@ -220,7 +220,7 @@ CONFLICT2_CREATE_PAYLOAD=$(cat <<JSON
       "item": {
         "id": $REAL_CONFLICT_BOOK_ID,
         "title": "$CONFLICT2_TITLE",
-        "timestamps": { "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)" }
+        "last_modified": $(date -u +%s)
       }
     }
   ]
@@ -248,7 +248,7 @@ SERVER_TITLE_UPDATE=$(cat <<JSON
         "title": "$SERVER_TITLE_A",
         "publisher": "Test Publisher",
         "page_count": 200,
-        "timestamps": { "updated_at": "$SERVER_TITLE_A_TS" }
+        "last_modified": $SERVER_TITLE_A_TS
       }
     }
   ]
@@ -277,7 +277,7 @@ CLIENT_TITLE_UPDATE=$(cat <<JSON
         "title": "$CLIENT_TITLE_B",
         "publisher": "Test Publisher",
         "page_count": 200,
-        "timestamps": { "updated_at": "$CLIENT_TITLE_B_TS" },
+        "last_modified": $CLIENT_TITLE_B_TS,
         "version": 1
       }
     }
@@ -321,7 +321,7 @@ CONFLICT_CREATE_PAYLOAD=$(cat <<JSON
       "item": {
         "id": $CONFLICT_BOOK_ID,
         "title": "$CONFLICT_TITLE",
-        "timestamps": { "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)" }
+        "last_modified": $(date -u +%s)
       }
     }
   ]
@@ -348,7 +348,7 @@ SERVER_UPDATE_PAYLOAD=$(cat <<JSON
       "item": {
         "id": $CONFLICT_BOOK_ID,
         "title": "$NEWER_TITLE",
-        "timestamps": { "updated_at": "$SERVER_NEWER_TS" }
+        "last_modified": $SERVER_NEWER_TS
       }
     }
   ]
@@ -373,7 +373,7 @@ CLIENT_OLDER_UPDATE_PAYLOAD=$(cat <<JSON
       "item": {
         "id": $CONFLICT_BOOK_ID,
         "title": "Client-Older-Title",
-        "timestamps": { "updated_at": "$CLIENT_OLDER_TS" },
+        "last_modified": $CLIENT_OLDER_TS,
         "version": 1
       }
     }
@@ -433,7 +433,7 @@ if [ -n "${TEST_USER_EMAIL_2:-}" ] && [ -n "${TEST_USER_PASSWORD_2:-}" ]; then
         "id": $BOOK1_ID,
         "uuid": "$SHARED_UUID",
         "title": "Shared UUID Book User1",
-        "timestamps": { "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)" }
+        "last_modified": $(date -u +%s)
       }
     }
   ]
@@ -458,7 +458,7 @@ JSON
         "id": $BOOK2_ID,
         "uuid": "$SHARED_UUID",
         "title": "Shared UUID Book User2",
-        "timestamps": { "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)" }
+        "last_modified": $(date -u +%s)
       }
     }
   ]

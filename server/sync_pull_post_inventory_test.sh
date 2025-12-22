@@ -90,9 +90,9 @@ CREATE_PAYLOAD=$(cat <<EOF
       "title": "Inventory Filter Test $NOW",
       "authors": [{"name":"Tester","role":"author"}],
       "timestamps": {
-        "created_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)",
-        "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
-      }
+        "created_at": $NOW
+      },
+      "last_modified": $NOW
     },
     "idempotency_key": "inv-create-$NOW"
   }]
@@ -122,7 +122,7 @@ DELETE_PAYLOAD=$(cat <<EOF
   "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "changes": [{
     "op": "delete",
-    "item": {"id": $BOOK_ID, "timestamps": {"updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"}},
+    "item": {"id": $BOOK_ID, "last_modified": $(date -u +%s)},
     "idempotency_key": "inv-delete-$NOW"
   }]
 }

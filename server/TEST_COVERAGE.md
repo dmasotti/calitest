@@ -60,7 +60,7 @@ Suite completa di test per verificare il funzionamento corretto di subscription,
 
 ### 7. `SyncPullTest.php` (5 test)
 - ✅ last_modified precede updated_at (no false positives)
-- ✅ updated_at usato se last_modified null
+- ✅ updated_at usato se last_modified null (fallback server-side)
 - ✅ inventory_hint solo su delta
 - ✅ POST /sync/pull filtra tombstone con client_inventory
 - ✅ paginazione + has_more

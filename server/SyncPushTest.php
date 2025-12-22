@@ -31,9 +31,7 @@ class SyncPushTest extends TestCase
                         'id' => 123,
                         'title' => 'Idempotent',
                         'authors' => [['name' => 'Tester', 'role' => 'author']],
-                        'timestamps' => [
-                            'updated_at' => now()->toIso8601String(),
-                        ],
+                        'last_modified' => now()->timestamp,
                         'client_ids' => [
                             'calibre:' . $library->calibre_library_id . ':123' => '123',
                         ],
@@ -69,9 +67,7 @@ class SyncPushTest extends TestCase
                         'id' => 124,
                         'title' => 'First',
                         'authors' => [['name' => 'Tester', 'role' => 'author']],
-                        'timestamps' => [
-                            'updated_at' => now()->toIso8601String(),
-                        ],
+                        'last_modified' => now()->timestamp,
                     ],
                     'idempotency_key' => 'idem-2',
                 ],
@@ -105,9 +101,7 @@ class SyncPushTest extends TestCase
                         'title' => 'Mapping Book',
                         'authors' => [['name' => 'Tester', 'role' => 'author']],
                         'client_ids' => [$clientKey => '200'],
-                        'timestamps' => [
-                            'updated_at' => now()->toIso8601String(),
-                        ],
+                        'last_modified' => now()->timestamp,
                     ],
                     'idempotency_key' => 'idem-map-1',
                 ],
@@ -151,7 +145,7 @@ class SyncPushTest extends TestCase
                         'version' => $olderVersion,
                         'title' => 'Client Older',
                         'timestamps' => [
-                            'updated_at' => now()->toIso8601String(),
+                            'last_modified' => now()->timestamp,
                         ],
                     ],
                     'idempotency_key' => 'idem-conflict-1',

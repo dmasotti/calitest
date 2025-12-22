@@ -176,8 +176,10 @@ def sample_json_item():
         },
         'extra': {},
         'version': 1,
-        'updated_at': '2024-01-01T00:00:00Z',
-        'created_at': '2024-01-01T00:00:00Z',
+        'last_modified': 1704067200,
+        'timestamps': {
+            'created_at': 1704067200
+        },
     }
 
 

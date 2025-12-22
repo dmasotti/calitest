@@ -37,13 +37,13 @@ def test_scenario_create_book():
             'tags': [{'name': 'Fiction'}, {'name': 'Sci-Fi'}],
             'languages': ['eng'],
             'publisher': 'Test Publisher',
-            'pubdate': '2025-01-01',
+            'pubdate': 1735689600,
             'description': 'A test book',
             'cover': {'has_cover': False},
             'timestamps': {
-                'created_at': '2025-12-20T14:00:00+00:00',
-                'updated_at': '2025-12-20T14:00:00+00:00'
+                'created_at': 1766248800
             },
+            'last_modified': 1766248800,
             'client_ids': {f'calibre:{library_id}:{book_id}': str(book_id)}
         },
         'idempotency_key': 'test-create-key-001'
@@ -82,9 +82,7 @@ def test_scenario_update_book():
             'title': 'Updated Book Title',
             'status': 'reading',
             'progress_percent': 50,
-            'timestamps': {
-                'updated_at': '2025-12-20T15:00:00+00:00'
-            }
+            'last_modified': 1766252400
         },
         'idempotency_key': 'test-update-key-001'
     }
@@ -113,7 +111,7 @@ def test_scenario_delete_book():
         'item': {
             'id': book_id,
             'client_ids': {f'calibre:{library_id}:{book_id}': str(book_id)},
-            'timestamps': {'updated_at': '2025-12-20T16:00:00+00:00'}
+            'last_modified': 1766256000
         },
         'idempotency_key': 'test-delete-key-001'
     }
@@ -141,9 +139,9 @@ def test_scenario_pull_response():
                     'title': 'Server Book',
                     'authors': [{'name': 'Server Author'}],
                     'timestamps': {
-                        'created_at': '2025-12-20T10:00:00+00:00',
-                        'updated_at': '2025-12-20T10:00:00+00:00'
-                    }
+                        'created_at': 1766224800
+                    },
+                    'last_modified': 1766224800
                 }
             },
             {
@@ -151,9 +149,7 @@ def test_scenario_pull_response():
                 'item': {
                     'id': '1001',
                     'title': 'Updated from Server',
-                    'timestamps': {
-                        'updated_at': '2025-12-20T14:30:00+00:00'
-                    }
+                    'last_modified': 1766241000
                 }
             }
         ],
@@ -261,27 +257,27 @@ def test_scenario_conflict_detection():
     client_item = {
         'id': 1001,
         'title': 'Client Version',
-        'timestamps': {'updated_at': '2025-12-20T14:00:00+00:00'}
+        'last_modified': 1766239200
     }
     
     # Server version (newer)
     server_item = {
         'id': 1001,
         'title': 'Server Version',
-        'timestamps': {'updated_at': '2025-12-20T15:00:00+00:00'}
+        'last_modified': 1766242800
     }
     
     # Parse timestamps
     from datetime import datetime
     
-    client_ts = datetime.fromisoformat(client_item['timestamps']['updated_at'].replace('+00:00', ''))
-    server_ts = datetime.fromisoformat(server_item['timestamps']['updated_at'].replace('+00:00', ''))
+    client_ts = datetime.utcfromtimestamp(client_item['last_modified'])
+    server_ts = datetime.utcfromtimestamp(server_item['last_modified'])
     
     is_conflict = server_ts > client_ts
     
     print("  ✓ Conflict detection logic valid")
-    print(f"  ✓ Client timestamp: {client_item['timestamps']['updated_at']}")
-    print(f"  ✓ Server timestamp: {server_item['timestamps']['updated_at']}")
+    print(f"  ✓ Client timestamp: {client_item['last_modified']}")
+    print(f"  ✓ Server timestamp: {server_item['last_modified']}")
     print(f"  ✓ Server is newer: {is_conflict}")
     
     return True

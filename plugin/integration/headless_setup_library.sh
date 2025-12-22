@@ -100,7 +100,7 @@ for i in range(count):
             "title": f"Seed Book {i+1}",
             "authors": [{"name": "Seeder"}],
             "tags": ["seed"],
-            "timestamps": {"updated_at": now, "updated_at_unix": 0}
+            "last_modified": int(time.time())
         }
     })
 print(json.dumps(changes))

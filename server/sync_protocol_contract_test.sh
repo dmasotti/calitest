@@ -176,9 +176,9 @@ CREATE_PAYLOAD=$(cat <<EOF
       "title": "Contract Book $NOW",
       "authors": [{"name":"Tester","role":"author"}],
       "timestamps": {
-        "created_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)",
-        "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
-      }
+        "created_at": $NOW
+      },
+      "last_modified": $NOW
     },
     "idempotency_key": "contract-create-$NOW"
   }]
@@ -249,7 +249,7 @@ CONFLICT_PAYLOAD=$(cat <<EOF
       "version": $OLDER_VERSION,
       "title": "Client Older Update $NOW",
       "timestamps": {
-        "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
+        "last_modified": $(date -u +%s)
       }
     },
     "idempotency_key": "contract-conflict-$NOW"
@@ -272,7 +272,7 @@ DELETE_PAYLOAD=$(cat <<EOF
   "calibre_library_uuid": "$CALIBRE_LIBRARY_UUID",
   "changes": [{
     "op": "delete",
-    "item": { "id": $BOOK_ID, "timestamps": { "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" } },
+    "item": { "id": $BOOK_ID, "last_modified": $(date -u +%s) },
     "idempotency_key": "contract-delete-$NOW"
   }]
 }
@@ -292,7 +292,7 @@ RESURRECT_PAYLOAD=$(cat <<EOF
   "calibre_library_uuid": "$CALIBRE_LIBRARY_UUID",
   "changes": [{
     "op": "update",
-    "item": { "id": $BOOK_ID, "title": "Should Fail", "timestamps": { "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" } },
+    "item": { "id": $BOOK_ID, "title": "Should Fail", "last_modified": $(date -u +%s) },
     "idempotency_key": "contract-update-deleted-$NOW"
   }]
 }

@@ -87,7 +87,7 @@ def test_delete_payload_structure():
     item_payload = {
         'id': book_id,
         'client_ids': {client_id_key: str(book_id)},
-        'timestamps': {'updated_at': utcnow().isoformat()}
+        'last_modified': int(utcnow().timestamp())
     }
     
     assert 'id' in item_payload, "Must have 'id' field"

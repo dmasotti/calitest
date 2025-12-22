@@ -84,7 +84,7 @@ for i in $(seq 1 $NUM_BOOKS); do
         "id": $CLIENT_BOOK_ID,
         "title": "$CLIENT_TITLE",
         "client_ids": { "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID": "$CLIENT_BOOK_ID" },
-        "timestamps": { "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)" }
+        "last_modified": $(date -u +%s)
       }
     }
 JSON
