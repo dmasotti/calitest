@@ -24,16 +24,16 @@ curl() {
 }
 
 DISCOVERY_URL=${DISCOVERY_URL:-http://localhost}
-if [[ "$DISCOVERY_URL" =~ /api/ ]]; then
-  DISCOVERY_ENDPOINT="$DISCOVERY_URL"
-else
-  DISCOVERY_ENDPOINT="$DISCOVERY_URL/api/discovery"
-fi
+DISCOVERY_ENDPOINT="$DISCOVERY_URL/discovery.php"
 
 echo "Querying discovery: $DISCOVERY_ENDPOINT"
 RAW_DISCOVERY_RESP=$(curl "$DISCOVERY_ENDPOINT")
-API_URL=$(echo "$RAW_DISCOVERY_RESP" | jq -r '.api_url // empty')
-if [ -z "$API_URL" ]; then
+API_URL=$(echo "$RAW_DISCOVERY_RESP" | jq -r '.api_url // empty' 2>/dev/null || true)
+if [ -z "$API_URL" ] || [ "$API_URL" = "null" ]; then
+  RAW_DISCOVERY_RESP=$(curl "$DISCOVERY_URL/api/discovery")
+  API_URL=$(echo "$RAW_DISCOVERY_RESP" | jq -r '.api_url // empty' 2>/dev/null || true)
+fi
+if [ -z "$API_URL" ] || [ "$API_URL" = "null" ]; then
   API_URL="$DISCOVERY_URL/api"
 fi
 
@@ -59,7 +59,7 @@ echo "Token acquired"
 echo "Creating a test library"
 LIB_NAME="infinite_loop_test_$(date +%s)"
 CALIBRE_LIB_UUID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$RANDOM")
-CREATE_LIB_RESP=$(curl -X POST -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "{ \"name\": \"$LIB_NAME\", \"description\": \"infinite loop test\", \"type\": \"calibre\", \"calibre_library_id\": \"$CALIBRE_LIB_UUID\" }" "$API_URL/libraries")
+CREATE_LIB_RESP=$(curl -X POST -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "{ \"name\": \"$LIB_NAME\", \"description\": \"infinite loop test\", \"type\": \"calibre\", \"calibre_library_uuid\": \"$CALIBRE_LIB_UUID\" }" "$API_URL/libraries")
 LIB_ID=$(echo "$CREATE_LIB_RESP" | jq -r '.id // empty')
 if [ -z "$LIB_ID" ]; then
   echo "Failed creating library: $CREATE_LIB_RESP"
@@ -100,15 +100,15 @@ CREATE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
   "library_id": $LIB_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": $CHANGES
 }
 JSON
 )
 
 echo "Creating $NUM_BOOKS books..."
-echo "CURL ARGS: $API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID -X POST -H \"Content-Type: application/json\" -H \"$AUTH_HEADER\" -d \"$CREATE_PAYLOAD\""
-CREATE_RESP=$(curl "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID" -X POST -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$CREATE_PAYLOAD")
+echo "CURL ARGS: $API_URL/sync -X POST -H \"Content-Type: application/json\" -H \"$AUTH_HEADER\" -d \"$CREATE_PAYLOAD\""
+CREATE_RESP=$(curl "$API_URL/sync" -X POST -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$CREATE_PAYLOAD")
 echo "$CREATE_RESP" | jq '.'
 
 # Test steps for infinite loop will be added here
@@ -120,7 +120,7 @@ MAX_ITERATIONS=$((NUM_BOOKS / 200 + 5))
 
 while [ "$HAS_MORE" = "true" ]; do
   echo "Iteration $ITERATIONS, cursor: $CURSOR"
-  PULL_RESP=$(curl "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID&cursor=$CURSOR")
+  PULL_RESP=$(curl "$API_URL/sync&cursor=$CURSOR")
   
   HAS_MORE=$(echo "$PULL_RESP" | jq -r '.has_more')
   CURSOR=$(echo "$PULL_RESP" | jq -r '.new_cursor')

@@ -37,7 +37,7 @@ class SubscriptionLimitsMiddlewareTest extends TestCase
 
         $response = $this->postJson('/api/libraries', [
             'name' => 'Test Library',
-            'calibre_library_id' => 'test-uuid-123',
+            'calibre_library_uuid' => 'test-uuid-123',
         ]);
 
         $response->assertStatus(201);
@@ -61,7 +61,7 @@ class SubscriptionLimitsMiddlewareTest extends TestCase
 
         $response = $this->postJson('/api/libraries', [
             'name' => 'Second Library',
-            'calibre_library_id' => 'test-uuid-456',
+            'calibre_library_uuid' => 'test-uuid-456',
         ]);
 
         $response->assertStatus(403)
@@ -92,7 +92,7 @@ class SubscriptionLimitsMiddlewareTest extends TestCase
         // Superadmin should be able to create more libraries
         $response = $this->postJson('/api/libraries', [
             'name' => 'Superadmin Library',
-            'calibre_library_id' => 'test-uuid-789',
+            'calibre_library_uuid' => 'test-uuid-789',
         ]);
 
         $response->assertStatus(201);

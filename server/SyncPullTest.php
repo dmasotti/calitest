@@ -65,12 +65,12 @@ class SyncPullTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         Sanctum::actingAs($user);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_id=' . $library->calibre_library_id . '&include_inventory_hint=true');
+        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id . '&include_inventory_hint=true');
         $response->assertStatus(200);
         $this->assertNull($response->json('inventory_hint'));
 
         $cursor = base64_encode((string) now()->subHours(1)->timestamp);
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_id=' . $library->calibre_library_id . '&include_inventory_hint=true&cursor=' . $cursor);
+        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id . '&include_inventory_hint=true&cursor=' . $cursor);
         $response->assertStatus(200);
         $this->assertIsArray($response->json('inventory_hint'));
     }
@@ -95,7 +95,7 @@ class SyncPullTest extends TestCase
 
         $includePayload = [
             'library_id' => $library->id,
-            'calibre_library_id' => $library->calibre_library_id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => $cursor,
             'client_inventory' => [
                 'min' => 42,
@@ -111,7 +111,7 @@ class SyncPullTest extends TestCase
 
         $excludePayload = [
             'library_id' => $library->id,
-            'calibre_library_id' => $library->calibre_library_id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => $cursor,
             'client_inventory' => [
                 'min' => 42,
@@ -154,7 +154,7 @@ class SyncPullTest extends TestCase
             'last_modified' => now(),
         ]);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_id=' . $library->calibre_library_id . '&limit=2');
+        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id . '&limit=2');
         $response->assertStatus(200);
         $this->assertTrue((bool) $response->json('has_more'));
         $this->assertCount(2, $response->json('changes'));

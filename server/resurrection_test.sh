@@ -87,16 +87,16 @@ general_curl() {
 }
 
 echo "Discovery URL: $DISCOVERY_URL"
-if [[ "$DISCOVERY_URL" =~ /api/ ]]; then
-  DISCOVERY_ENDPOINT="$DISCOVERY_URL"
-else
-  DISCOVERY_ENDPOINT="$DISCOVERY_URL/api/discovery"
-fi
+DISCOVERY_ENDPOINT="$DISCOVERY_URL/discovery.php"
 
 echo "Querying discovery: $DISCOVERY_ENDPOINT"
 RAW_DISCOVERY_RESP=$(general_curl "$DISCOVERY_ENDPOINT")
-API_URL=$(echo "$RAW_DISCOVERY_RESP" | jq -r '.api_url // empty')
-if [ -z "$API_URL" ]; then
+API_URL=$(echo "$RAW_DISCOVERY_RESP" | jq -r '.api_url // empty' 2>/dev/null || true)
+if [ -z "$API_URL" ] || [ "$API_URL" = "null" ]; then
+  RAW_DISCOVERY_RESP=$(general_curl "$DISCOVERY_URL/api/discovery")
+  API_URL=$(echo "$RAW_DISCOVERY_RESP" | jq -r '.api_url // empty' 2>/dev/null || true)
+fi
+if [ -z "$API_URL" ] || [ "$API_URL" = "null" ]; then
   # fallback: try constructing from discovery host
   API_URL="$DISCOVERY_URL/api"
 fi
@@ -129,7 +129,7 @@ echo "Token acquired"
 echo "Creating a test library"
 LIB_NAME="resurrection_test_$(date +%s)"
 CALIBRE_LIB_UUID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$RANDOM")
-CREATE_LIB_RESP=$(general_curl "$API_URL/libraries" -X POST -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "{ \"name\": \"$LIB_NAME\", \"description\": \"resurrection test\", \"type\": \"calibre\", \"calibre_library_id\": \"$CALIBRE_LIB_UUID\" }")
+CREATE_LIB_RESP=$(general_curl "$API_URL/libraries" -X POST -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "{ \"name\": \"$LIB_NAME\", \"description\": \"resurrection test\", \"type\": \"calibre\", \"calibre_library_uuid\": \"$CALIBRE_LIB_UUID\" }")
 LIB_ID=$(echo "$CREATE_LIB_RESP" | jq -r '.id // empty')
 if [ -z "$LIB_ID" ]; then
   echo "Failed creating library: $CREATE_LIB_RESP"
@@ -148,7 +148,7 @@ CREATE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
   "library_id": $LIB_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
       "op": "create",
@@ -166,7 +166,7 @@ JSON
 )
 
 echo "Creating a book with ID $CLIENT_BOOK_ID"
-CREATE_RESP=$(curl -sS -X POST "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$CREATE_PAYLOAD")
+CREATE_RESP=$(curl -sS -X POST "$API_URL/sync" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$CREATE_PAYLOAD")
 echo "$CREATE_RESP" | jq '.'
 INITIAL_CURSOR=$(echo "$CREATE_RESP" | jq -r '.new_cursor')
 echo "Initial cursor: $INITIAL_CURSOR"
@@ -177,7 +177,7 @@ DELETE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": "$INITIAL_CURSOR",
   "library_id": $LIB_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
       "op": "delete",
@@ -193,7 +193,7 @@ JSON
 )
 
 echo "Deleting the book with ID $CLIENT_BOOK_ID"
-DELETE_RESP=$(curl -sS -X POST "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$DELETE_PAYLOAD")
+DELETE_RESP=$(curl -sS -X POST "$API_URL/sync" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$DELETE_PAYLOAD")
 echo "$DELETE_RESP" | jq '.'
 DELETE_CURSOR=$(echo "$DELETE_RESP" | jq -r '.new_cursor')
 echo "Cursor after delete: $DELETE_CURSOR"
@@ -201,7 +201,7 @@ echo "Cursor after delete: $DELETE_CURSOR"
 
 # 3. Perform a pull sync to check for resurrection
 echo "Performing pull sync with cursor after delete to check for resurrection"
-PULL_RESP=$(api_curl "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID&cursor=$DELETE_CURSOR")
+PULL_RESP=$(api_curl "$API_URL/sync?library_id=$LIB_ID&calibre_library_uuid=$CALIBRE_LIB_UUID&cursor=$DELETE_CURSOR")
 echo "$PULL_RESP" | jq '.'
 
 # 4. Assert: Check if the pull response contains an op for the deleted book
@@ -222,5 +222,3 @@ echo "Cleaning up test library"
 general_curl "$API_URL/library/$LIB_ID" -X DELETE -H "$AUTH_HEADER" || true
 
 echo "Test finished"
-
-

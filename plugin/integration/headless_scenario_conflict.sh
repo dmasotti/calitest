@@ -19,7 +19,10 @@ if [[ -z "$DISCOVERY_URL" || -z "$TEST_USER_EMAIL" || -z "$TEST_USER_PASSWORD" ]
   exit 0
 fi
 
-API_URL=$(curl -s "$DISCOVERY_URL/api/discovery" | jq -r '.api_url')
+API_URL=$(curl -s "${DISCOVERY_URL}/discovery.php" | jq -r '.api_url // empty' 2>/dev/null || true)
+if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
+  API_URL=$(curl -s "${DISCOVERY_URL}/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+fi
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
   echo "FAIL: discovery failed" >&2
   exit 1
@@ -39,7 +42,7 @@ fi
 if [[ -z "$CALIMOB_LIBRARY_ID" || -z "$CALIBRE_LIBRARY_ID" ]]; then
   LIBS=$(curl -s -H "Authorization: Bearer $TOKEN" "$API_URL/libraries")
   CALIMOB_LIBRARY_ID=$(echo "$LIBS" | jq -r '.[0].id')
-  CALIBRE_LIBRARY_ID=$(echo "$LIBS" | jq -r '.[0].calibre_library_id')
+  CALIBRE_LIBRARY_ID=$(echo "$LIBS" | jq -r '.[0].calibre_library_uuid')
 fi
 
 if [[ -z "$CALIMOB_LIBRARY_ID" || -z "$CALIBRE_LIBRARY_ID" || "$CALIMOB_LIBRARY_ID" == "null" ]]; then
@@ -57,7 +60,7 @@ PY
 CREATE_PAYLOAD=$(cat <<JSON
 {
   "library_id": $CALIMOB_LIBRARY_ID,
-  "calibre_library_id": "$CALIBRE_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "changes": [
     {
       "op": "create",
@@ -91,7 +94,7 @@ OLDER_VERSION=$((SERVER_VERSION - 1))
 UPDATE_PAYLOAD=$(cat <<JSON
 {
   "library_id": $CALIMOB_LIBRARY_ID,
-  "calibre_library_id": "$CALIBRE_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "changes": [
     {
       "op": "update",

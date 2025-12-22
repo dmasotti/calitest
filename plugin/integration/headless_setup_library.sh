@@ -23,7 +23,10 @@ if [[ -z "$DISCOVERY_URL" || -z "$TEST_USER_EMAIL" || -z "$TEST_USER_PASSWORD" ]
   exit 0
 fi
 
-API_URL=$(curl -s "$DISCOVERY_URL/api/discovery" | jq -r '.api_url')
+API_URL=$(curl -s "${DISCOVERY_URL}/discovery.php" | jq -r '.api_url // empty' 2>/dev/null || true)
+if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
+  API_URL=$(curl -s "${DISCOVERY_URL}/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+fi
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
   echo "FAIL: discovery failed" >&2
   exit 1
@@ -48,7 +51,7 @@ PY
 fi
 
 LIBS=$(curl -s -H "Authorization: Bearer $TOKEN" "$API_URL/libraries")
-EXISTING_ID=$(echo "$LIBS" | jq -r --arg id "$CALIBRE_LIBRARY_ID" '.[] | select(.calibre_library_id==$id) | .id' | head -n1)
+EXISTING_ID=$(echo "$LIBS" | jq -r --arg id "$CALIBRE_LIBRARY_ID" '.[] | select(.calibre_library_uuid==$id) | .id' | head -n1)
 
 if [[ -n "$EXISTING_ID" && "$EXISTING_ID" != "null" ]]; then
   CALIMOB_LIBRARY_ID="$EXISTING_ID"
@@ -60,7 +63,7 @@ else
 {
   "name": "$CALIMOB_LIBRARY_NAME",
   "type": "calibre",
-  "calibre_library_id": "$CALIBRE_LIBRARY_ID"
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_ID"
 }
 JSON
 )
@@ -106,7 +109,7 @@ PY
   SEED_PAYLOAD=$(cat <<JSON
 {
   "library_id": $CALIMOB_LIBRARY_ID,
-  "calibre_library_id": "$CALIBRE_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "changes": $CHANGES
 }
 JSON

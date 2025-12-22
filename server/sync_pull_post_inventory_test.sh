@@ -29,8 +29,11 @@ if [[ -z "$TEST_USER_EMAIL" || -z "$TEST_USER_PASSWORD" ]]; then
 fi
 
 # Resolve API URL via discovery
-DISCOVERY_ENDPOINT="$DISCOVERY_URL/api/discovery"
-API_URL=$(curl -s "$DISCOVERY_ENDPOINT" | jq -r '.api_url // empty')
+DISCOVERY_ENDPOINT="$DISCOVERY_URL/discovery.php"
+API_URL=$(curl -s "$DISCOVERY_ENDPOINT" | jq -r '.api_url // empty' 2>/dev/null || true)
+if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
+  API_URL=$(curl -s "$DISCOVERY_URL/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+fi
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
   API_URL="$DISCOVERY_URL/api"
 fi
@@ -58,13 +61,13 @@ api_post() {
 
 echo "API URL: $API_URL"
 
-# Pick first library with calibre_library_id
+# Pick first library with calibre_library_uuid
 LIBRARIES=$(api_get "/libraries")
 LIBRARY_ID=$(echo "$LIBRARIES" | jq -r '.[0].id // empty')
-CALIBRE_LIBRARY_ID=$(echo "$LIBRARIES" | jq -r '.[0].calibre_library_id // empty')
+CALIBRE_LIBRARY_ID=$(echo "$LIBRARIES" | jq -r '.[0].calibre_library_uuid // empty')
 
 if [[ -z "$LIBRARY_ID" || -z "$CALIBRE_LIBRARY_ID" ]]; then
-  echo "No library found with calibre_library_id; cannot run tests"
+  echo "No library found with calibre_library_uuid; cannot run tests"
   exit 4
 fi
 
@@ -79,7 +82,7 @@ log "Create test book $BOOK_ID"
 CREATE_PAYLOAD=$(cat <<EOF
 {
   "library_id": $LIBRARY_ID,
-  "calibre_library_id": "$CALIBRE_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "changes": [{
     "op": "create",
     "item": {
@@ -97,7 +100,7 @@ CREATE_PAYLOAD=$(cat <<EOF
 EOF
 )
 
-CREATE_RESP=$(api_post "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID" "$CREATE_PAYLOAD")
+CREATE_RESP=$(api_post "/sync" "$CREATE_PAYLOAD")
 CREATE_STATUS=$(echo "$CREATE_RESP" | jq -r '.results[0].status // empty')
 if [[ "$CREATE_STATUS" != "applied" && "$CREATE_STATUS" != "merged" ]]; then
   fail "Create failed: $CREATE_RESP"
@@ -105,7 +108,7 @@ fi
 pass "Create applied"
 
 log "Get cursor before delete"
-CURSOR_RESP=$(api_post "/sync/pull" "{\"library_id\":$LIBRARY_ID,\"calibre_library_id\":\"$CALIBRE_LIBRARY_ID\",\"limit\":1}")
+CURSOR_RESP=$(api_post "/sync/pull" "{\"library_id\":$LIBRARY_ID,\"calibre_library_uuid\":\"$CALIBRE_LIBRARY_ID\",\"limit\":1}")
 CURSOR_BEFORE=$(echo "$CURSOR_RESP" | jq -r '.new_cursor // empty')
 if [[ -z "$CURSOR_BEFORE" || "$CURSOR_BEFORE" == "null" ]]; then
   fail "No cursor returned"
@@ -116,7 +119,7 @@ log "Delete test book $BOOK_ID"
 DELETE_PAYLOAD=$(cat <<EOF
 {
   "library_id": $LIBRARY_ID,
-  "calibre_library_id": "$CALIBRE_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "changes": [{
     "op": "delete",
     "item": {"id": $BOOK_ID, "timestamps": {"updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"}},
@@ -125,7 +128,7 @@ DELETE_PAYLOAD=$(cat <<EOF
 }
 EOF
 )
-DELETE_RESP=$(api_post "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID" "$DELETE_PAYLOAD")
+DELETE_RESP=$(api_post "/sync" "$DELETE_PAYLOAD")
 DELETE_STATUS=$(echo "$DELETE_RESP" | jq -r '.results[0].status // empty')
 if [[ "$DELETE_STATUS" != "applied" && "$DELETE_STATUS" != "merged" && "$DELETE_STATUS" != "noop" ]]; then
   fail "Delete failed: $DELETE_RESP"
@@ -136,7 +139,7 @@ log "POST /sync/pull with client_inventory including deleted ID (should include 
 INV_INCLUDE=$(cat <<EOF
 {
   "library_id": $LIBRARY_ID,
-  "calibre_library_id": "$CALIBRE_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "cursor": "$CURSOR_BEFORE",
   "limit": 200,
   "client_inventory": {
@@ -157,7 +160,7 @@ log "POST /sync/pull with client_inventory excluding deleted ID (should NOT incl
 INV_EXCLUDE=$(cat <<EOF
 {
   "library_id": $LIBRARY_ID,
-  "calibre_library_id": "$CALIBRE_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "cursor": "$CURSOR_BEFORE",
   "limit": 200,
   "client_inventory": {
@@ -177,7 +180,7 @@ else
 fi
 
 log "Idempotency: re-send delete with same idempotency_key"
-REPEAT_RESP=$(api_post "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID" "$DELETE_PAYLOAD")
+REPEAT_RESP=$(api_post "/sync" "$DELETE_PAYLOAD")
 REPEAT_STATUS=$(echo "$REPEAT_RESP" | jq -r '.results[0].status // empty')
 if [[ "$REPEAT_STATUS" == "error" || -z "$REPEAT_STATUS" ]]; then
   fail "Idempotency failed: $REPEAT_RESP"

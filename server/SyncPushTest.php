@@ -22,6 +22,8 @@ class SyncPushTest extends TestCase
         Sanctum::actingAs($user);
 
         $payload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [
                     'op' => 'create',
@@ -41,11 +43,11 @@ class SyncPushTest extends TestCase
             ],
         ];
 
-        $first = $this->postJson('/api/sync?library_id=' . $library->id . '&calibre_library_id=' . $library->calibre_library_id, $payload);
+        $first = $this->postJson('/api/sync', $payload);
         $first->assertStatus(200);
         $this->assertNotEmpty($first->json('results.0.status'));
 
-        $second = $this->postJson('/api/sync?library_id=' . $library->id . '&calibre_library_id=' . $library->calibre_library_id, $payload);
+        $second = $this->postJson('/api/sync', $payload);
         $second->assertStatus(200);
         $this->assertNotEmpty($second->json('results.0.status'));
         $this->assertNotSame('error', $second->json('results.0.status'));
@@ -58,6 +60,8 @@ class SyncPushTest extends TestCase
         Sanctum::actingAs($user);
 
         $payload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [
                     'op' => 'create',
@@ -74,11 +78,11 @@ class SyncPushTest extends TestCase
             ],
         ];
 
-        $this->postJson('/api/sync?library_id=' . $library->id . '&calibre_library_id=' . $library->calibre_library_id, $payload)
+        $this->postJson('/api/sync', $payload)
             ->assertStatus(200);
 
         $payload['changes'][0]['item']['title'] = 'Different';
-        $response = $this->postJson('/api/sync?library_id=' . $library->id . '&calibre_library_id=' . $library->calibre_library_id, $payload);
+        $response = $this->postJson('/api/sync', $payload);
         $response->assertStatus(200);
         $this->assertSame('error', $response->json('results.0.status'));
     }
@@ -91,6 +95,8 @@ class SyncPushTest extends TestCase
 
         $clientKey = 'calibre:' . $library->calibre_library_id . ':200';
         $payload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [
                     'op' => 'create',
@@ -108,7 +114,7 @@ class SyncPushTest extends TestCase
             ],
         ];
 
-        $this->postJson('/api/sync?library_id=' . $library->id . '&calibre_library_id=' . $library->calibre_library_id, $payload)
+        $this->postJson('/api/sync', $payload)
             ->assertStatus(200);
 
         $this->assertDatabaseHas('sync_mappings', [
@@ -135,6 +141,8 @@ class SyncPushTest extends TestCase
 
         $olderVersion = $book->last_modified->timestamp - 10;
         $payload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [
                     'op' => 'update',
@@ -151,7 +159,7 @@ class SyncPushTest extends TestCase
             ],
         ];
 
-        $response = $this->postJson('/api/sync?library_id=' . $library->id . '&calibre_library_id=' . $library->calibre_library_id, $payload);
+        $response = $this->postJson('/api/sync', $payload);
         $response->assertStatus(200);
         $this->assertSame('conflict', $response->json('results.0.status'));
 

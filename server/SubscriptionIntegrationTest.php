@@ -48,7 +48,7 @@ class SubscriptionIntegrationTest extends TestCase
         // 1. Create library (should succeed)
         $libraryResponse = $this->postJson('/api/libraries', [
             'name' => 'My Library',
-            'calibre_library_id' => 'test-uuid-1',
+            'calibre_library_uuid' => 'test-uuid-1',
         ]);
         $libraryResponse->assertStatus(201);
         $libraryId = $libraryResponse->json('id');
@@ -56,7 +56,7 @@ class SubscriptionIntegrationTest extends TestCase
         // 2. Try to create second library (should fail)
         $secondLibraryResponse = $this->postJson('/api/libraries', [
             'name' => 'Second Library',
-            'calibre_library_id' => 'test-uuid-2',
+            'calibre_library_uuid' => 'test-uuid-2',
         ]);
         $secondLibraryResponse->assertStatus(403);
 
@@ -68,7 +68,9 @@ class SubscriptionIntegrationTest extends TestCase
         ]);
 
         // 4. Try to sync new book (should fail)
-        $syncResponse = $this->postJson("/api/sync?library_id={$libraryId}", [
+        $syncResponse = $this->postJson("/api/sync", [
+            'library_id' => $libraryId,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [
                     'op' => 'create',
@@ -107,7 +109,7 @@ class SubscriptionIntegrationTest extends TestCase
         // Try to create second library (should fail)
         $response = $this->postJson('/api/libraries', [
             'name' => 'Second Library',
-            'calibre_library_id' => 'test-uuid-2',
+            'calibre_library_uuid' => 'test-uuid-2',
         ]);
         $response->assertStatus(403);
 
@@ -121,14 +123,14 @@ class SubscriptionIntegrationTest extends TestCase
         // Now should be able to create more libraries
         $response = $this->postJson('/api/libraries', [
             'name' => 'Second Library',
-            'calibre_library_id' => 'test-uuid-2',
+            'calibre_library_uuid' => 'test-uuid-2',
         ]);
         $response->assertStatus(201);
 
         // Should be able to create up to 3 libraries total
         $response = $this->postJson('/api/libraries', [
             'name' => 'Third Library',
-            'calibre_library_id' => 'test-uuid-3',
+            'calibre_library_uuid' => 'test-uuid-3',
         ]);
         $response->assertStatus(201);
     }
@@ -156,7 +158,9 @@ class SubscriptionIntegrationTest extends TestCase
         Sanctum::actingAs($user);
 
         // Try to sync book with 60 MB file (would exceed 500 MB limit)
-        $response = $this->postJson("/api/sync?library_id={$library->id}", [
+        $response = $this->postJson("/api/sync", [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [
                     'op' => 'create',
@@ -183,7 +187,9 @@ class SubscriptionIntegrationTest extends TestCase
             ]);
 
         // Try to sync smaller book (should succeed)
-        $response = $this->postJson("/api/sync?library_id={$library->id}", [
+        $response = $this->postJson("/api/sync", [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [
                     'op' => 'create',

@@ -38,7 +38,10 @@ if ! command -v sqlite3 >/dev/null 2>&1; then
   exit 0
 fi
 
-API_URL=$(curl -s "$CALIMOB_DISCOVERY_URL/api/discovery" | jq -r '.api_url')
+API_URL=$(curl -s "${CALIMOB_DISCOVERY_URL}/discovery.php" | jq -r '.api_url // empty' 2>/dev/null || true)
+if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
+  API_URL=$(curl -s "${CALIMOB_DISCOVERY_URL}/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+fi
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
   echo "FAIL: discovery failed" >&2
   exit 1
@@ -84,7 +87,13 @@ lm["$CALIMOB_LIBRARY_ID"] = {
     "calimobLibraryName": "Conflict Suite",
 }
 data["LibraryMappings"] = lm
-data["discoveryUrl"] = "$CALIMOB_DISCOVERY_URL"
+store = data.get("Goodreads", {})
+store["discoveryUrl"] = "$CALIMOB_DISCOVERY_URL"
+store["restToken"] = "$TOKEN"
+store.pop("deviceToken", None)
+store.pop("restEndpoint", None)
+store.pop("discoveryCache", None)
+data["Goodreads"] = store
 with open(cfg_path, "w") as f:
     json.dump(data, f, indent=2, sort_keys=True)
 PY
@@ -107,7 +116,7 @@ PY
 CREATE_PAYLOAD=$(cat <<JSON
 {
   "library_id": $CALIMOB_SERVER_LIBRARY_ID,
-  "calibre_library_id": "$CALIMOB_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIMOB_LIBRARY_ID",
   "changes": [
     {
       "op": "create",
@@ -167,7 +176,7 @@ PY
 DELETE_PAYLOAD=$(cat <<JSON
 {
   "library_id": $CALIMOB_SERVER_LIBRARY_ID,
-  "calibre_library_id": "$CALIMOB_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIMOB_LIBRARY_ID",
   "changes": [
     {
       "op": "delete",

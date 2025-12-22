@@ -45,7 +45,9 @@ class SyncLimitsTest extends TestCase
         
         Sanctum::actingAs($user);
 
-        $response = $this->postJson('/api/sync?library_id=' . $library->id, [
+        $response = $this->postJson('/api/sync', [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [
                     'op' => 'create',
@@ -93,7 +95,9 @@ class SyncLimitsTest extends TestCase
         Sanctum::actingAs($user);
 
         // Try to sync a book with 100 MB file (would exceed 500 MB limit)
-        $response = $this->postJson('/api/sync?library_id=' . $library->id, [
+        $response = $this->postJson('/api/sync', [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [
                     'op' => 'create',
@@ -133,7 +137,9 @@ class SyncLimitsTest extends TestCase
         
         Sanctum::actingAs($user);
 
-        $response = $this->postJson('/api/sync?library_id=' . $library->id, [
+        $response = $this->postJson('/api/sync', [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [
                     'op' => 'create',
@@ -169,7 +175,9 @@ class SyncLimitsTest extends TestCase
         Sanctum::actingAs($user);
 
         // Dry run should not check limits
-        $response = $this->postJson('/api/sync?library_id=' . $library->id, [
+        $response = $this->postJson('/api/sync', [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [
                     'op' => 'create',
@@ -200,7 +208,9 @@ class SyncLimitsTest extends TestCase
         Sanctum::actingAs($user);
 
         // Try to sync with file that would exceed limit
-        $response = $this->postJson('/api/sync?library_id=' . $library->id, [
+        $response = $this->postJson('/api/sync', [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [
                     'op' => 'create',

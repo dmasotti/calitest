@@ -146,7 +146,7 @@ Script disponibili:
 - `tests/plugin/integration/headless_scenario_inventory_reconcile.sh`
   - End‑to‑end: pull libro dal server, delete locale, full sync → push delete usando inventory prefetch.
 - `tests/plugin/integration/headless_scenario_library_mismatch.sh`
-  - Lancia headless con `calibre_library_id` sbagliato → attesa risposta 403 “Library ID mismatch”.
+  - Lancia headless con `calibre_library_uuid` sbagliato → attesa risposta 403 “Library ID mismatch”.
 - `tests/plugin/integration/headless_scenario_retry_backoff.sh`
   - Verifica retry/backoff del client con un server locale che risponde 503→200.
 

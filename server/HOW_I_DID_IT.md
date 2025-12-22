@@ -67,7 +67,7 @@ protected $fillable = [
     'user_id',
     'name',
     'description',
-    'calibre_library_id',
+    'calibre_library_uuid',
     'stats_cached',
 ];
 ```
@@ -84,7 +84,7 @@ class LibraryFactory extends Factory
             'user_id' => User::factory(),  // ← Relazione automatica
             'name' => fake()->words(3, true) . ' Library',
             'description' => fake()->sentence(),
-            'calibre_library_id' => fake()->uuid(),
+            'calibre_library_uuid' => fake()->uuid(),
             'stats_cached' => false,
         ];
     }
@@ -237,7 +237,7 @@ public function test_middleware_blocks_library_creation_when_at_limit(): void
     // ACT: Provo a creare seconda libreria
     $response = $this->postJson('/api/libraries', [
         'name' => 'Second Library',
-        'calibre_library_id' => 'test-uuid',
+        'calibre_library_uuid' => 'test-uuid',
     ]);
     
     // ASSERT: Deve essere bloccato

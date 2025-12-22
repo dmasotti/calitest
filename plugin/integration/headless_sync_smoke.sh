@@ -7,7 +7,7 @@ ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 CALIBRE_DEBUG="${CALIBRE_DEBUG:-/Applications/calibre.app/Contents/MacOS/calibre-debug}"
 CALIBRE_CUSTOMIZE="${CALIBRE_CUSTOMIZE:-/Applications/calibre.app/Contents/MacOS/calibre-customize}"
 
-REQUIRED=(CALIMOB_DISCOVERY_URL CALIMOB_LIBRARY_PATH CALIMOB_LIBRARY_ID CALIMOB_SERVER_LIBRARY_ID CALIMOB_CONFIG_JSON)
+REQUIRED=(CALIMOB_DISCOVERY_URL TEST_USER_EMAIL TEST_USER_PASSWORD CALIMOB_LIBRARY_PATH CALIMOB_LIBRARY_ID CALIMOB_SERVER_LIBRARY_ID CALIMOB_CONFIG_JSON)
 for v in "${REQUIRED[@]}"; do
   if [[ -z "${!v-}" ]]; then
     echo "SKIP: $v not set; headless smoke test not run" >&2
@@ -31,6 +31,42 @@ fi
 TMP_CFG=$(mktemp -d)
 mkdir -p "$TMP_CFG/plugins"
 cp "$CALIMOB_CONFIG_JSON" "$TMP_CFG/plugins/sync_calimob.json"
+
+API_URL=$(curl -s "${CALIMOB_DISCOVERY_URL}/discovery.php" | jq -r '.api_url // empty' 2>/dev/null || true)
+if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
+  API_URL=$(curl -s "${CALIMOB_DISCOVERY_URL}/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+fi
+if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
+  echo "FAIL: discovery failed" >&2
+  exit 1
+fi
+
+LOGIN_RESPONSE=$(curl -s -X POST "$API_URL/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$TEST_USER_EMAIL\",\"password\":\"$TEST_USER_PASSWORD\"}")
+TOKEN=$(echo "$LOGIN_RESPONSE" | jq -r '.token')
+if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
+  echo "FAIL: login failed" >&2
+  echo "$LOGIN_RESPONSE" >&2
+  exit 1
+fi
+
+python - <<PY
+import json
+import os
+
+cfg_path = os.path.join("$TMP_CFG", "plugins", "sync_calimob.json")
+data = json.load(open(cfg_path, "r"))
+store = data.get("Goodreads", {})
+store["discoveryUrl"] = "$CALIMOB_DISCOVERY_URL"
+store["restToken"] = "$TOKEN"
+store.pop("deviceToken", None)
+store.pop("restEndpoint", None)
+store.pop("discoveryCache", None)
+data["Goodreads"] = store
+with open(cfg_path, "w") as f:
+    json.dump(data, f, indent=2, sort_keys=True)
+PY
 
 # Install plugin in the temp Calibre config so calibre-debug can import it
 CALIBRE_CONFIG_DIRECTORY="$TMP_CFG" "$CALIBRE_CUSTOMIZE" -b "$ROOT/sync_calimob" >/dev/null 2>&1 || {

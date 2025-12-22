@@ -41,7 +41,7 @@ CURSOR_SEEN=""
 
 while :; do
   echo "--- page $page cursor=$cur ---"
-  RESP=$(curl -s -H "Authorization: Bearer $TOKEN" "$API_URL/sync?cursor=$cur&library_id=$LIB_ID&calibre_library_id=$CAL_LIB_ID&limit=$LIMIT")
+  RESP=$(curl -s -H "Authorization: Bearer $TOKEN" "$API_URL/sync?cursor=$cur&library_id=$LIB_ID&calibre_library_uuid=$CAL_LIB_ID&limit=$LIMIT")
   count=$(echo "$RESP" | jq -r '.changes | length')
   deletes=$(echo "$RESP" | jq -r '[.changes[] | select(.op=="delete")] | length')
   has_more=$(echo "$RESP" | jq -r '.has_more')

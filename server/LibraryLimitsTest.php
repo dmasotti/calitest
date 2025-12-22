@@ -41,20 +41,20 @@ class LibraryLimitsTest extends TestCase
 
         $response = $this->postJson('/api/libraries', [
             'name' => 'My Library',
-            'calibre_library_id' => 'test-uuid-123',
+            'calibre_library_uuid' => 'test-uuid-123',
         ]);
 
         $response->assertStatus(201)
             ->assertJsonStructure([
                 'id',
                 'name',
-                'calibre_library_id',
+                'calibre_library_uuid',
             ]);
 
         $this->assertDatabaseHas('libraries', [
             'user_id' => $user->id,
             'name' => 'My Library',
-            'calibre_library_id' => 'test-uuid-123',
+            'calibre_library_uuid' => 'test-uuid-123',
         ]);
     }
 
@@ -72,7 +72,7 @@ class LibraryLimitsTest extends TestCase
 
         $response = $this->postJson('/api/libraries', [
             'name' => 'Second Library',
-            'calibre_library_id' => 'test-uuid-456',
+            'calibre_library_uuid' => 'test-uuid-456',
         ]);
 
         $response->assertStatus(403)
@@ -96,7 +96,7 @@ class LibraryLimitsTest extends TestCase
         for ($i = 1; $i <= 3; $i++) {
             $response = $this->postJson('/api/libraries', [
                 'name' => "Library {$i}",
-                'calibre_library_id' => "test-uuid-{$i}",
+            'calibre_library_uuid' => "test-uuid-{$i}",
             ]);
 
             $response->assertStatus(201);
@@ -105,7 +105,7 @@ class LibraryLimitsTest extends TestCase
         // Try to create 4th library - should fail
         $response = $this->postJson('/api/libraries', [
             'name' => 'Library 4',
-            'calibre_library_id' => 'test-uuid-4',
+            'calibre_library_uuid' => 'test-uuid-4',
         ]);
 
         $response->assertStatus(403);
@@ -123,7 +123,7 @@ class LibraryLimitsTest extends TestCase
         
         $response = $this->actingAs($user)->post('/library', [
             'name' => 'Second Library',
-            'calibre_library_id' => 'test-uuid-789',
+            'calibre_library_uuid' => 'test-uuid-789',
         ]);
 
         $response->assertRedirect('/subscription/upgrade');

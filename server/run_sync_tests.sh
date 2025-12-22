@@ -70,15 +70,13 @@ api_curl() {
 }
 
 echo "Discovery URL: $DISCOVERY_URL"
-# Resolve discovery endpoint
-if [[ "$DISCOVERY_URL" =~ /api/ ]]; then
-  DISCOVERY_ENDPOINT="$DISCOVERY_URL"
-else
-  DISCOVERY_ENDPOINT="$DISCOVERY_URL/api/discovery"
-fi
-
+# Resolve discovery endpoint (prefer /discovery.php, fallback to /api/discovery)
+DISCOVERY_ENDPOINT="$DISCOVERY_URL/discovery.php"
 echo "Querying discovery: $DISCOVERY_ENDPOINT"
-API_URL=$(curl -sS "$DISCOVERY_ENDPOINT" | jq -r '.api_url // empty') || true
+API_URL=$(curl -sS "$DISCOVERY_ENDPOINT" | jq -r '.api_url // empty' 2>/dev/null || true)
+if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
+  API_URL=$(curl -sS "$DISCOVERY_URL/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+fi
 if [ -z "$API_URL" ]; then
   # fallback: try constructing from discovery host
   API_URL="$DISCOVERY_URL/api"
@@ -118,7 +116,7 @@ echo "$LIBS_JSON" | jq '.'
 LIB_NAME="test_sync_$(date +%s)"
 CALIBRE_LIB_UUID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$RANDOM")
 CREATE_LIB_RESP=$(curl -sS -X POST "$API_URL/libraries" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d \
-  "{ \"name\": \"$LIB_NAME\", \"description\": \"sync test\", \"type\": \"calibre\", \"calibre_library_id\": \"$CALIBRE_LIB_UUID\" }")
+  "{ \"name\": \"$LIB_NAME\", \"description\": \"sync test\", \"type\": \"calibre\", \"calibre_library_uuid\": \"$CALIBRE_LIB_UUID\" }")
 LIB_ID=$(echo "$CREATE_LIB_RESP" | jq -r '.id // empty')
 if [ -z "$LIB_ID" ]; then
   echo "Failed creating library: $CREATE_LIB_RESP"
@@ -131,7 +129,7 @@ echo "Created library id=$LIB_ID calibre_uuid=$CALIBRE_LIB_UUID"
 echo "Creating legacy book via /api/sync/books"
 LEGACY_LOCAL_ID=$((RANDOM % 9000 + 1000))  # ID tra 1000-9999
 LEGACY_BOOK_TITLE="Legacy Book $(date +%s)"
-LEGACY_PAYLOAD=$(jq -n --arg lib "$LIB_ID" --arg local_id "$LEGACY_LOCAL_ID" --arg title "$LEGACY_BOOK_TITLE" '{ device_uuid: "test-device", library_id: ($lib|tonumber), library_name: "test", books: [{ local_book_id: $local_id, title: $title }] }')
+LEGACY_PAYLOAD=$(jq -n --arg lib "$LIB_ID" --arg uuid "$CALIBRE_LIB_UUID" --arg local_id "$LEGACY_LOCAL_ID" --arg title "$LEGACY_BOOK_TITLE" '{ device_uuid: "test-device", library_id: ($lib|tonumber), calibre_library_uuid: $uuid, library_name: "test", books: [{ local_book_id: $local_id, title: $title }] }')
 LEGACY_RESP=$(curl -sS -X POST "$API_URL/sync/books" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$LEGACY_PAYLOAD")
 echo "$LEGACY_RESP" | jq '.'
 
@@ -139,13 +137,13 @@ echo "$LEGACY_RESP" | jq '.'
 CLIENT_BOOK_ID=100000
 CLIENT_TITLE="Sync Created Book $(date +%s)"
 CLIENT_CHANGE_KEY="c_$(date +%s)"
-CHANGE_PAYLOAD=$(jq -n --arg id "$CLIENT_BOOK_ID" --arg title "$CLIENT_TITLE" --arg client_key "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID" --argjson ts "$(date -u +%Y-%m-%dT%H:%M:%SZ | sed 's/.*/"&"/')" '{ client_cursor: null, library_id: ($env.LIB_ID|tonumber), calibre_library_id: $env.CALIBRE_LIB_UUID, changes: [ { op: "create", idempotency_key: ($env.CLIENT_CHANGE_KEY), item: { id: ($env.CLIENT_BOOK_ID|tonumber), title: $env.CLIENT_TITLE, client_ids: { ($env.CLIENT_KEY): ($env.CLIENT_BOOK_ID|tostring) }, timestamps: { updated_at: (now | tostring) } } } ] }' 2>/dev/null || true)
+CHANGE_PAYLOAD=$(jq -n --arg id "$CLIENT_BOOK_ID" --arg title "$CLIENT_TITLE" --arg client_key "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID" --argjson ts "$(date -u +%Y-%m-%dT%H:%M:%SZ | sed 's/.*/"&"/')" '{ client_cursor: null, library_id: ($env.LIB_ID|tonumber), calibre_library_uuid: $env.CALIBRE_LIB_UUID, changes: [ { op: "create", idempotency_key: ($env.CLIENT_CHANGE_KEY), item: { id: ($env.CLIENT_BOOK_ID|tonumber), title: $env.CLIENT_TITLE, client_ids: { ($env.CLIENT_KEY): ($env.CLIENT_BOOK_ID|tostring) }, timestamps: { updated_at: (now | tostring) } } } ] }' 2>/dev/null || true)
 # fallback simpler payload if jq complex interpolation fails
 CHANGE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
   "library_id": $LIB_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
       "op": "create",
@@ -163,7 +161,7 @@ JSON
 )
 
 echo "Push sync create payload: $CHANGE_PAYLOAD"
-SYNC_CREATE_RESP=$(curl -sS -X POST "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$CHANGE_PAYLOAD")
+SYNC_CREATE_RESP=$(curl -sS -X POST "$API_URL/sync" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$CHANGE_PAYLOAD")
 echo "$SYNC_CREATE_RESP" | jq '.'
 
 # 5) Verify both books exist via GET /api/user-books
@@ -184,7 +182,7 @@ DELETE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
   "library_id": $LIB_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
       "op": "delete",
@@ -199,12 +197,12 @@ DELETE_PAYLOAD=$(cat <<JSON
 JSON
 )
 
-DELETE_RESP=$(curl -sS -X POST "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$DELETE_PAYLOAD")
+DELETE_RESP=$(curl -sS -X POST "$API_URL/sync" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$DELETE_PAYLOAD")
 echo "$DELETE_RESP" | jq '.'
 
 # 7) Verify deletion by requesting item (items/{id} returns withTrashed)
 echo "Verify tombstone exists via GET /api/items/$CLIENT_BOOK_ID"
-ITEM_RESP=$(api_curl "$API_URL/items/$CLIENT_BOOK_ID?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID")
+ITEM_RESP=$(api_curl "$API_URL/items/$CLIENT_BOOK_ID?library_id=$LIB_ID&calibre_library_uuid=$CALIBRE_LIB_UUID")
 echo "$ITEM_RESP" | jq '.'
 
 # 8) Real conflict test - modify same critical field (title) with different values
@@ -214,7 +212,7 @@ CONFLICT2_CREATE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
   "library_id": $LIB_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
       "op": "create",
@@ -231,7 +229,7 @@ JSON
 )
 
 echo "Creating real conflict book"
-api_curl -X POST "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID" -H "Content-Type: application/json" -d "$CONFLICT2_CREATE_PAYLOAD" | jq '.'
+api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CONFLICT2_CREATE_PAYLOAD" | jq '.'
 
 # Update server-side with one title and same other fields
 SERVER_TITLE_A="Server Title A"
@@ -240,7 +238,7 @@ SERVER_TITLE_UPDATE=$(cat <<JSON
 {
   "client_cursor": null,
   "library_id": $LIB_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
       "op": "update",
@@ -259,7 +257,7 @@ JSON
 )
 
 echo "Applying server-side title update: $SERVER_TITLE_A"
-api_curl -X POST "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID" -H "Content-Type: application/json" -d "$SERVER_TITLE_UPDATE" | jq '.'
+api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$SERVER_TITLE_UPDATE" | jq '.'
 
 # Now client sends different title with older timestamp and version 1
 # Include all fields to ensure proper comparison
@@ -269,7 +267,7 @@ CLIENT_TITLE_UPDATE=$(cat <<JSON
 {
   "client_cursor": null,
   "library_id": $LIB_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
       "op": "update",
@@ -289,7 +287,7 @@ JSON
 )
 
 echo "Sending client conflicting title update: $CLIENT_TITLE_B (version 1, older timestamp)"
-REAL_CONFLICT_RESP=$(api_curl -X POST "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID" -H "Content-Type: application/json" -d "$CLIENT_TITLE_UPDATE")
+REAL_CONFLICT_RESP=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CLIENT_TITLE_UPDATE")
 echo "$REAL_CONFLICT_RESP" | jq '.'
 
 # Check for real conflict
@@ -315,7 +313,7 @@ CONFLICT_CREATE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
   "library_id": $LIB_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
       "op": "create",
@@ -332,7 +330,7 @@ JSON
 )
 
 echo "Creating conflict book"
-api_curl -X POST "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID" -H "Content-Type: application/json" -d "$CONFLICT_CREATE_PAYLOAD" | jq '.'
+api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CONFLICT_CREATE_PAYLOAD" | jq '.'
 
 # Update server-side (simulate another client) with newer timestamp
 NEWER_TITLE="Conflict Book Server-Updated"
@@ -342,7 +340,7 @@ SERVER_UPDATE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
   "library_id": $LIB_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
       "op": "update",
@@ -359,7 +357,7 @@ JSON
 )
 
 echo "Applying server-side newer update"
-api_curl -X POST "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID" -H "Content-Type: application/json" -d "$SERVER_UPDATE_PAYLOAD" | jq '.'
+api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$SERVER_UPDATE_PAYLOAD" | jq '.'
 
 # Now client sends an update with older timestamp -> expect conflict
 CLIENT_OLDER_TS="2025-01-01T11:00:00Z"
@@ -367,7 +365,7 @@ CLIENT_OLDER_UPDATE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
   "library_id": $LIB_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
       "op": "update",
@@ -385,7 +383,7 @@ JSON
 )
 
 echo "Sending client older update to trigger conflict"
-CONFLICT_RESP=$(api_curl -X POST "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID" -H "Content-Type: application/json" -d "$CLIENT_OLDER_UPDATE_PAYLOAD")
+CONFLICT_RESP=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CLIENT_OLDER_UPDATE_PAYLOAD")
 echo "$CONFLICT_RESP" | jq '.'
 
 # Inspect results for conflict
@@ -413,7 +411,7 @@ if [ -n "${TEST_USER_EMAIL_2:-}" ] && [ -n "${TEST_USER_PASSWORD_2:-}" ]; then
     LIB_NAME2="test_sync_user2_$(date +%s)"
     CALIBRE_LIB_UUID2=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$RANDOM")
     CREATE_LIB2_RESP=$(curl -s -f -X POST "$API_URL/libraries" -H "Content-Type: application/json" -H "$AUTH2_HEADER" -d \
-      "{ \"name\": \"$LIB_NAME2\", \"description\": \"sync test user2\", \"type\": \"calibre\", \"calibre_library_id\": \"$CALIBRE_LIB_UUID2\" }")
+      "{ \"name\": \"$LIB_NAME2\", \"description\": \"sync test user2\", \"type\": \"calibre\", \"calibre_library_uuid\": \"$CALIBRE_LIB_UUID2\" }")
     LIB2_ID=$(echo "$CREATE_LIB2_RESP" | jq -r '.id // empty') || true
     echo "Created library for user2 id=$LIB2_ID calibre_uuid=$CALIBRE_LIB_UUID2"
 
@@ -426,7 +424,7 @@ if [ -n "${TEST_USER_EMAIL_2:-}" ] && [ -n "${TEST_USER_PASSWORD_2:-}" ]; then
 {
   "client_cursor": null,
   "library_id": $LIB_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
       "op": "create",
@@ -443,7 +441,7 @@ if [ -n "${TEST_USER_EMAIL_2:-}" ] && [ -n "${TEST_USER_PASSWORD_2:-}" ]; then
 JSON
 )
     echo "Creating shared-uuid book for user1"
-    api_curl -X POST "$API_URL/sync?library_id=$LIB_ID&calibre_library_id=$CALIBRE_LIB_UUID" -H "Content-Type: application/json" -d "$PAYLOAD1" | jq '.'
+    api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$PAYLOAD1" | jq '.'
 
     # Create a book under user2 with same SHARED_UUID
     BOOK2_ID=400002
@@ -451,7 +449,7 @@ JSON
 {
   "client_cursor": null,
   "library_id": $LIB2_ID,
-  "calibre_library_id": "$CALIBRE_LIB_UUID2",
+  "calibre_library_uuid": "$CALIBRE_LIB_UUID2",
   "changes": [
     {
       "op": "create",
@@ -468,7 +466,7 @@ JSON
 JSON
 )
     echo "Creating shared-uuid book for user2"
-    curl -s -f -X POST "$API_URL/sync?library_id=$LIB2_ID&calibre_library_id=$CALIBRE_LIB_UUID2" -H "Content-Type: application/json" -H "$AUTH2_HEADER" -d "$PAYLOAD2" | jq '.'
+    curl -s -f -X POST "$API_URL/sync" -H "Content-Type: application/json" -H "$AUTH2_HEADER" -d "$PAYLOAD2" | jq '.'
 
     # Verify both exist and are distinct
     UB1=$(api_curl "$API_URL/user-books?library_id=$LIB_ID" | jq -c ".[] | select(.uuid==\"$SHARED_UUID\")" || true)
@@ -491,18 +489,15 @@ JSON
 
     echo "Isolation test passed: same uuid can exist separately per user/library"
 
-    # Cleanup user2 library
-    echo "Deleting test library for user2"
-    curl -s -f -X DELETE "$API_URL/library/$LIB2_ID" -H "$AUTH2_HEADER" || true
+    # Cleanup user2 library (endpoint not documented; skip hard delete)
+    echo "Skipping delete for user2 test library (no documented DELETE /libraries)"
   fi
 else
   echo "Second user credentials not provided; skipping multi-user isolation tests"
 fi
 
-# 10) Cleanup: delete created library via web endpoint
-echo "Deleting test library"
-DEL_LIB_RESP=$(curl -s -f -X DELETE "$API_URL/library/$LIB_ID" -H "$AUTH_HEADER") || true
-echo "Library delete response: $DEL_LIB_RESP"
+# 10) Cleanup: delete created library (endpoint not documented; skip hard delete)
+echo "Skipping delete for test library (no documented DELETE /libraries)"
 
 # Done
 echo "All tests completed successfully"

@@ -101,8 +101,11 @@ EOF
 trap 'cleanup_created_book; rm -rf "$TMPDIR"' EXIT
 
 # Resolve API URL via discovery
-DISCOVERY_ENDPOINT="$DISCOVERY_URL/api/discovery"
-API_URL=$(curl -s "$DISCOVERY_ENDPOINT" | jq -r '.api_url // empty')
+DISCOVERY_ENDPOINT="$DISCOVERY_URL/discovery.php"
+API_URL=$(curl -s "$DISCOVERY_ENDPOINT" | jq -r '.api_url // empty' 2>/dev/null || true)
+if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
+  API_URL=$(curl -s "$DISCOVERY_URL/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+fi
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
   API_URL="$DISCOVERY_URL/api"
 fi
