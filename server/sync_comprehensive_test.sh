@@ -127,14 +127,14 @@ echo "=== Sync Operations ==="
 # Test 4: Get sync cursor
 log_test "Getting sync cursor"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
-CURSOR_RESPONSE=$(api_get "/sync&limit=1")
+CURSOR_RESPONSE=$(api_get "/sync?library_id=$LIBRARY_ID&calibre_library_uuid=$CALIBRE_LIBRARY_ID&limit=1")
 CURSOR=$(echo "$CURSOR_RESPONSE" | jq -r '.new_cursor // .cursor // empty')
 log_pass "Got cursor: ${CURSOR:-none}"
 
 # Test 5: Pull sync (get server changes)
 log_test "Pull sync - fetching server changes"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
-PULL_RESPONSE=$(api_get "/sync&limit=50")
+PULL_RESPONSE=$(api_get "/sync?library_id=$LIBRARY_ID&calibre_library_uuid=$CALIBRE_LIBRARY_ID&limit=50")
 CHANGES_COUNT=$(echo "$PULL_RESPONSE" | jq -r '.changes | length')
 log_pass "Received $CHANGES_COUNT changes from server"
 
@@ -143,6 +143,7 @@ log_test "Push sync - creating test book"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 TIMESTAMP=$(date +%s)
 BOOK_ID=$((RANDOM % 10000 + 1000))
+BOOK_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
 PUSH_PAYLOAD=$(cat <<EOF
 {
     "library_id": $LIBRARY_ID,
@@ -152,6 +153,7 @@ PUSH_PAYLOAD=$(cat <<EOF
         "op": "create",
         "item": {
             "id": $BOOK_ID,
+            "uuid": "$BOOK_UUID",
             "title": "Test Book $TIMESTAMP",
             "authors": [{"name": "Test Author", "role": "author"}],
             "identifiers": {"isbn": "978-0-123456-78-9"},
@@ -195,6 +197,7 @@ UPDATE_PAYLOAD=$(cat <<EOF
         "op": "update",
         "item": {
             "id": $CREATED_BOOK_ID,
+            "uuid": "$BOOK_UUID",
             "title": "Updated Test Book $TIMESTAMP",
             "status": "reading",
             "last_modified": $(date -u +%s)
@@ -270,6 +273,7 @@ DELETE_PAYLOAD=$(cat <<EOF
         "op": "delete",
         "item": {
             "id": $CREATED_BOOK_ID,
+            "uuid": "$BOOK_UUID",
             "last_modified": $(date -u +%s)
         },
         "idempotency_key": "test-delete-$TIMESTAMP"
