@@ -135,14 +135,20 @@ tests/plugin/integration/headless_deep_suite.sh
 Script disponibili:
 - `tests/plugin/integration/headless_scenario_conflict.sh`
   - Crea un libro via `/api/sync`, poi invia un update con `version` più vecchia → atteso `status=conflict`.
+- `tests/plugin/integration/headless_scenario_conflict_e2e.sh`
+  - End‑to‑end: server elimina il libro, client fa update in full sync → conflitto `reason=deleted`.
 - `tests/plugin/integration/headless_scenario_cover_upload.sh`
   - Crea un libro via `/api/sync`, poi carica una copertina con `PUT /api/items/{id}/cover` e verifica il download.
   - Richiede `CALIMOB_COVER_IMAGE` (file jpg/png locale).
 - `tests/plugin/integration/headless_scenario_cover_missing.sh`
   - Imposta `cover_missing=1` via `tools/sql`, verifica che il flag compaia in pull e si azzeri dopo l’upload cover.
   - Richiede `CALIMOB_SUPERADMIN_TOKEN` (superadmin) e `CALIMOB_COVER_IMAGE` opzionale (se mancante crea una PNG temporanea).
+- `tests/plugin/integration/headless_scenario_inventory_reconcile.sh`
+  - End‑to‑end: pull libro dal server, delete locale, full sync → push delete usando inventory prefetch.
 - `tests/plugin/integration/headless_scenario_library_mismatch.sh`
   - Lancia headless con `calibre_library_id` sbagliato → attesa risposta 403 “Library ID mismatch”.
+- `tests/plugin/integration/headless_scenario_retry_backoff.sh`
+  - Verifica retry/backoff del client con un server locale che risponde 503→200.
 
 Variabili richieste (oltre a quelle già usate negli altri test):
 - `DISCOVERY_URL`, `TEST_USER_EMAIL`, `TEST_USER_PASSWORD` (lettura anche da `tests/server/.env`)
