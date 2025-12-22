@@ -126,32 +126,32 @@ request "GET" "/libraries"
 if [[ "$RESPONSE_CODE" != "200" ]]; then
   fail "Failed to list libraries ($RESPONSE_CODE): $RESPONSE_BODY"
 fi
-LIBRARY_ID=$(echo "$RESPONSE_BODY" | jq -r '.[] | select(.calibre_library_id != null and .calibre_library_id != \"\") | .id' | head -n 1)
-CALIBRE_LIBRARY_ID=$(echo "$RESPONSE_BODY" | jq -r '.[] | select(.calibre_library_id != null and .calibre_library_id != \"\") | .calibre_library_id' | head -n 1)
-if [[ -z "$LIBRARY_ID" || -z "$CALIBRE_LIBRARY_ID" ]]; then
-  fail "No library with calibre_library_id found for tests"
+LIBRARY_ID=$(echo "$RESPONSE_BODY" | jq -r '.[] | select(.calibre_library_uuid != null and .calibre_library_uuid != \"\") | .id' | head -n 1)
+CALIBRE_LIBRARY_UUID=$(echo "$RESPONSE_BODY" | jq -r '.[] | select(.calibre_library_uuid != null and .calibre_library_uuid != \"\") | .calibre_library_uuid' | head -n 1)
+if [[ -z "$LIBRARY_ID" || -z "$CALIBRE_LIBRARY_UUID" ]]; then
+  fail "No library with calibre_library_uuid found for tests"
 fi
 pass "Using library id=$LIBRARY_ID"
 
-# Validation: missing calibre_library_id
-log "GET /sync missing calibre_library_id should 422"
+# Validation: missing calibre_library_uuid
+log "GET /sync missing calibre_library_uuid should 422"
 request "GET" "/sync?library_id=$LIBRARY_ID&limit=1"
 if [[ "$RESPONSE_CODE" != "422" ]]; then
   fail "Expected 422, got $RESPONSE_CODE: $RESPONSE_BODY"
 fi
-pass "Missing calibre_library_id rejected"
+pass "Missing calibre_library_uuid rejected"
 
-# Validation: calibre_library_id mismatch
-log "GET /sync with wrong calibre_library_id should 403"
-request "GET" "/sync?library_id=$LIBRARY_ID&calibre_library_id=wrong-$CALIBRE_LIBRARY_ID&limit=1"
+# Validation: calibre_library_uuid mismatch
+log "GET /sync with wrong calibre_library_uuid should 403"
+request "GET" "/sync?library_id=$LIBRARY_ID&calibre_library_uuid=wrong-$CALIBRE_LIBRARY_UUID&limit=1"
 if [[ "$RESPONSE_CODE" != "403" ]]; then
   fail "Expected 403, got $RESPONSE_CODE: $RESPONSE_BODY"
 fi
-pass "calibre_library_id mismatch rejected"
+pass "calibre_library_uuid mismatch rejected"
 
 # Inventory on full sync
 log "GET /sync include_inventory returns inventory payload"
-request "GET" "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID&include_inventory=true&limit=1"
+request "GET" "/sync?library_id=$LIBRARY_ID&calibre_library_uuid=$CALIBRE_LIBRARY_UUID&include_inventory=true&limit=1"
 if [[ "$RESPONSE_CODE" != "200" ]]; then
   fail "GET /sync failed ($RESPONSE_CODE): $RESPONSE_BODY"
 fi
@@ -165,7 +165,7 @@ BOOK_ID=$((900000 + (RANDOM % 10000)))
 CREATE_PAYLOAD=$(cat <<EOF
 {
   "library_id": $LIBRARY_ID,
-  "calibre_library_id": "$CALIBRE_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_UUID",
   "changes": [{
     "op": "create",
     "item": {
@@ -184,7 +184,7 @@ EOF
 )
 
 log "POST /sync create"
-request "POST" "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID" "$CREATE_PAYLOAD"
+request "POST" "/sync" "$CREATE_PAYLOAD"
 CREATE_STATUS=$(echo "$RESPONSE_BODY" | jq -r '.results[0].status // empty')
 if [[ "$RESPONSE_CODE" != "200" || ( "$CREATE_STATUS" != "applied" && "$CREATE_STATUS" != "merged" ) ]]; then
   fail "Create failed ($RESPONSE_CODE): $RESPONSE_BODY"
@@ -199,7 +199,7 @@ CREATED_BOOK_ID=$BOOK_ID
 
 # Inventory hint on incremental pull (cursor not empty)
 log "GET /sync include_inventory_hint on delta"
-request "GET" "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID&cursor=$NEW_CURSOR&include_inventory_hint=true&limit=1"
+request "GET" "/sync?library_id=$LIBRARY_ID&calibre_library_uuid=$CALIBRE_LIBRARY_UUID&cursor=$NEW_CURSOR&include_inventory_hint=true&limit=1"
 if [[ "$RESPONSE_CODE" != "200" ]]; then
   fail "GET /sync delta failed ($RESPONSE_CODE): $RESPONSE_BODY"
 fi
@@ -209,7 +209,7 @@ echo "$RESPONSE_BODY" | jq -e '.inventory_hint | has("version") and has("active"
 
 # Idempotency: re-send same create payload
 log "Idempotency: reuse key with same payload"
-request "POST" "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID" "$CREATE_PAYLOAD"
+request "POST" "/sync" "$CREATE_PAYLOAD"
 REUSE_STATUS=$(echo "$RESPONSE_BODY" | jq -r '.results[0].status // empty')
 if [[ "$RESPONSE_CODE" != "200" || -z "$REUSE_STATUS" || "$REUSE_STATUS" == "error" ]]; then
   fail "Idempotency reuse failed ($RESPONSE_CODE): $RESPONSE_BODY"
@@ -219,7 +219,7 @@ pass "Idempotency reuse OK (status=$REUSE_STATUS)"
 # Idempotency: reuse key with different payload should error
 log "Idempotency: reuse key with different payload"
 BAD_PAYLOAD=$(echo "$CREATE_PAYLOAD" | jq '.changes[0].item.title = "Different Title"')
-request "POST" "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID" "$BAD_PAYLOAD"
+request "POST" "/sync" "$BAD_PAYLOAD"
 BAD_STATUS=$(echo "$RESPONSE_BODY" | jq -r '.results[0].status // empty')
 BAD_ERROR=$(echo "$RESPONSE_BODY" | jq -r '.results[0].error // empty')
 if [[ "$BAD_STATUS" != "error" ]]; then
@@ -238,7 +238,7 @@ fi
 CONFLICT_PAYLOAD=$(cat <<EOF
 {
   "library_id": $LIBRARY_ID,
-  "calibre_library_id": "$CALIBRE_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_UUID",
   "changes": [{
     "op": "update",
     "item": {
@@ -254,7 +254,7 @@ CONFLICT_PAYLOAD=$(cat <<EOF
 }
 EOF
 )
-request "POST" "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID" "$CONFLICT_PAYLOAD"
+request "POST" "/sync" "$CONFLICT_PAYLOAD"
 CONFLICT_STATUS=$(echo "$RESPONSE_BODY" | jq -r '.results[0].status // empty')
 if [[ "$CONFLICT_STATUS" != "conflict" ]]; then
   fail "Expected conflict, got $CONFLICT_STATUS: $RESPONSE_BODY"
@@ -266,7 +266,7 @@ log "Delete book"
 DELETE_PAYLOAD=$(cat <<EOF
 {
   "library_id": $LIBRARY_ID,
-  "calibre_library_id": "$CALIBRE_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_UUID",
   "changes": [{
     "op": "delete",
     "item": { "id": $BOOK_ID, "timestamps": { "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" } },
@@ -275,7 +275,7 @@ DELETE_PAYLOAD=$(cat <<EOF
 }
 EOF
 )
-request "POST" "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID" "$DELETE_PAYLOAD"
+request "POST" "/sync" "$DELETE_PAYLOAD"
 DELETE_STATUS=$(echo "$RESPONSE_BODY" | jq -r '.results[0].status // empty')
 if [[ "$DELETE_STATUS" != "applied" && "$DELETE_STATUS" != "noop" ]]; then
   fail "Delete failed ($RESPONSE_CODE): $RESPONSE_BODY"
@@ -286,7 +286,7 @@ log "Update on deleted book should conflict"
 RESURRECT_PAYLOAD=$(cat <<EOF
 {
   "library_id": $LIBRARY_ID,
-  "calibre_library_id": "$CALIBRE_LIBRARY_ID",
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_UUID",
   "changes": [{
     "op": "update",
     "item": { "id": $BOOK_ID, "title": "Should Fail", "timestamps": { "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%S+00:00)" } },
@@ -295,7 +295,7 @@ RESURRECT_PAYLOAD=$(cat <<EOF
 }
 EOF
 )
-request "POST" "/sync?library_id=$LIBRARY_ID&calibre_library_id=$CALIBRE_LIBRARY_ID" "$RESURRECT_PAYLOAD"
+request "POST" "/sync" "$RESURRECT_PAYLOAD"
 RES_STATUS=$(echo "$RESPONSE_BODY" | jq -r '.results[0].status // empty')
 RES_REASON=$(echo "$RESPONSE_BODY" | jq -r '.results[0].reason // empty')
 if [[ "$RES_STATUS" != "conflict" || "$RES_REASON" != "deleted" ]]; then

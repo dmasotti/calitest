@@ -130,7 +130,7 @@ class TestRestApiClientRequests:
             cursor=None,
             limit=1,
             library_id=35,
-            calibre_library_id='lib-uuid',
+            calibre_library_uuid='lib-uuid',
             include_inventory=True,
             include_inventory_hint=True,
             client_inventory={'min': 1, 'max': 2, 'active': [1, 2], 'missing': []}
