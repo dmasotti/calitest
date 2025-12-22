@@ -2,7 +2,9 @@
 # tests/server/sync_protocol_contract_test.sh
 # End-to-end protocol contract tests based on docs (Two-Way Sync).
 # Usage:
-#   DISCOVERY_URL=https://example.com TEST_USER_EMAIL=user@example.com TEST_USER_PASSWORD=secret ./tests/server/sync_protocol_contract_test.sh
+#   DISCOVERY_URL=https://example.com TEST_USER_EMAIL=user@example.com TEST_USER_PASSWORD=secret \
+#   CLEANUP_EMAIL=superadmin@example.com CLEANUP_PASSWORD=secret \
+#   ./tests/server/sync_protocol_contract_test.sh
 
 set -euo pipefail
 
@@ -13,9 +15,9 @@ fi
 DISCOVERY_URL=${DISCOVERY_URL:-http://127.0.0.1:8000}
 TEST_USER_EMAIL=${TEST_USER_EMAIL:-}
 TEST_USER_PASSWORD=${TEST_USER_PASSWORD:-}
+CLEANUP_EMAIL=${CLEANUP_EMAIL:-}
+CLEANUP_PASSWORD=${CLEANUP_PASSWORD:-}
 TMPDIR=$(mktemp -d)
-
-trap 'rm -rf "$TMPDIR"' EXIT
 
 if ! command -v curl >/dev/null 2>&1; then
   echo "curl required"
@@ -50,6 +52,54 @@ request() {
   RESPONSE_CODE="$code"
 }
 
+# Cleanup via tools SQL (requires superadmin). Uses CLEANUP_* if provided, else TEST_USER.
+cleanup_created_book() {
+  if [[ -z "${CREATED_BOOK_ID:-}" || -z "${LIBRARY_ID:-}" ]]; then
+    return 0
+  fi
+
+  local cleanup_email="${CLEANUP_EMAIL:-$TEST_USER_EMAIL}"
+  local cleanup_password="${CLEANUP_PASSWORD:-$TEST_USER_PASSWORD}"
+
+  local cleanup_login
+  cleanup_login=$(curl -s -X POST "$API_URL/auth/login" \
+    -H "Content-Type: application/json" \
+    -d "{\"email\":\"$cleanup_email\",\"password\":\"$cleanup_password\"}")
+  local cleanup_token
+  cleanup_token=$(echo "$cleanup_login" | jq -r '.token // empty')
+  if [[ -z "$cleanup_token" ]]; then
+    echo "Cleanup login failed: $cleanup_login"
+    return 1
+  fi
+
+  local cleanup_header="Authorization: Bearer $cleanup_token"
+  local delete_sql
+  delete_sql=$(cat <<EOF
+DELETE FROM sync_conflicts WHERE library_id=${LIBRARY_ID} AND calibre_book_id=${CREATED_BOOK_ID};
+DELETE FROM sync_mappings WHERE library_id=${LIBRARY_ID} AND entity_type='books' AND server_id=${CREATED_BOOK_ID};
+DELETE FROM books WHERE library_id=${LIBRARY_ID} AND id=${CREATED_BOOK_ID};
+EOF
+)
+
+  local resp
+  resp=$(curl -s -X POST "$API_URL/tools/sql" \
+    -H "$cleanup_header" \
+    -H "Content-Type: application/json" \
+    -d "{\"q\":\"$delete_sql\"}")
+
+  local status
+  status=$(echo "$resp" | jq -r '.status // empty')
+  if [[ "$status" != "ok" ]]; then
+    echo "Cleanup failed: $resp"
+    return 1
+  fi
+
+  echo "Cleanup OK (book ${CREATED_BOOK_ID})"
+  return 0
+}
+
+trap 'cleanup_created_book; rm -rf "$TMPDIR"' EXIT
+
 # Resolve API URL via discovery
 DISCOVERY_ENDPOINT="$DISCOVERY_URL/api/discovery"
 API_URL=$(curl -s "$DISCOVERY_ENDPOINT" | jq -r '.api_url // empty')
@@ -71,22 +121,17 @@ fi
 AUTH_HEADER="Authorization: Bearer $TOKEN"
 pass "Login OK"
 
-# Create library for isolated tests
-LIB_NAME="contract_sync_$(date +%s)"
-CALIBRE_LIBRARY_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$RANDOM")
-CREATE_LIB_PAYLOAD=$(cat <<EOF
-{ "name": "$LIB_NAME", "description": "contract test", "type": "calibre", "calibre_library_id": "$CALIBRE_LIBRARY_ID" }
-EOF
-)
-request "POST" "/libraries" "$CREATE_LIB_PAYLOAD"
-if [[ "$RESPONSE_CODE" != "200" && "$RESPONSE_CODE" != "201" ]]; then
-  fail "Library creation failed ($RESPONSE_CODE): $RESPONSE_BODY"
+# Use first existing library for tests (avoid creating new libraries)
+request "GET" "/libraries"
+if [[ "$RESPONSE_CODE" != "200" ]]; then
+  fail "Failed to list libraries ($RESPONSE_CODE): $RESPONSE_BODY"
 fi
-LIBRARY_ID=$(echo "$RESPONSE_BODY" | jq -r '.id // empty')
-if [[ -z "$LIBRARY_ID" ]]; then
-  fail "Library id missing: $RESPONSE_BODY"
+LIBRARY_ID=$(echo "$RESPONSE_BODY" | jq -r '.[] | select(.calibre_library_id != null and .calibre_library_id != \"\") | .id' | head -n 1)
+CALIBRE_LIBRARY_ID=$(echo "$RESPONSE_BODY" | jq -r '.[] | select(.calibre_library_id != null and .calibre_library_id != \"\") | .calibre_library_id' | head -n 1)
+if [[ -z "$LIBRARY_ID" || -z "$CALIBRE_LIBRARY_ID" ]]; then
+  fail "No library with calibre_library_id found for tests"
 fi
-pass "Library created id=$LIBRARY_ID"
+pass "Using library id=$LIBRARY_ID"
 
 # Validation: missing calibre_library_id
 log "GET /sync missing calibre_library_id should 422"
@@ -150,6 +195,7 @@ if [[ -z "$SERVER_VERSION" || -z "$NEW_CURSOR" ]]; then
   fail "Missing server_version/cursor: $RESPONSE_BODY"
 fi
 pass "Create applied (version=$SERVER_VERSION)"
+CREATED_BOOK_ID=$BOOK_ID
 
 # Inventory hint on incremental pull (cursor not empty)
 log "GET /sync include_inventory_hint on delta"
