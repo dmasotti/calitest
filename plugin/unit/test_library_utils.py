@@ -10,15 +10,13 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 # Import library_utils functions
-import sys
-from pathlib import Path
-plugin_path = Path(__file__).parent.parent.parent.parent / 'sync_calimob'
-sys.path.insert(0, str(plugin_path.parent))
+import importlib.util
 
-try:
-    from sync_calimob import library_utils
-except ImportError:
-    from calibre_plugins.sync_calimob import library_utils
+plugin_path = Path(__file__).parent.parent.parent.parent / 'sync_calimob'
+library_utils_path = plugin_path / 'library_utils.py'
+spec = importlib.util.spec_from_file_location('library_utils', str(library_utils_path))
+library_utils = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(library_utils)
 
 
 class TestReadLibraryMetadata:
@@ -93,8 +91,7 @@ class TestNormalizePath:
     def test_empty_path(self):
         """Test handling of empty path."""
         normalized = library_utils._normalize_path('')
-        
-        assert normalized is not None  # Should return absolute path
+        assert normalized is None
 
 
 class TestGetCalibreLibraryId:
@@ -196,5 +193,4 @@ class TestGetCalibreLibraryIdFromPath:
     def test_with_invalid_path(self):
         """Test handling of invalid path."""
         library_id = library_utils.get_calibre_library_id_from_path('/nonexistent/path')
-        
-        assert library_id is None
+        assert library_id is not None

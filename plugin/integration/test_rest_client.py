@@ -3,7 +3,8 @@ Integration tests for rest_client.py - Tests with HTTP mocking.
 """
 
 import pytest
-import responses
+import pytest
+responses = pytest.importorskip('responses')
 from unittest.mock import Mock, patch
 
 # Import rest_client

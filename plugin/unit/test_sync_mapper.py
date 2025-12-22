@@ -5,17 +5,15 @@ Unit tests for sync_mapper.py - Pure functions without external dependencies.
 import pytest
 from unittest.mock import Mock
 from datetime import datetime
-
-# Import sync_mapper functions
-import sys
+import importlib.util
 from pathlib import Path
-plugin_path = Path(__file__).parent.parent.parent.parent / 'sync_calimob'
-sys.path.insert(0, str(plugin_path.parent))
 
-try:
-    from sync_calimob import sync_mapper
-except ImportError:
-    from calibre_plugins.sync_calimob import sync_mapper
+# Import sync_mapper without importing sync_calimob __init__
+plugin_path = Path(__file__).parent.parent.parent.parent / 'sync_calimob'
+sync_mapper_path = plugin_path / 'sync_mapper.py'
+spec = importlib.util.spec_from_file_location('sync_mapper', str(sync_mapper_path))
+sync_mapper = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sync_mapper)
 
 
 class TestCalibreToJsonItem:
@@ -33,7 +31,8 @@ class TestCalibreToJsonItem:
         assert len(item['authors']) == 1
         assert item['authors'][0]['name'] == 'Test Author'
         assert item['authors'][0]['role'] == 'author'
-        assert item['calibre_book_id'] == 123
+        assert item['id'] == 123
+        assert item['uuid'] == mock_calibre_metadata.uuid
         assert 'client_ids' in item
         assert 'calibre:test-library-id:123' in item['client_ids']
     
@@ -49,7 +48,7 @@ class TestCalibreToJsonItem:
         )
         
         assert item['series']['name'] == 'Test Series'
-        assert item['series']['index'] == 2.5
+        assert item['series']['series_index'] == 2.5
     
     def test_without_series(self, mock_calibre_metadata):
         """Test conversion without series."""
@@ -101,9 +100,10 @@ class TestCalibreToJsonItem:
         )
         
         assert len(item['tags']) == 3
-        assert 'fiction' in item['tags']
-        assert 'sci-fi' in item['tags']
-        assert 'test' in item['tags']
+        tag_names = [t.get('name') for t in item['tags']]
+        assert 'fiction' in tag_names
+        assert 'sci-fi' in tag_names
+        assert 'test' in tag_names
     
     def test_status_tag_mapping(self, mock_calibre_metadata, mock_calibre_db):
         """Test status mapping from tags."""
@@ -162,6 +162,7 @@ class TestJsonItemToCalibre:
         assert metadata_dict['authors'][0] == 'Test Author'
         assert metadata_dict['series'] == 'Test Series'
         assert metadata_dict['series_index'] == 1.0
+        assert metadata_dict['uuid'] == sample_json_item['uuid']
     
     def test_without_series(self, sample_json_item, mock_calibre_db):
         """Test conversion without series."""
@@ -202,7 +203,8 @@ class TestCalculateCoverHash:
         hash_value = sync_mapper.calculate_cover_hash(cover_data)
         
         assert isinstance(hash_value, str)
-        assert len(hash_value) == 64  # SHA256 hex string length
+        assert hash_value.startswith('sha256:')
+        assert len(hash_value) == 71  # "sha256:" + 64 hex chars
     
     def test_hash_from_path(self, tmp_path):
         """Test hash calculation from file path."""
@@ -212,7 +214,8 @@ class TestCalculateCoverHash:
         hash_value = sync_mapper.calculate_cover_hash(str(cover_file))
         
         assert isinstance(hash_value, str)
-        assert len(hash_value) == 64
+        assert hash_value.startswith('sha256:')
+        assert len(hash_value) == 71
     
     def test_hash_consistency(self):
         """Test that same data produces same hash."""

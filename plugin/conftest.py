@@ -7,24 +7,87 @@ import sys
 import os
 from unittest.mock import Mock, MagicMock, patch
 from pathlib import Path
+from datetime import datetime, timezone
+import types
+
+# Provide minimal calibre stubs if Calibre is not installed (unit tests only).
+if 'calibre' not in sys.modules:
+    calibre = types.ModuleType('calibre')
+    calibre.utils = types.ModuleType('calibre.utils')
+    calibre.utils.date = types.ModuleType('calibre.utils.date')
+    calibre.utils.iso8601 = types.ModuleType('calibre.utils.iso8601')
+    calibre.ebooks = types.ModuleType('calibre.ebooks')
+    calibre.ebooks.metadata = types.ModuleType('calibre.ebooks.metadata')
+    calibre.ebooks.metadata.book = types.ModuleType('calibre.ebooks.metadata.book')
+    calibre.ebooks.metadata.book.base = types.ModuleType('calibre.ebooks.metadata.book.base')
+    calibre.constants = types.ModuleType('calibre.constants')
+    calibre.devices = types.ModuleType('calibre.devices')
+    calibre.devices.usbms = types.ModuleType('calibre.devices.usbms')
+    calibre.devices.usbms.driver = types.ModuleType('calibre.devices.usbms.driver')
+
+    calibre.utils.date.UNDEFINED_DATE = object()
+    calibre.utils.date.utcnow = lambda: datetime.now(timezone.utc)
+
+    def _parse_iso8601(val):
+        if not val:
+            return None
+        if isinstance(val, datetime):
+            return val
+        try:
+            return datetime.fromisoformat(str(val).replace('Z', '+00:00'))
+        except Exception:
+            return None
+
+    calibre.utils.iso8601.parse_iso8601 = _parse_iso8601
+    calibre.utils.iso8601.format_iso8601 = lambda dt: dt.isoformat() if dt else None
+
+    calibre.ebooks.metadata.authors_to_string = lambda authors: ', '.join(authors or [])
+    calibre.ebooks.metadata.fmt_sidx = lambda x: x
+
+    class _Metadata(object):
+        def __init__(self, title='', authors=None):
+            self.title = title
+            self.authors = authors or []
+
+    calibre.ebooks.metadata.book.base.Metadata = _Metadata
+    calibre.constants.DEBUG = False
+    calibre.devices.usbms.driver.debug_print = lambda *args, **kwargs: None
+
+    sys.modules['calibre'] = calibre
+    sys.modules['calibre.utils'] = calibre.utils
+    sys.modules['calibre.utils.date'] = calibre.utils.date
+    sys.modules['calibre.utils.iso8601'] = calibre.utils.iso8601
+    sys.modules['calibre.ebooks'] = calibre.ebooks
+    sys.modules['calibre.ebooks.metadata'] = calibre.ebooks.metadata
+    sys.modules['calibre.ebooks.metadata.book'] = calibre.ebooks.metadata.book
+    sys.modules['calibre.ebooks.metadata.book.base'] = calibre.ebooks.metadata.book.base
+    sys.modules['calibre.constants'] = calibre.constants
+    sys.modules['calibre.devices'] = calibre.devices
+    sys.modules['calibre.devices.usbms'] = calibre.devices.usbms
+    sys.modules['calibre.devices.usbms.driver'] = calibre.devices.usbms.driver
+
+# Provide minimal calibre_plugins stubs for patching config
+if 'calibre_plugins' not in sys.modules:
+    calibre_plugins = types.ModuleType('calibre_plugins')
+    sys.modules['calibre_plugins'] = calibre_plugins
+if 'calibre_plugins.sync_calimob' not in sys.modules:
+    sync_pkg = types.ModuleType('calibre_plugins.sync_calimob')
+    sys.modules['calibre_plugins.sync_calimob'] = sync_pkg
+if 'calibre_plugins.sync_calimob.config' not in sys.modules:
+    cfg_mod = types.ModuleType('calibre_plugins.sync_calimob.config')
+    cfg_mod.plugin_prefs = {}
+    sys.modules['calibre_plugins.sync_calimob.config'] = cfg_mod
 
 # Add sync_calimob to path
 plugin_path = Path(__file__).parent.parent.parent / 'sync_calimob'
 sys.path.insert(0, str(plugin_path.parent))
-
-# Import after path setup
-try:
-    import sync_calimob
-except ImportError:
-    # Fallback: try calibre_plugins path
-    sys.path.insert(0, str(plugin_path.parent.parent))
-    import calibre_plugins.sync_calimob as sync_calimob
 
 
 @pytest.fixture
 def mock_calibre_metadata():
     """Mock Calibre Metadata object."""
     from unittest.mock import Mock
+    from datetime import datetime, timezone
     
     metadata = Mock()
     metadata.title = 'Test Book'
@@ -39,6 +102,9 @@ def mock_calibre_metadata():
     metadata.identifiers = {}
     metadata.comments = ''
     metadata.rating = 0.0
+    metadata.uuid = '11111111-2222-3333-4444-555555555555'
+    metadata.timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    metadata.last_modified = datetime(2024, 1, 2, tzinfo=timezone.utc)
     
     # Mock methods
     metadata.get = Mock(return_value=None)
@@ -47,7 +113,7 @@ def mock_calibre_metadata():
 
 
 @pytest.fixture
-def mock_calibre_db():
+def mock_calibre_db(mock_calibre_metadata):
     """Mock Calibre database object."""
     db = Mock()
     
@@ -61,7 +127,7 @@ def mock_calibre_db():
     db.data.iterallids = Mock(return_value=iter([1, 2, 3]))
     
     # Mock metadata methods
-    db.get_metadata = Mock(return_value=mock_calibre_metadata())
+    db.get_metadata = Mock(return_value=mock_calibre_metadata)
     db.title = Mock(return_value='Test Book')
     db.authors = Mock(return_value='Test Author')
     db.rating = Mock(return_value=0.0)
@@ -143,8 +209,8 @@ def mock_plugin_config():
 def sample_json_item():
     """Sample JSON item from REST API."""
     return {
-        'id': 'server-item-123',
-        'calibre_book_id': 1,
+        'id': 1,
+        'uuid': 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
         'client_ids': {
             'calibre:test-library-id:1': '1'
         },
@@ -156,7 +222,7 @@ def sample_json_item():
         ],
         'series': {
             'name': 'Test Series',
-            'index': 1.0
+            'series_index': 1.0
         },
         'identifiers': {
             'isbn': '9781234567890'
@@ -164,7 +230,7 @@ def sample_json_item():
         'publisher': 'Test Publisher',
         'pubdate': '2020-01-01T00:00:00Z',
         'languages': ['eng'],
-        'tags': ['fiction', 'test'],
+        'tags': [{'name': 'fiction'}, {'name': 'test'}],
         'status': None,
         'rating': 4,
         'comments': 'Test description',
