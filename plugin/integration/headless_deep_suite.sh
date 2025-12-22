@@ -179,7 +179,7 @@ if [[ "$COUNT_1" -lt 1 ]]; then
   exit 1
 fi
 
-UPDATE_TS=$(date -u +%s)
+UPDATE_TS=$(( $(date -u +%s) + 5 ))
 UPDATE_PAYLOAD=$(cat <<JSON
 {
   "library_id": $CALIMOB_SERVER_LIBRARY_ID,
