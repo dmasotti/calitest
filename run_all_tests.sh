@@ -101,12 +101,17 @@ echo ""
 run_test_suite "Legacy Book Creation" "$SCRIPT_DIR/server/test_legacy_book.sh" || true
 
 echo ""
+
+# 4. UUID Reconciliation Tests
+run_test_suite "UUID Reconciliation" "$SCRIPT_DIR/server/sync_uuid_reconciliation_test.sh" || true
+
+echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${CYAN}           Test Execution Summary         ${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-TOTAL_SUITES=3
+TOTAL_SUITES=4
 PASSED_SUITES=$((TOTAL_SUITES - ${#FAILED_SUITES[@]}))
 
 echo "Total test suites: $TOTAL_SUITES"
