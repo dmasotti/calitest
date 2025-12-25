@@ -7,6 +7,7 @@ use App\Models\Library;
 use App\Models\UserBook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 use Laravel\Sanctum\Sanctum;
 
@@ -37,7 +38,7 @@ class SubscriptionLimitsMiddlewareTest extends TestCase
 
         $response = $this->postJson('/api/libraries', [
             'name' => 'Test Library',
-            'calibre_library_uuid' => 'test-uuid-123',
+            'calibre_library_uuid' => (string) Str::uuid(),
         ]);
 
         $response->assertStatus(201);
@@ -61,7 +62,7 @@ class SubscriptionLimitsMiddlewareTest extends TestCase
 
         $response = $this->postJson('/api/libraries', [
             'name' => 'Second Library',
-            'calibre_library_uuid' => 'test-uuid-456',
+            'calibre_library_uuid' => (string) Str::uuid(),
         ]);
 
         $response->assertStatus(403)
@@ -89,13 +90,19 @@ class SubscriptionLimitsMiddlewareTest extends TestCase
         
         Sanctum::actingAs($user);
 
-        // Superadmin should be able to create more libraries
-        $response = $this->postJson('/api/libraries', [
+        // Superadmin should be able to create more libraries via web route (middleware applies)
+        session()->start();
+        $response = $this->actingAs($user)->post('/library', [
             'name' => 'Superadmin Library',
-            'calibre_library_uuid' => 'test-uuid-789',
+            'calibre_library_uuid' => (string) Str::uuid(),
+            '_token' => session()->token(),
         ]);
 
-        $response->assertStatus(201);
+        $response->assertStatus(302);
+        $this->assertDatabaseHas('libraries', [
+            'user_id' => $user->id,
+            'name' => 'Superadmin Library',
+        ]);
     }
 
     /**

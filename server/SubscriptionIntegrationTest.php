@@ -7,6 +7,7 @@ use App\Models\Library;
 use App\Models\UserBook;
 use App\Models\BookFile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -49,7 +50,7 @@ class SubscriptionIntegrationTest extends TestCase
         // 1. Create library (should succeed)
         $libraryResponse = $this->postJson('/api/libraries', [
             'name' => 'My Library',
-            'calibre_library_uuid' => 'test-uuid-1',
+            'calibre_library_uuid' => (string) Str::uuid(),
         ]);
         $libraryResponse->assertStatus(201);
         $libraryId = $libraryResponse->json('id');
@@ -57,7 +58,7 @@ class SubscriptionIntegrationTest extends TestCase
         // 2. Try to create second library (should fail)
         $secondLibraryResponse = $this->postJson('/api/libraries', [
             'name' => 'Second Library',
-            'calibre_library_uuid' => 'test-uuid-2',
+            'calibre_library_uuid' => (string) Str::uuid(),
         ]);
         $secondLibraryResponse->assertStatus(403);
 
@@ -76,7 +77,7 @@ class SubscriptionIntegrationTest extends TestCase
                 [
                     'op' => 'create',
                     'item' => [
-                        'calibre_book_id' => 999,
+                        'id' => 999,
                         'uuid' => (string) Str::uuid(),
                         'title' => 'New Book',
                         'authors' => ['Test Author'],
@@ -111,7 +112,7 @@ class SubscriptionIntegrationTest extends TestCase
         // Try to create second library (should fail)
         $response = $this->postJson('/api/libraries', [
             'name' => 'Second Library',
-            'calibre_library_uuid' => 'test-uuid-2',
+            'calibre_library_uuid' => (string) Str::uuid(),
         ]);
         $response->assertStatus(403);
 
@@ -122,17 +123,19 @@ class SubscriptionIntegrationTest extends TestCase
             'subscription_expires_at' => now()->addMonth(),
         ]);
 
+        Cache::forget("user_limits:{$user->id}");
+
         // Now should be able to create more libraries
         $response = $this->postJson('/api/libraries', [
             'name' => 'Second Library',
-            'calibre_library_uuid' => 'test-uuid-2',
+            'calibre_library_uuid' => (string) Str::uuid(),
         ]);
         $response->assertStatus(201);
 
         // Should be able to create up to 3 libraries total
         $response = $this->postJson('/api/libraries', [
             'name' => 'Third Library',
-            'calibre_library_uuid' => 'test-uuid-3',
+            'calibre_library_uuid' => (string) Str::uuid(),
         ]);
         $response->assertStatus(201);
     }
@@ -152,7 +155,10 @@ class SubscriptionIntegrationTest extends TestCase
         ]);
         
         BookFile::factory()->create([
-            'book_id' => $userBook->id,
+            'book' => $userBook->id,
+            'user_id' => $userBook->user_id,
+            'library_id' => $userBook->library_id,
+            'file_path' => 'ebooks/large_library.epub',
             'uncompressed_size' => 450 * 1024 * 1024, // 450 MB
             'is_uploaded' => true,
         ]);
@@ -167,7 +173,7 @@ class SubscriptionIntegrationTest extends TestCase
                 [
                     'op' => 'create',
                     'item' => [
-                        'calibre_book_id' => 1,
+                        'id' => 1,
                         'uuid' => (string) Str::uuid(),
                         'title' => 'Large Book',
                         'authors' => ['Test Author'],
@@ -197,7 +203,7 @@ class SubscriptionIntegrationTest extends TestCase
                 [
                     'op' => 'create',
                     'item' => [
-                        'calibre_book_id' => 2,
+                        'id' => 2,
                         'uuid' => (string) Str::uuid(),
                         'title' => 'Small Book',
                         'authors' => ['Test Author'],
@@ -239,7 +245,10 @@ class SubscriptionIntegrationTest extends TestCase
         ]);
         
         BookFile::factory()->create([
-            'book_id' => $userBook->id,
+            'book' => $userBook->id,
+            'user_id' => $userBook->user_id,
+            'library_id' => $userBook->library_id,
+            'file_path' => 'ebooks/storage.epub',
             'uncompressed_size' => 250 * 1024 * 1024, // 250 MB
             'is_uploaded' => true,
         ]);

@@ -113,7 +113,10 @@ class UserSubscriptionModelTest extends TestCase
         
         // Create book file with size
         $bookFile = BookFile::factory()->create([
-            'book_id' => $userBook->id,
+            'book' => $userBook->id,
+            'user_id' => $userBook->user_id,
+            'library_id' => $userBook->library_id,
+            'file_path' => 'ebooks/unit-test.epub',
             'uncompressed_size' => 5242880, // 5 MB
             'is_uploaded' => true,
         ]);
@@ -138,7 +141,10 @@ class UserSubscriptionModelTest extends TestCase
         
         // 5 MB
         BookFile::factory()->create([
-            'book_id' => $userBook->id,
+            'book' => $userBook->id,
+            'user_id' => $userBook->user_id,
+            'library_id' => $userBook->library_id,
+            'file_path' => 'ebooks/mb-test.epub',
             'uncompressed_size' => 5242880,
             'is_uploaded' => true,
         ]);
@@ -185,7 +191,10 @@ class UserSubscriptionModelTest extends TestCase
         ]);
         
         BookFile::factory()->create([
-            'book_id' => $userBook->id,
+            'book' => $userBook->id,
+            'user_id' => $userBook->user_id,
+            'library_id' => $userBook->library_id,
+            'file_path' => 'ebooks/storage-limit.epub',
             'uncompressed_size' => 400 * 1024 * 1024, // 400 MB
             'is_uploaded' => true,
         ]);
@@ -273,14 +282,20 @@ class UserSubscriptionModelTest extends TestCase
         
         // Create uploaded file
         BookFile::factory()->create([
-            'book_id' => $userBook->id,
+            'book' => $userBook->id,
+            'user_id' => $userBook->user_id,
+            'library_id' => $userBook->library_id,
+            'file_path' => 'ebooks/uploaded-count.epub',
             'uncompressed_size' => 5242880,
             'is_uploaded' => true,
         ]);
         
         // Create non-uploaded file (should not count)
         BookFile::factory()->create([
-            'book_id' => $userBook->id,
+            'book' => $userBook->id,
+            'user_id' => $userBook->user_id,
+            'library_id' => $userBook->library_id,
+            'file_path' => 'ebooks/not-uploaded.epub',
             'uncompressed_size' => 10485760,
             'is_uploaded' => false,
         ]);

@@ -7,6 +7,7 @@ use App\Models\SyncMapping;
 use App\Models\User;
 use App\Models\UserBook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Tests\TestCase;
 
 class TombstoneAdminTest extends TestCase
@@ -15,7 +16,7 @@ class TombstoneAdminTest extends TestCase
 
     public function test_cleanup_tombstones_removes_records_and_mappings(): void
     {
-        $this->withoutMiddleware(\App\Http\Middleware\VerifyCsrfToken::class);
+        $this->withoutMiddleware(VerifyCsrfToken::class);
         $admin = User::factory()->create(['is_superadmin' => true]);
         $library = Library::factory()->create(['user_id' => $admin->id]);
 
@@ -52,7 +53,7 @@ class TombstoneAdminTest extends TestCase
 
     public function test_resolve_tombstones_creates_sync_mapping(): void
     {
-        $this->withoutMiddleware(\App\Http\Middleware\VerifyCsrfToken::class);
+        $this->withoutMiddleware(VerifyCsrfToken::class);
         $admin = User::factory()->create(['is_superadmin' => true]);
         $library = Library::factory()->create(['user_id' => $admin->id]);
 

@@ -310,9 +310,7 @@ SERVER_TITLE_UPDATE=$(cat <<JSON
           "id": $REAL_CONFLICT_BOOK_ID,
           "uuid": "$REAL_CONFLICT_UUID",
           "title": "$SERVER_TITLE_A",
-          "publisher": "Test Publisher",
-          "page_count": 200,
-          "last_modified": $SERVER_TITLE_A_TS
+          "last_modified": "$SERVER_TITLE_A_TS"
         }
     }
   ]
@@ -340,9 +338,7 @@ CLIENT_TITLE_UPDATE=$(cat <<JSON
           "id": $REAL_CONFLICT_BOOK_ID,
           "uuid": "$REAL_CONFLICT_UUID",
           "title": "$CLIENT_TITLE_B",
-          "publisher": "Test Publisher",
-          "page_count": 200,
-          "last_modified": $CLIENT_TITLE_B_TS,
+          "last_modified": "$CLIENT_TITLE_B_TS",
           "version": 1
         }
     }
@@ -374,6 +370,7 @@ fi
 # 9) Simple conflict simulation (original test)
 CONFLICT_BOOK_ID=200000
 CONFLICT_TITLE="Conflict Book $(date +%s)"
+CONFLICT_UUID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "conflict-uuid-$(date +%s)-$RANDOM")
 CONFLICT_CREATE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
@@ -385,6 +382,7 @@ CONFLICT_CREATE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "conf_create_$(date +%s)",
       "item": {
         "id": $CONFLICT_BOOK_ID,
+        "uuid": "$CONFLICT_UUID",
         "title": "$CONFLICT_TITLE",
         "last_modified": $(date -u +%s)
       }
@@ -412,8 +410,9 @@ SERVER_UPDATE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "server_update_$(date +%s)",
       "item": {
         "id": $CONFLICT_BOOK_ID,
+        "uuid": "$CONFLICT_UUID",
         "title": "$NEWER_TITLE",
-        "last_modified": $SERVER_NEWER_TS
+        "last_modified": "$SERVER_NEWER_TS"
       }
     }
   ]
@@ -437,8 +436,9 @@ CLIENT_OLDER_UPDATE_PAYLOAD=$(cat <<JSON
       "idempotency_key": "client_old_update_$(date +%s)",
       "item": {
         "id": $CONFLICT_BOOK_ID,
+        "uuid": "$CONFLICT_UUID",
         "title": "Client-Older-Title",
-        "last_modified": $CLIENT_OLDER_TS,
+        "last_modified": "$CLIENT_OLDER_TS",
         "version": 1
       }
     }

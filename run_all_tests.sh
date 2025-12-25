@@ -63,6 +63,7 @@ run_test_suite() {
         return 1
     fi
     
+    # Pass env vars to child script
     if bash "$test_script"; then
         echo ""
         echo -e "${GREEN}✓ $suite_name PASSED${NC}"
@@ -104,6 +105,11 @@ echo ""
 
 # 4. UUID Reconciliation Tests
 run_test_suite "UUID Reconciliation" "$SCRIPT_DIR/server/sync_uuid_reconciliation_test.sh" || true
+
+echo ""
+
+# 5. Metadata Comprehensive Tests
+run_test_suite "Metadata Comprehensive" "$SCRIPT_DIR/server/metadata_test.sh" || true
 
 echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

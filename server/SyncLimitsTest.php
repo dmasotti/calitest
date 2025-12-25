@@ -53,7 +53,7 @@ class SyncLimitsTest extends TestCase
                 [
                     'op' => 'create',
                     'item' => [
-                        'calibre_book_id' => 999,
+                        'id' => 999,
                         'uuid' => (string) Str::uuid(),
                         'title' => 'New Book',
                         'authors' => ['Test Author'],
@@ -89,7 +89,10 @@ class SyncLimitsTest extends TestCase
         ]);
         
         \App\Models\BookFile::factory()->create([
-            'book_id' => $userBook->id,
+            'book' => $userBook->id,
+            'user_id' => $userBook->user_id,
+            'library_id' => $userBook->library_id,
+            'file_path' => 'ebooks/storage-limit.epub',
             'uncompressed_size' => 450 * 1024 * 1024, // 450 MB
             'is_uploaded' => true,
         ]);
@@ -104,7 +107,7 @@ class SyncLimitsTest extends TestCase
                 [
                     'op' => 'create',
                     'item' => [
-                        'calibre_book_id' => 999,
+                        'id' => 999,
                         'uuid' => (string) Str::uuid(),
                         'title' => 'New Book',
                         'authors' => ['Test Author'],
@@ -147,7 +150,7 @@ class SyncLimitsTest extends TestCase
                 [
                     'op' => 'create',
                     'item' => [
-                        'calibre_book_id' => 1,
+                        'id' => 1,
                         'uuid' => (string) Str::uuid(),
                         'title' => 'Test Book',
                         'authors' => ['Test Author'],
@@ -186,7 +189,7 @@ class SyncLimitsTest extends TestCase
                 [
                     'op' => 'create',
                     'item' => [
-                        'calibre_book_id' => 999,
+                        'id' => 999,
                         'uuid' => (string) Str::uuid(),
                         'title' => 'New Book',
                         'authors' => ['Test Author'],
@@ -220,7 +223,7 @@ class SyncLimitsTest extends TestCase
                 [
                     'op' => 'create',
                     'item' => [
-                        'calibre_book_id' => 1,
+                        'id' => 1,
                         'uuid' => (string) Str::uuid(),
                         'title' => 'Test Book',
                         'authors' => ['Test Author'],

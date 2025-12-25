@@ -71,7 +71,7 @@ class SyncItemMappingTest extends TestCase
             'series' => $series->getAttribute('id'),
             'user_id' => $user->id,
             'library_id' => $library->id,
-            'item_order' => 1,
+            'series_index' => 1,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

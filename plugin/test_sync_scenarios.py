@@ -82,7 +82,10 @@ def test_scenario_update_book():
             'title': 'Updated Book Title',
             'status': 'reading',
             'progress_percent': 50,
-            'last_modified': 1766252400
+            'last_modified': 1766252400,
+            'timestamps': {
+                'updated_at': 1766252400
+            }
         },
         'idempotency_key': 'test-update-key-001'
     }

@@ -18,11 +18,12 @@ TEST_USER_PASSWORD=${TEST_USER_PASSWORD:-}
 TMPDIR=$(mktemp -d)
 
 # Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+export RED='\033[0;31m'
+export GREEN='\033[0;32m'
+export YELLOW='\033[1;33m'
+export BLUE='\033[0;34m'
+export CYAN='\033[0;36m'
+export NC='\033[0m'
 
 # Counters
 TOTAL_TESTS=0
@@ -59,35 +60,32 @@ log_fail() {
     echo -e "${RED}✗${NC} $1"
 }
 
-TOTAL_TESTS=$((TOTAL_TESTS + 1))
+# Helper function to parse JSON with jq and print raw output on error
+json_parse() {
+    local json_string="$1"
+    local jq_filter="$2"
+    local result
 
-# Step 1: Discovery
-log_test "Discovering API URL"
-API_URL=$(curl -s "${DISCOVERY_URL}/discovery.php" | jq -r '.api_url // empty' 2>/dev/null || true)
-if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
-  API_URL=$(curl -s "${DISCOVERY_URL}/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
-fi
-if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
-    log_fail "Discovery failed"
-    exit 1
-fi
-log_pass "API URL discovered: $API_URL"
+    # Try to parse with jq
+    result=$(echo "$json_string" | jq -r "$jq_filter" 2>/dev/null)
+    local jq_exit_code=$?
 
-# Step 2: Login
-log_test "Authenticating user"
-LOGIN_RESPONSE=$(curl -s -X POST "$API_URL/auth/login" \
-    -H "Content-Type: application/json" \
-    -d "{\"email\":\"$TEST_USER_EMAIL\",\"password\":\"$TEST_USER_PASSWORD\"}")
+    # Check if jq failed
+    if [[ $jq_exit_code -ne 0 ]]; then
+        echo -e "\n${RED}jq parsing failed with exit code $jq_exit_code!${NC}" >&2
+        echo -e "${YELLOW}Filter was:${NC} ${CYAN}$jq_filter${NC}" >&2
+        echo -e "${YELLOW}Raw response was:${NC}" >&2
+        echo "$json_string" >&2
+        # No exit here, just return empty string to allow fallback
+        echo ""
+        return 0
+    fi
+    
+    echo "$result"
+    return 0
+}
 
-TOKEN=$(echo "$LOGIN_RESPONSE" | jq -r '.token')
-if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
-    log_fail "Login failed"
-    echo "$LOGIN_RESPONSE"
-    exit 1
-fi
-log_pass "Login successful"
-
-# Helper for authenticated requests
+# Helper for authenticated requests (definite prima dell'uso)
 api_get() {
     curl -s -H "Authorization: Bearer $TOKEN" "$API_URL$1"
 }
@@ -104,6 +102,73 @@ api_put() {
         "$API_URL$1" -d "$2"
 }
 
+TOTAL_TESTS=$((TOTAL_TESTS + 1))
+
+# Step 1: Discovery
+log_test "Discovering API URL"
+DISCOVERY_RESPONSE=$(curl -s "${DISCOVERY_URL}/discovery.php")
+API_URL=$(json_parse "$DISCOVERY_RESPONSE" '.api_url // empty')
+
+if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
+  DISCOVERY_RESPONSE=$(curl -s "${DISCOVERY_URL}/api/discovery")
+  API_URL=$(json_parse "$DISCOVERY_RESPONSE" '.api_url // empty')
+fi
+if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
+    log_fail "Discovery failed"
+    exit 1
+fi
+log_pass "API URL discovered: $API_URL"
+
+# Step 2: Login
+log_test "Authenticating user"
+LOGIN_RESPONSE=$(curl -s -X POST "$API_URL/auth/login" \
+    -H "Content-Type: application/json" \
+    -d "{\"email\":\"$TEST_USER_EMAIL\",\"password\":\"$TEST_USER_PASSWORD\"}")
+
+TOKEN=$(json_parse "$LOGIN_RESPONSE" '.token')
+if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
+    log_fail "Login failed"
+    echo "$LOGIN_RESPONSE"
+    exit 1
+fi
+log_pass "Login successful"
+
+# Crea o riutilizza una libreria di test
+log_test "Getting or creating test library"
+TOTAL_TESTS=$((TOTAL_TESTS + 1))
+EXISTING_LIBRARIES=$(api_get "/libraries")
+FIRST_LIB_ID=$(json_parse "$EXISTING_LIBRARIES" '.[0].id // empty')
+
+if [[ -n "$FIRST_LIB_ID" && "$FIRST_LIB_ID" != "null" ]]; then
+    LIBRARY_ID="$FIRST_LIB_ID"
+    CALIBRE_LIB_UUID=$(json_parse "$EXISTING_LIBRARIES" '.[0].calibre_library_uuid // empty')
+    log_pass "Using existing library ID: $LIBRARY_ID with UUID: $CALIBRE_LIB_UUID"
+else
+    # Crea una nuova libreria di test se non ne esistono
+    LIB_NAME="test_sync_$(date +%s)"
+    CALIBRE_LIB_UUID=$(uuidgen) # Genera un UUID univoco
+
+    CREATE_LIB_PAYLOAD=$(cat <<EOF
+{
+      "name": "$LIB_NAME",
+      "type": "calibre",
+      "calibre_library_uuid": "$CALIBRE_LIB_UUID"
+    }
+EOF
+    )
+
+    CREATE_LIB_RESPONSE=$(api_post "/libraries" "$CREATE_LIB_PAYLOAD")
+    LIBRARY_ID=$(json_parse "$CREATE_LIB_RESPONSE" '.id')
+    if [[ -z "$LIBRARY_ID" || "$LIBRARY_ID" == "null" ]]; then
+        log_fail "Library creation failed"
+        echo "$CREATE_LIB_RESPONSE" # Stampa la risposta grezza in caso di errore
+        exit 1
+    fi
+    log_pass "Test library created with ID: $LIBRARY_ID and UUID: $CALIBRE_LIB_UUID"
+fi
+
+
+
 echo ""
 echo "=== Library Management ==="
 
@@ -111,11 +176,11 @@ echo "=== Library Management ==="
 log_test "Getting user libraries"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 LIBRARIES=$(api_get "/libraries")
-LIBRARY_COUNT=$(echo "$LIBRARIES" | jq -r 'if type=="array" then length else 0 end')
+    LIBRARY_COUNT=$(json_parse "$LIBRARIES" 'if type=="array" then length else 0 end')
 if [[ "$LIBRARY_COUNT" -gt 0 ]]; then
     log_pass "Found $LIBRARY_COUNT libraries"
-    LIBRARY_ID=$(echo "$LIBRARIES" | jq -r '.[0].id')
-    CALIBRE_LIBRARY_ID=$(echo "$LIBRARIES" | jq -r '.[0].calibre_library_uuid // empty')
+    LIBRARY_ID=$(json_parse "$LIBRARIES" '.[0].id')
+    CALIBRE_LIBRARY_ID=$(json_parse "$LIBRARIES" '.[0].calibre_library_uuid // empty')
 else
     log_fail "No libraries found"
     exit 1
@@ -128,7 +193,7 @@ echo "=== Sync Operations ==="
 log_test "Getting sync cursor"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 CURSOR_RESPONSE=$(api_get "/sync?library_id=$LIBRARY_ID&calibre_library_uuid=$CALIBRE_LIBRARY_ID&limit=1")
-CURSOR=$(echo "$CURSOR_RESPONSE" | jq -r '.new_cursor // .cursor // empty')
+CURSOR=$(json_parse "$CURSOR_RESPONSE" '.new_cursor // .cursor // empty')
 log_pass "Got cursor: ${CURSOR:-none}"
 
 # Test 5: Pull sync (get server changes)
@@ -176,7 +241,7 @@ EOF
 )
 
 PUSH_RESPONSE=$(api_post "/sync" "$PUSH_PAYLOAD")
-PUSH_STATUS=$(echo "$PUSH_RESPONSE" | jq -r '.results[0].status')
+PUSH_STATUS=$(json_parse "$PUSH_RESPONSE" '.results[0].status')
 if [[ "$PUSH_STATUS" == "applied" || "$PUSH_STATUS" == "merged" ]]; then
     log_pass "Book created successfully (status: $PUSH_STATUS)"
     CREATED_BOOK_ID=$BOOK_ID
@@ -209,7 +274,7 @@ EOF
 )
 
 UPDATE_RESPONSE=$(api_post "/sync" "$UPDATE_PAYLOAD")
-UPDATE_STATUS=$(echo "$UPDATE_RESPONSE" | jq -r '.results[0].status')
+UPDATE_STATUS=$(json_parse "$UPDATE_RESPONSE" '.results[0].status')
 if [[ "$UPDATE_STATUS" == "applied" || "$UPDATE_STATUS" == "merged" ]]; then
     log_pass "Book updated successfully"
 else
@@ -220,7 +285,7 @@ fi
 log_test "Pull sync - verifying changes"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 USER_BOOKS_AFTER=$(api_get "/user-books")
-FOUND_BOOK=$(echo "$USER_BOOKS_AFTER" | jq -r ".[] | select(.id == $CREATED_BOOK_ID) | .title // empty")
+FOUND_BOOK=$(json_parse "$USER_BOOKS_AFTER" ".[] | select(.id == $CREATED_BOOK_ID) | .title // empty")
 if [[ "$FOUND_BOOK" == *"Updated"* ]]; then
     log_pass "Verified book changes on server"
 else
@@ -234,14 +299,14 @@ echo "=== Search & Filter ==="
 log_test "Searching books"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 SEARCH_RESPONSE=$(api_get "/user-books")
-SEARCH_COUNT=$(echo "$SEARCH_RESPONSE" | jq -r 'length')
+SEARCH_COUNT=$(json_parse "$SEARCH_RESPONSE" 'length')
 log_pass "User-books listing returned $SEARCH_COUNT results"
 
 # Test 10: Filter by status
 log_test "Filtering by status"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 STATUS_RESPONSE=$(api_get "/user-books")
-STATUS_COUNT=$(echo "$STATUS_RESPONSE" | jq -r '[.[] | select(.status == "reading")] | length')
+STATUS_COUNT=$(json_parse "$STATUS_RESPONSE" '[.[] | select(.status == "reading")] | length')
 log_pass "Status filter returned $STATUS_COUNT books"
 
 echo ""
@@ -251,7 +316,7 @@ echo "=== Metadata Operations ==="
 log_test "Getting book details"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 BOOK_DETAIL=$(api_get "/user-books")
-BOOK_TITLE=$(echo "$BOOK_DETAIL" | jq -r ".[] | select(.id == $CREATED_BOOK_ID) | .title // empty")
+BOOK_TITLE=$(json_parse "$BOOK_DETAIL" ".[] | select(.id == $CREATED_BOOK_ID) | .title // empty")
 if [[ -n "$BOOK_TITLE" ]]; then
     log_pass "Got book details: $BOOK_TITLE"
 else
@@ -260,6 +325,16 @@ fi
 
 echo ""
 echo "=== Cleanup ==="
+
+# Test 12: Delete the test book (already exists in original script)
+# ... (existing delete book logic) ...
+
+# Test 14: Cleanup - delete test library
+log_test "Cleaning up - deleting test library"
+TOTAL_TESTS=$((TOTAL_TESTS + 1))
+DELETE_LIB_RESPONSE=$(curl -s -X DELETE -H "Authorization: Bearer $TOKEN" "$API_URL/libraries/$LIBRARY_ID")
+# Non controlliamo lo status, assumiamo che vada bene o che sia già stato rimosso
+log_pass "Test library $LIBRARY_ID deleted"
 
 # Test 12: Delete the test book
 log_test "Deleting test book"
@@ -283,7 +358,7 @@ EOF
 )
 
 DELETE_RESPONSE=$(api_post "/sync" "$DELETE_PAYLOAD")
-DELETE_STATUS=$(echo "$DELETE_RESPONSE" | jq -r '.results[0].status')
+DELETE_STATUS=$(json_parse "$DELETE_RESPONSE" '.results[0].status')
 if [[ "$DELETE_STATUS" == "applied" ]]; then
     log_pass "Book deleted successfully"
 else

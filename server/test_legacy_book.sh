@@ -29,6 +29,7 @@ echo ""
 echo "2. Getting libraries..."
 LIBS=$(curl -sS -H "Authorization: Bearer $TOKEN" "$API_URL/libraries")
 LIB_ID=$(echo "$LIBS" | jq -r '.[0].id // empty')
+CALIBRE_LIBRARY_ID=$(echo "$LIBS" | jq -r '.[0].calibre_library_uuid // empty')
 
 if [ -z "$LIB_ID" ]; then
   echo "❌ No libraries found"
@@ -46,6 +47,7 @@ LEGACY_PAYLOAD=$(cat <<EOF
   "device_uuid": "test-device-$TIMESTAMP",
   "library_id": $LIB_ID,
   "library_name": "test",
+  "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "books": [
     {
       "local_book_id": $BOOK_ID,

@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Library;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 use Laravel\Sanctum\Sanctum;
 
@@ -39,9 +40,10 @@ class LibraryLimitsTest extends TestCase
         $user = User::factory()->create(['subscription_tier' => 'free']);
         Sanctum::actingAs($user);
 
+        $libUuid = (string) Str::uuid();
         $response = $this->postJson('/api/libraries', [
             'name' => 'My Library',
-            'calibre_library_uuid' => 'test-uuid-123',
+            'calibre_library_uuid' => $libUuid,
         ]);
 
         $response->assertStatus(201)
@@ -54,7 +56,7 @@ class LibraryLimitsTest extends TestCase
         $this->assertDatabaseHas('libraries', [
             'user_id' => $user->id,
             'name' => 'My Library',
-            'calibre_library_uuid' => 'test-uuid-123',
+            'calibre_library_id' => $libUuid,
         ]);
     }
 
@@ -72,15 +74,16 @@ class LibraryLimitsTest extends TestCase
 
         $response = $this->postJson('/api/libraries', [
             'name' => 'Second Library',
-            'calibre_library_uuid' => 'test-uuid-456',
+            'calibre_library_uuid' => (string) Str::uuid(),
         ]);
 
         $response->assertStatus(403)
             ->assertJson([
-                'error' => 'Limite librerie raggiunto',
+                'error' => 'Limite librerie raggiunto (1). Upgrade richiesto.',
                 'upgrade_required' => true,
                 'current_tier' => 'free',
-                'max_libraries' => 1,
+                'limit' => 1,
+                'resource' => 'libraries',
             ]);
     }
 
@@ -96,7 +99,7 @@ class LibraryLimitsTest extends TestCase
         for ($i = 1; $i <= 3; $i++) {
             $response = $this->postJson('/api/libraries', [
                 'name' => "Library {$i}",
-            'calibre_library_uuid' => "test-uuid-{$i}",
+                'calibre_library_uuid' => (string) Str::uuid(),
             ]);
 
             $response->assertStatus(201);
@@ -105,7 +108,7 @@ class LibraryLimitsTest extends TestCase
         // Try to create 4th library - should fail
         $response = $this->postJson('/api/libraries', [
             'name' => 'Library 4',
-            'calibre_library_uuid' => 'test-uuid-4',
+            'calibre_library_uuid' => (string) Str::uuid(),
         ]);
 
         $response->assertStatus(403);
@@ -121,9 +124,11 @@ class LibraryLimitsTest extends TestCase
         // Create max libraries
         Library::factory()->create(['user_id' => $user->id]);
         
+        session()->start();
         $response = $this->actingAs($user)->post('/library', [
             'name' => 'Second Library',
-            'calibre_library_uuid' => 'test-uuid-789',
+            'calibre_library_uuid' => (string) Str::uuid(),
+            '_token' => session()->token(),
         ]);
 
         $response->assertRedirect('/subscription/upgrade');
