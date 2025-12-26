@@ -13,7 +13,12 @@ fi
 DISCOVERY_URL=${DISCOVERY_URL:-http://127.0.0.1:8000}
 TEST_USER_EMAIL=${TEST_USER_EMAIL:-}
 TEST_USER_PASSWORD=${TEST_USER_PASSWORD:-}
-TMPDIR=$(mktemp -d)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TESTS_TMP_DIR="$SCRIPT_DIR/tmp"
+mkdir -p "$TESTS_TMP_DIR" # Ensure the directory exists
+TMPDIR=$(mktemp -d "$TESTS_TMP_DIR/metadata_test_XXXXXX")
+INVALID_JSON_LOG_DIR="$TESTS_TMP_DIR/invalid_json_logs"
+mkdir -p "$INVALID_JSON_LOG_DIR"
 
 # Colors
 export RED='\033[0;31m'
@@ -58,6 +63,38 @@ log_fail() {
     echo -e "${RED}✗${NC} $1"
 }
 
+# Helper functions
+# Checks if a string is valid JSON. If not, logs it and exits the script with an error.
+log_invalid_json_response() {
+    local context="$1"
+    local payload="$2"
+    local safe_context
+    safe_context="$(printf '%s' "$context" | tr ' /' '_' | tr -cd '[:alnum:]_-')"
+    local log_file="$INVALID_JSON_LOG_DIR/${safe_context}_invalid_json_$(date +%s%N).log"
+    {
+        echo "Context: $context"
+        echo ""
+        printf "%s\n" "$payload"
+    } > "$log_file"
+    echo "$log_file"
+}
+
+parse_json() {
+    local json_string="$1"
+    local context="${2:-api_response}"
+
+    # Use jq to test if it's valid JSON
+    if echo "$json_string" | jq -e . > /dev/null 2>&1; then
+        echo "$json_string" | jq '.'
+    else
+        local log_file
+        log_file=$(log_invalid_json_response "$context" "$json_string")
+        echo -e "${RED}ERROR: Invalid JSON received from API.${NC}" >&2
+        echo "Raw API Response (Invalid JSON) logged to $log_file" >&2
+        exit 1
+    fi
+}
+
 # Helper for authenticated requests
 api_get() {
     curl -s -H "Authorization: Bearer $TOKEN" "$API_URL$1"
@@ -83,7 +120,8 @@ api_post() {
 
 # Step 1: Discovery
 log_test "Discovering API URL"
-API_URL=$(curl -s "${DISCOVERY_URL}/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+API_URL_RAW=$(curl -s "${DISCOVERY_URL}/api/discovery")
+API_URL=$(parse_json "$API_URL_RAW" "discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
     log_fail "Discovery failed"
     exit 1
@@ -96,7 +134,8 @@ LOGIN_RESPONSE=$(curl -s -X POST "$API_URL/auth/login" \
     -H "Content-Type: application/json" \
     -d "{\"email\":\"$TEST_USER_EMAIL\",\"password\":\"$TEST_USER_PASSWORD\"}")
 
-TOKEN=$(echo "$LOGIN_RESPONSE" | jq -r '.token')
+TOKEN_PARSED=$(parse_json "$LOGIN_RESPONSE" "login")
+TOKEN=$(echo "$TOKEN_PARSED" | jq -r '.token')
 if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
     log_fail "Login failed"
     echo "$LOGIN_RESPONSE"
@@ -107,11 +146,12 @@ log_pass "Login successful"
 # Step 3: Get or create library
 log_test "Getting or creating test library"
 EXISTING_LIBRARIES=$(api_get "/libraries")
-FIRST_LIB_ID=$(echo "$EXISTING_LIBRARIES" | jq -r '.[0].id // empty')
+EXISTING_LIBRARIES_PARSED=$(parse_json "$EXISTING_LIBRARIES" "libraries")
+FIRST_LIB_ID=$(echo "$EXISTING_LIBRARIES_PARSED" | jq -r '.[0].id // empty')
 
 if [[ -n "$FIRST_LIB_ID" && "$FIRST_LIB_ID" != "null" ]]; then
     LIBRARY_ID="$FIRST_LIB_ID"
-    CALIBRE_LIB_UUID=$(echo "$EXISTING_LIBRARIES" | jq -r '.[0].calibre_library_uuid // empty')
+    CALIBRE_LIB_UUID=$(echo "$EXISTING_LIBRARIES_PARSED" | jq -r '.[0].calibre_library_uuid // empty')
     log_pass "Using existing library ID: $LIBRARY_ID with UUID: $CALIBRE_LIB_UUID"
 else
     # Crea una nuova libreria di test se non ne esistono
@@ -127,7 +167,8 @@ else
 EOF
     )
     CREATE_LIB_RESPONSE=$(api_post "/libraries" "$CREATE_LIB_PAYLOAD")
-    LIBRARY_ID=$(echo "$CREATE_LIB_RESPONSE" | jq -r '.id')
+    CREATE_LIB_RESPONSE_PARSED=$(parse_json "$CREATE_LIB_RESPONSE" "create_library")
+LIBRARY_ID=$(echo "$CREATE_LIB_RESPONSE_PARSED" | jq -r '.id')
     if [[ -z "$LIBRARY_ID" || "$LIBRARY_ID" == "null" ]]; then
         log_fail "Library creation failed"
         echo "$CREATE_LIB_RESPONSE"
@@ -169,22 +210,24 @@ PUSH_PAYLOAD=$(cat <<EOF
 }
 EOF
 )
-PUSH_RESPONSE=$(api_post "/sync" "$PUSH_PAYLOAD")
-echo "$PUSH_RESPONSE" | jq '.' # <-- AGGIUNTO PER DEBUG
-
+PUSH_RESPONSE_RAW=$(api_post "/sync" "$PUSH_PAYLOAD")
+echo "DEBUG: Raw PUSH_RESPONSE_RAW:" >&2
+echo "$PUSH_RESPONSE_RAW" >&2
+PUSH_RESPONSE=$(parse_json "$PUSH_RESPONSE_RAW" "push_book")
 PUSH_STATUS=$(echo "$PUSH_RESPONSE" | jq -r '.results[0].status')
 if [[ "$PUSH_STATUS" != "applied" ]]; then
     log_fail "Book creation failed (status: $PUSH_STATUS)"
-    echo "$PUSH_RESPONSE" | jq '.'
+    echo "$PUSH_RESPONSE" # Already parsed by parse_json
     exit 1
 fi
 log_pass "Book with all metadata created successfully"
 
 # Step 5: Verify all metadata
 log_test "Verifying all metadata fields"
-BOOK_DETAIL=$(api_get "/user-books")
-echo "DEBUG: Raw BOOK_DETAIL response from /user-books:" >&2
-echo "$BOOK_DETAIL" >&2
+BOOK_DETAIL_RAW=$(api_get "/user-books")
+echo "DEBUG: Raw BOOK_DETAIL_RAW response from /user-books:" >&2
+echo "$BOOK_DETAIL_RAW" >&2
+BOOK_DETAIL=$(parse_json "$BOOK_DETAIL_RAW" "user_books")
 
 CREATED_BOOK=$(echo "$BOOK_DETAIL" | jq -r ".[] | select(.id == $BOOK_ID)")
 echo "DEBUG: CREATED_BOOK extracted:" >&2

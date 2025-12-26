@@ -30,15 +30,51 @@ if ! command -v uuidgen >/dev/null 2>&1; then
   exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INVALID_JSON_LOG_DIR="$SCRIPT_DIR/tmp/invalid_json_logs"
+mkdir -p "$INVALID_JSON_LOG_DIR"
+
 log() { echo "[TEST] $1"; }
 pass() { echo "✓ $1"; }
 fail() { echo "✗ $1"; exit 1; }
 
+sanitize_label() {
+  printf '%s' "$1" | tr ' /' '_' | tr -cd '[:alnum:]_-'
+}
+
+log_invalid_json_response() {
+  local context="$1"
+  local payload="$2"
+  local safe_context
+  safe_context="$(sanitize_label "$context")"
+  local log_file="$INVALID_JSON_LOG_DIR/${safe_context}_invalid_json_$(date +%s%N).log"
+  {
+    echo "Context: $context"
+    echo ""
+    printf "%s\n" "$payload"
+  } > "$log_file"
+  echo "$log_file"
+}
+
+ensure_json_response() {
+  local context="$1"
+  local payload="$2"
+  if ! echo "$payload" | jq -e . >/dev/null 2>&1; then
+    local log_file
+    log_file=$(log_invalid_json_response "$context" "$payload")
+    fail "$context response invalid JSON (logged to $log_file)"
+  fi
+}
+
 # Resolve API URL via discovery
 DISCOVERY_ENDPOINT="$DISCOVERY_URL/discovery.php"
-API_URL=$(curl -s "$DISCOVERY_ENDPOINT" | jq -r '.api_url // empty' 2>/dev/null || true)
+DISCOVERY_RESPONSE=$(curl -s "$DISCOVERY_ENDPOINT")
+ensure_json_response "discovery_response" "$DISCOVERY_RESPONSE"
+API_URL=$(echo "$DISCOVERY_RESPONSE" | jq -r '.api_url // empty' 2>/dev/null || true)
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
-  API_URL=$(curl -s "$DISCOVERY_URL/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+  DISCOVERY_RESPONSE=$(curl -s "$DISCOVERY_URL/api/discovery")
+  ensure_json_response "discovery_fallback" "$DISCOVERY_RESPONSE"
+  API_URL=$(echo "$DISCOVERY_RESPONSE" | jq -r '.api_url // empty' 2>/dev/null || true)
 fi
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
   API_URL="$DISCOVERY_URL/api"
@@ -51,6 +87,8 @@ LOGIN_RESPONSE=$(curl -s -X POST "$API_URL/auth/login" \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"$TEST_USER_EMAIL\",\"password\":\"$TEST_USER_PASSWORD\"}")
 
+ensure_json_response "login_response" "$LOGIN_RESPONSE"
+
 TOKEN=$(echo "$LOGIN_RESPONSE" | jq -r '.token // empty')
 if [[ -z "$TOKEN" ]]; then
   fail "Login failed: $LOGIN_RESPONSE"
@@ -58,11 +96,17 @@ fi
 AUTH_HEADER="Authorization: Bearer $TOKEN"
 
 api_get() {
-  curl -s -H "$AUTH_HEADER" "$API_URL$1"
+  local resp
+  resp=$(curl -s -H "$AUTH_HEADER" "$API_URL$1")
+  ensure_json_response "GET $1" "$resp"
+  echo "$resp"
 }
 
 api_post() {
-  curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" "$API_URL$1" -d "$2"
+  local resp
+  resp=$(curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" "$API_URL$1" -d "$2")
+  ensure_json_response "POST $1" "$resp"
+  echo "$resp"
 }
 
 # Pick library with calibre_library_uuid
