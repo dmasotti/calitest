@@ -1,0 +1,18 @@
+{
+  "Goodreads": {
+    "discoveryUrl": "http://caliserver.test",
+    "restToken": "12|ZydHffB0ouwTfpwl1RHA5YkqbhxIpb1WHPRykMnNae6caf3e",
+    "restEndpoint": "http://caliserver.test/api",
+    "deviceToken": "",
+    "discoveryCache": {}
+  },
+  "LibraryMappings": {
+    "1685fd4f-054e-4451-9df8-119c27fc1289": {
+      "syncEnabled": true,
+      "calibreLibraryId": "1685fd4f-054e-4451-9df8-119c27fc1289",
+      "calimobLibraryId": 3,
+      "calimobLibraryName": "Headless Plugin Library"
+    }
+  },
+  "BookUuidCache": {}
+}

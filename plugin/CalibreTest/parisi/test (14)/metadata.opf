@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="uuid_id" version="2.0">
+    <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+        <dc:identifier opf:scheme="calibre" id="calibre_id">14</dc:identifier>
+        <dc:identifier opf:scheme="uuid" id="uuid_id">a1495689-6947-4a4d-8010-9d00901ab13e</dc:identifier>
+        <dc:title>test</dc:title>
+        <dc:creator opf:file-as="Unknown" opf:role="aut">parisi</dc:creator>
+        <dc:contributor opf:file-as="calibre" opf:role="bkp">calibre (5.33.1) [https://calibre-ebook.com]</dc:contributor>
+        <dc:date>0101-01-01T00:00:00+00:00</dc:date>
+        <dc:language>en</dc:language>
+        <dc:subject>aa</dc:subject>
+        <meta name="calibre:author_link_map" content="{&quot;parisi&quot;: &quot;&quot;}"/>
+        <meta name="calibre:timestamp" content="2022-01-16T12:43:59.041000+00:00"/>
+    </metadata>
+    <guide>
+        <reference type="cover" title="Cover" href="cover.jpg"/>
+    </guide>
+</package>

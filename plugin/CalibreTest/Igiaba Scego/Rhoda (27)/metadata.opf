@@ -1,0 +1,27 @@
+<?xml version='1.0' encoding='utf-8'?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="uuid_id" version="2.0">
+    <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+        <dc:identifier opf:scheme="calibre" id="calibre_id"></dc:identifier>
+        <dc:identifier opf:scheme="uuid" id="uuid_id"></dc:identifier>
+        <dc:title>Rhoda</dc:title>
+        <dc:creator opf:file-as="Igiaba Scego" opf:role="aut">Igiaba Scego</dc:creator>
+        <dc:contributor opf:file-as="CaLiMob" opf:role="bkp">CaLiMob</dc:contributor>
+        <dc:date></dc:date>
+        <dc:description></dc:description>
+        <dc:publisher></dc:publisher>
+        <dc:identifier opf:scheme="ISBN"></dc:identifier>
+        <dc:identifier opf:scheme="AMAZON"></dc:identifier>
+        <dc:identifier opf:scheme="GOOGLE"></dc:identifier>
+        <dc:language>it</dc:language>
+        <dc:subject></dc:subject>
+        <meta name="calibre:author_link_map" content="{&quot;Rhoda&quot;: &quot;&quot;}"/>
+        <meta name="calibre:series" content=""/>
+        <meta name="calibre:series_index" content=""/>
+        <meta name="calibre:rating" content=""/>
+        <meta name="calibre:timestamp" content=""/>
+        <meta name="calibre:title_sort" content="Rhoda"/>
+    </metadata>
+    <guide>
+        <reference type="cover" title="Cover" href=""/>
+    </guide>
+</package>

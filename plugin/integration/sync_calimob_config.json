@@ -1,0 +1,10 @@
+{
+  "Goodreads": {
+    "discoveryUrl": "",
+    "restEndpoint": "",
+    "restToken": "",
+    "deviceToken": "",
+    "discoveryCache": {}
+  },
+  "LibraryMappings": {}
+}

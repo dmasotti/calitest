@@ -4,6 +4,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+ART_DIR=$(mktemp -d "/tmp/calimob_deep_artifacts_XXXXXX")
+echo "Artifacts in: $ART_DIR" >&2
 
 # Load env if exists
 if [[ -f "$SCRIPT_DIR/../../server/.env" ]]; then
@@ -150,6 +152,7 @@ if ! echo "$CREATE_RES" | jq -e '.results' >/dev/null 2>&1; then
   exit 1
 fi
 
+
 RUN_OUT_1=$("$CALIBRE_DEBUG" -e "$ROOT_DIR/sync_calimob/cli.py" -- \
   --library-path "$CALIMOB_LIBRARY_PATH" \
   --library-id "$CALIMOB_LIBRARY_ID" \
@@ -217,10 +220,36 @@ if ! echo "$UPDATE_RES" | jq -e '.results' >/dev/null 2>&1; then
   exit 1
 fi
 
-RUN_OUT_2=$("$CALIBRE_DEBUG" -e "$ROOT_DIR/sync_calimob/cli.py" -- \
+# Save artifacts
+printf '%s\n' "$UPDATE_PAYLOAD" >"$ART_DIR/update_payload.json"
+printf '%s\n' "$UPDATE_RES" >"$ART_DIR/update_res.json"
+
+jq . "$ART_DIR/update_payload.json" >/dev/null 2>&1 || echo "WARN: payload not valid JSON" >&2
+jq . "$ART_DIR/update_res.json" >/dev/null 2>&1 || echo "WARN: response not valid JSON" >&2
+
+
+
+#RUN_OUT_2=$("$CALIBRE_DEBUG" -e "$ROOT_DIR/sync_calimob/cli.py" -- \
+#  --library-path "$CALIMOB_LIBRARY_PATH" \
+#  --library-id "$CALIMOB_LIBRARY_ID" \
+#  --calimob-library-id "$CALIMOB_SERVER_LIBRARY_ID" || true)
+
+RUN2_LOG="$ART_DIR/run_out_2.log"
+
+set +e
+"$CALIBRE_DEBUG" -e "$ROOT_DIR/sync_calimob/cli.py" -- \
   --library-path "$CALIMOB_LIBRARY_PATH" \
   --library-id "$CALIMOB_LIBRARY_ID" \
-  --calimob-library-id "$CALIMOB_SERVER_LIBRARY_ID" || true)
+  --calimob-library-id "$CALIMOB_SERVER_LIBRARY_ID" \
+  >"$RUN2_LOG" 2>&1
+RC2=$?
+set -e
+
+echo "calibre-debug RC2=$RC2" >&2
+echo "run2 log: $RUN2_LOG" >&2
+tail -n 120 "$RUN2_LOG" >&2
+
+RUN_OUT_2=$(cat "$RUN2_LOG")
 
 python - <<PY
 import json

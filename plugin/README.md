@@ -27,6 +27,25 @@ Test di scenari di sync senza database Calibre.
 
 ## 🚀 Come Eseguire i Test
 
+### ⚙️ Inizializzare l’ambiente headless
+
+Per evitare di superare il limite di librerie sul server e avere già pronta la configurazione plugin, esegui questo script prima di lanciare gli script headless:
+
+```bash
+CALIMOB_DISCOVERY_URL="http://caliserver.test" \
+TEST_USER_EMAIL="dmasotti+test1@gmail.com" \
+TEST_USER_PASSWORD="firstsecret" \
+tests/plugin/integration/setup_headless_env.sh
+```
+
+Lo script:
+1. determina l’UUID di `tests/plugin/CalibreTest` (o usa `CALIBRE_LIBRARY_ID`);
+2. cancella le librerie esistenti dell’utente (liberando il limite gratuito);
+3. crea una nuova libreria via `headless_setup_library.sh`;
+4. scrive `generated_sync_calimob.json` con `Goodreads`/`LibraryMappings` + token.
+
+Alla fine stampa le variabili da esportare (`CALIMOB_CONFIG_JSON`, `CALIMOB_LIBRARY_ID`, ecc.) e puoi lanciare direttamente gli script headless (`headless_sync_smoke.sh`, `headless_e2e.py`, `headless_deep_suite.sh`, ecc.).
+
 ### ⚠️ Requisiti protocollo
 
 Gli script/integration tests che inviano payload al server devono includere:
