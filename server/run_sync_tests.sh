@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/json_helpers.sh"
+
 LOGFILE="run_sync_http.log"
 rm -f "$LOGFILE"
 
@@ -125,9 +128,13 @@ echo "Discovery URL: $DISCOVERY_URL"
 # Resolve discovery endpoint (prefer /discovery.php, fallback to /api/discovery)
 DISCOVERY_ENDPOINT="$DISCOVERY_URL/discovery.php"
 echo "Querying discovery: $DISCOVERY_ENDPOINT"
-API_URL=$(curl -sS "$DISCOVERY_ENDPOINT" | jq -r '.api_url // empty' 2>/dev/null || true)
+DISCOVERY_RESPONSE=$(curl -sS "$DISCOVERY_ENDPOINT")
+DISCOVERY_JSON=$(parse_json "$DISCOVERY_RESPONSE" "discovery")
+API_URL=$(echo "$DISCOVERY_JSON" | jq -r '.api_url // empty' 2>/dev/null || true)
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
-  API_URL=$(curl -sS "$DISCOVERY_URL/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+  DISCOVERY_RESPONSE=$(curl -sS "$DISCOVERY_URL/api/discovery")
+  DISCOVERY_JSON=$(parse_json "$DISCOVERY_RESPONSE" "discovery_fallback")
+  API_URL=$(echo "$DISCOVERY_JSON" | jq -r '.api_url // empty' 2>/dev/null || true)
 fi
 if [ -z "$API_URL" ]; then
   # fallback: try constructing from discovery host
@@ -143,8 +150,9 @@ fi
 
 # Login to get token
 echo "Logging in as $TEST_EMAIL"
-LOGIN_RESP=$(curl -sS -X POST "$API_URL/auth/login" -H "Content-Type: application/json" -d \
+LOGIN_RESP_RAW=$(curl -sS -X POST "$API_URL/auth/login" -H "Content-Type: application/json" -d \
   "{ \"email\": \"$TEST_EMAIL\", \"password\": \"$TEST_PASSWORD\" }")
+LOGIN_RESP=$(parse_json "$LOGIN_RESP_RAW" "login")
 TOKEN=$(echo "$LOGIN_RESP" | jq -r '.token // empty')
 if [ -z "$TOKEN" ]; then
   echo "Login failed or token not returned: $LOGIN_RESP"
@@ -161,14 +169,15 @@ api_curl() {
 
 # 1) List libraries
 echo "Listing libraries"
-LIBS_JSON=$(api_curl "$API_URL/libraries")
+LIBS_JSON=$(parse_json "$(api_curl "$API_URL/libraries")" "libraries")
 echo "$LIBS_JSON" | jq '.'
 
 # 2) Create a test library (unique name)
 LIB_NAME="test_sync_$(date +%s)"
 CALIBRE_LIB_UUID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$RANDOM")
-CREATE_LIB_RESP=$(curl -sS -X POST "$API_URL/libraries" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d \
+CREATE_LIB_RESP_RAW=$(curl -sS -X POST "$API_URL/libraries" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d \
   "{ \"name\": \"$LIB_NAME\", \"description\": \"sync test\", \"type\": \"calibre\", \"calibre_library_uuid\": \"$CALIBRE_LIB_UUID\" }")
+CREATE_LIB_RESP=$(parse_json "$CREATE_LIB_RESP_RAW" "create_library")
 LIB_ID=$(echo "$CREATE_LIB_RESP" | jq -r '.id // empty')
 if [ -z "$LIB_ID" ]; then
   echo "Failed creating library: $CREATE_LIB_RESP"
@@ -182,7 +191,8 @@ echo "Creating legacy book via /api/sync/books"
 LEGACY_LOCAL_ID=$((RANDOM % 9000 + 1000))  # ID tra 1000-9999
 LEGACY_BOOK_TITLE="Legacy Book $(date +%s)"
 LEGACY_PAYLOAD=$(jq -n --arg lib "$LIB_ID" --arg uuid "$CALIBRE_LIB_UUID" --arg local_id "$LEGACY_LOCAL_ID" --arg title "$LEGACY_BOOK_TITLE" --argjson series_index 1 '{ device_uuid: "test-device", library_id: ($lib|tonumber), calibre_library_uuid: $uuid, library_name: "test", books: [{ local_book_id: $local_id, title: $title, series_index: $series_index }] }')
-LEGACY_RESP=$(curl -sS -X POST "$API_URL/sync/books" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$LEGACY_PAYLOAD")
+LEGACY_RESP_RAW=$(curl -sS -X POST "$API_URL/sync/books" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$LEGACY_PAYLOAD")
+LEGACY_RESP=$(parse_json "$LEGACY_RESP_RAW" "legacy_book_create")
 echo "$LEGACY_RESP" | jq '.'
 
 # 4) Add book via two-way sync (simulate client create)
@@ -215,12 +225,14 @@ JSON
 )
 
 echo "Push sync create payload: $CHANGE_PAYLOAD"
-SYNC_CREATE_RESP=$(curl -sS -X POST "$API_URL/sync" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$CHANGE_PAYLOAD")
+SYNC_CREATE_RESP_RAW=$(curl -sS -X POST "$API_URL/sync" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$CHANGE_PAYLOAD")
+SYNC_CREATE_RESP=$(parse_json "$SYNC_CREATE_RESP_RAW" "sync_create")
 echo "$SYNC_CREATE_RESP" | jq '.'
 
 # 5) Verify both books exist via GET /api/user-books
 echo "Listing user-books for library"
-USER_BOOKS=$(api_curl "$API_URL/user-books?library_id=$LIB_ID")
+USER_BOOKS_RAW=$(api_curl "$API_URL/user-books?library_id=$LIB_ID")
+USER_BOOKS=$(parse_json "$USER_BOOKS_RAW" "user_books")
 echo "$USER_BOOKS" | jq '.'
 
 if echo "$USER_BOOKS" | jq -e ".[] | select(.title==\"$CLIENT_TITLE\")" >/dev/null; then
@@ -252,12 +264,14 @@ DELETE_PAYLOAD=$(cat <<JSON
 JSON
 )
 
-DELETE_RESP=$(curl -sS -X POST "$API_URL/sync" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$DELETE_PAYLOAD")
+DELETE_RESP_RAW=$(curl -sS -X POST "$API_URL/sync" -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$DELETE_PAYLOAD")
+DELETE_RESP=$(parse_json "$DELETE_RESP_RAW" "sync_delete")
 echo "$DELETE_RESP" | jq '.'
 
 # 7) Verify deletion by requesting item (items/{id} returns withTrashed)
 echo "Verify tombstone exists via GET /api/items/$CLIENT_BOOK_ID"
-ITEM_RESP=$(api_curl "$API_URL/items/$CLIENT_BOOK_ID?library_id=$LIB_ID&calibre_library_uuid=$CALIBRE_LIB_UUID")
+ITEM_RESP_RAW=$(api_curl "$API_URL/items/$CLIENT_BOOK_ID?library_id=$LIB_ID&calibre_library_uuid=$CALIBRE_LIB_UUID")
+ITEM_RESP=$(parse_json "$ITEM_RESP_RAW" "item_lookup")
 echo "$ITEM_RESP" | jq '.'
 
 # 8) Real conflict test - modify same critical field (title) with different values
@@ -286,7 +300,8 @@ JSON
 )
 
 echo "Creating real conflict book"
-REAL_CONFLICT_CREATE_RESP=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CONFLICT2_CREATE_PAYLOAD")
+REAL_CONFLICT_CREATE_RESP_RAW=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CONFLICT2_CREATE_PAYLOAD")
+REAL_CONFLICT_CREATE_RESP=$(parse_json "$REAL_CONFLICT_CREATE_RESP_RAW" "real_conflict_create")
 echo "$REAL_CONFLICT_CREATE_RESP" | jq '.'
 REAL_CONFLICT_UUID=$(echo "$REAL_CONFLICT_CREATE_RESP" | jq -r '.results[0].server_item.uuid // empty')
 if [[ -z "$REAL_CONFLICT_UUID" ]]; then
@@ -319,7 +334,9 @@ JSON
 )
 
 echo "Applying server-side title update: $SERVER_TITLE_A"
-api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$SERVER_TITLE_UPDATE" | jq '.'
+SERVER_TITLE_UPDATE_RESP_RAW=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$SERVER_TITLE_UPDATE")
+SERVER_TITLE_UPDATE_RESP=$(parse_json "$SERVER_TITLE_UPDATE_RESP_RAW" "server_title_update")
+echo "$SERVER_TITLE_UPDATE_RESP" | jq '.'
 
 # Now client sends different title with older timestamp and version 1
 # Include all fields to ensure proper comparison
@@ -348,7 +365,8 @@ JSON
 )
 
 echo "Sending client conflicting title update: $CLIENT_TITLE_B (version 1, older timestamp)"
-REAL_CONFLICT_RESP=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CLIENT_TITLE_UPDATE")
+REAL_CONFLICT_RESP_RAW=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CLIENT_TITLE_UPDATE")
+REAL_CONFLICT_RESP=$(parse_json "$REAL_CONFLICT_RESP_RAW" "real_conflict")
 echo "$REAL_CONFLICT_RESP" | jq '.'
 
 # Check for real conflict
@@ -393,7 +411,9 @@ JSON
 )
 
 echo "Creating conflict book"
-api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CONFLICT_CREATE_PAYLOAD" | jq '.'
+CONFLICT_CREATE_RESP_RAW=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CONFLICT_CREATE_PAYLOAD")
+CONFLICT_CREATE_RESP=$(parse_json "$CONFLICT_CREATE_RESP_RAW" "conflict_create")
+echo "$CONFLICT_CREATE_RESP" | jq '.'
 
 # Update server-side (simulate another client) with newer timestamp
 NEWER_TITLE="Conflict Book Server-Updated"
@@ -421,7 +441,9 @@ JSON
 )
 
 echo "Applying server-side newer update"
-api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$SERVER_UPDATE_PAYLOAD" | jq '.'
+SERVER_UPDATE_RESP_RAW=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$SERVER_UPDATE_PAYLOAD")
+SERVER_UPDATE_RESP=$(parse_json "$SERVER_UPDATE_RESP_RAW" "server_newer_update")
+echo "$SERVER_UPDATE_RESP" | jq '.'
 
 # Now client sends an update with older timestamp -> expect conflict
 CLIENT_OLDER_TS="2025-01-01T11:00:00Z"
@@ -448,7 +470,8 @@ JSON
 )
 
 echo "Sending client older update to trigger conflict"
-CONFLICT_RESP=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CLIENT_OLDER_UPDATE_PAYLOAD")
+CONFLICT_RESP_RAW=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$CLIENT_OLDER_UPDATE_PAYLOAD")
+CONFLICT_RESP=$(parse_json "$CONFLICT_RESP_RAW" "client_older_update")
 echo "$CONFLICT_RESP" | jq '.'
 
 # Inspect results for conflict
@@ -465,8 +488,9 @@ fi
 if [ -n "${TEST_USER_EMAIL_2:-}" ] && [ -n "${TEST_USER_PASSWORD_2:-}" ]; then
   echo "Running multi-user isolation tests with second user $TEST_USER_EMAIL_2"
   # Login second user
-  LOGIN2_RESP=$(curl -s -f -X POST "$API_URL/auth/login" -H "Content-Type: application/json" -d \
+  LOGIN2_RESP_RAW=$(curl -s -f -X POST "$API_URL/auth/login" -H "Content-Type: application/json" -d \
     "{ \"email\": \"$TEST_USER_EMAIL_2\", \"password\": \"$TEST_USER_PASSWORD_2\" }")
+  LOGIN2_RESP=$(parse_json "$LOGIN2_RESP_RAW" "login_user2")
   TOKEN2=$(echo "$LOGIN2_RESP" | jq -r '.token // empty') || true
   if [ -z "$TOKEN2" ]; then
     echo "Second user login failed: $LOGIN2_RESP";
@@ -475,8 +499,9 @@ if [ -n "${TEST_USER_EMAIL_2:-}" ] && [ -n "${TEST_USER_PASSWORD_2:-}" ]; then
     # Create second library for user2
     LIB_NAME2="test_sync_user2_$(date +%s)"
     CALIBRE_LIB_UUID2=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$RANDOM")
-    CREATE_LIB2_RESP=$(curl -s -f -X POST "$API_URL/libraries" -H "Content-Type: application/json" -H "$AUTH2_HEADER" -d \
+    CREATE_LIB2_RESP_RAW=$(curl -s -f -X POST "$API_URL/libraries" -H "Content-Type: application/json" -H "$AUTH2_HEADER" -d \
       "{ \"name\": \"$LIB_NAME2\", \"description\": \"sync test user2\", \"type\": \"calibre\", \"calibre_library_uuid\": \"$CALIBRE_LIB_UUID2\" }")
+    CREATE_LIB2_RESP=$(parse_json "$CREATE_LIB2_RESP_RAW" "create_library_user2")
     LIB2_ID=$(echo "$CREATE_LIB2_RESP" | jq -r '.id // empty') || true
     echo "Created library for user2 id=$LIB2_ID calibre_uuid=$CALIBRE_LIB_UUID2"
 
@@ -506,7 +531,9 @@ if [ -n "${TEST_USER_EMAIL_2:-}" ] && [ -n "${TEST_USER_PASSWORD_2:-}" ]; then
 JSON
 )
     echo "Creating shared-uuid book for user1"
-    api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$PAYLOAD1" | jq '.'
+    SHARED1_RESP_RAW=$(api_curl -X POST "$API_URL/sync" -H "Content-Type: application/json" -d "$PAYLOAD1")
+    SHARED1_RESP=$(parse_json "$SHARED1_RESP_RAW" "shared_uuid_user1")
+    echo "$SHARED1_RESP" | jq '.'
 
     # Create a book under user2 with same SHARED_UUID
     BOOK2_ID=400002
@@ -531,11 +558,13 @@ JSON
 JSON
 )
     echo "Creating shared-uuid book for user2"
-    curl -s -f -X POST "$API_URL/sync" -H "Content-Type: application/json" -H "$AUTH2_HEADER" -d "$PAYLOAD2" | jq '.'
+    SHARED2_RESP_RAW=$(curl -s -f -X POST "$API_URL/sync" -H "Content-Type: application/json" -H "$AUTH2_HEADER" -d "$PAYLOAD2")
+    SHARED2_RESP=$(parse_json "$SHARED2_RESP_RAW" "shared_uuid_user2")
+    echo "$SHARED2_RESP" | jq '.'
 
     # Verify both exist and are distinct
-    UB1=$(api_curl "$API_URL/user-books?library_id=$LIB_ID" | jq -c ".[] | select(.uuid==\"$SHARED_UUID\")" || true)
-    UB2=$(curl -s -f -H "Accept: application/json" -H "$AUTH2_HEADER" "$API_URL/user-books?library_id=$LIB2_ID" | jq -c ".[] | select(.uuid==\"$SHARED_UUID\")" || true)
+    UB1=$(parse_json "$(api_curl "$API_URL/user-books?library_id=$LIB_ID")" "user_books_shared1" | jq -c ".[] | select(.uuid==\"$SHARED_UUID\")" || true)
+    UB2=$(parse_json "$(curl -s -f -H 'Accept: application/json' -H "$AUTH2_HEADER" "$API_URL/user-books?library_id=$LIB2_ID")" "user_books_shared2" | jq -c ".[] | select(.uuid==\"$SHARED_UUID\")" || true)
 
     echo "User1 book with shared uuid: $UB1"
     echo "User2 book with shared uuid: $UB2"

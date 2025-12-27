@@ -3,8 +3,11 @@
 
 set -euo pipefail
 
-if [[ -f "$(dirname "$0")/.env" ]]; then
-  source "$(dirname "$0")/.env"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/json_helpers.sh"
+
+if [[ -f "$SCRIPT_DIR/.env" ]]; then
+  source "$SCRIPT_DIR/.env"
 fi
 
 DISCOVERY_URL=${DISCOVERY_URL:-http://localhost}
@@ -27,15 +30,16 @@ curl() {
     command curl -sS "$@"
 }
 
-DISCOVERY_URL=${DISCOVERY_URL:-http://localhost}
 DISCOVERY_ENDPOINT="$DISCOVERY_URL/discovery.php"
 
 echo "Querying discovery: $DISCOVERY_ENDPOINT"
-RAW_DISCOVERY_RESP=$(curl "$DISCOVERY_ENDPOINT")
-API_URL=$(echo "$RAW_DISCOVERY_RESP" | jq -r '.api_url // empty' 2>/dev/null || true)
+DISCOVERY_RESPONSE_RAW=$(curl "$DISCOVERY_ENDPOINT")
+DISCOVERY_RESPONSE=$(parse_json "$DISCOVERY_RESPONSE_RAW" "discovery")
+API_URL=$(echo "$DISCOVERY_RESPONSE" | jq -r '.api_url // empty' 2>/dev/null || true)
 if [ -z "$API_URL" ] || [ "$API_URL" = "null" ]; then
-  RAW_DISCOVERY_RESP=$(curl "$DISCOVERY_URL/api/discovery")
-  API_URL=$(echo "$RAW_DISCOVERY_RESP" | jq -r '.api_url // empty' 2>/dev/null || true)
+  DISCOVERY_RESPONSE_RAW=$(curl "$DISCOVERY_URL/api/discovery")
+  DISCOVERY_RESPONSE=$(parse_json "$DISCOVERY_RESPONSE_RAW" "discovery_fallback")
+  API_URL=$(echo "$DISCOVERY_RESPONSE" | jq -r '.api_url // empty' 2>/dev/null || true)
 fi
 if [ -z "$API_URL" ] || [ "$API_URL" = "null" ]; then
   API_URL="$DISCOVERY_URL/api"
@@ -49,7 +53,8 @@ if [ -z "$TEST_EMAIL" ] || [ -z "$TEST_PASSWORD" ]; then
 fi
 
 echo "Logging in as $TEST_EMAIL"
-LOGIN_RESP=$(curl -X POST -H "Content-Type: application/json" -d "{ \"email\": \"$TEST_EMAIL\", \"password\": \"$TEST_PASSWORD\" }" "$API_URL/auth/login")
+LOGIN_RESP_RAW=$(curl -X POST -H "Content-Type: application/json" -d "{ \"email\": \"$TEST_EMAIL\", \"password\": \"$TEST_PASSWORD\" }" "$API_URL/auth/login")
+LOGIN_RESP=$(parse_json "$LOGIN_RESP_RAW" "login")
 echo "LOGIN_RESP: $LOGIN_RESP" >> "$LOGFILE"
 TOKEN=$(echo "$LOGIN_RESP" | jq -r '.token // empty')
 if [ -z "$TOKEN" ]; then
@@ -63,7 +68,8 @@ echo "Token acquired"
 echo "Creating a test library"
 LIB_NAME="infinite_loop_test_$(date +%s)"
 CALIBRE_LIB_UUID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$RANDOM")
-CREATE_LIB_RESP=$(curl -X POST -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "{ \"name\": \"$LIB_NAME\", \"description\": \"infinite loop test\", \"type\": \"calibre\", \"calibre_library_uuid\": \"$CALIBRE_LIB_UUID\" }" "$API_URL/libraries")
+CREATE_LIB_RESP_RAW=$(curl -X POST -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "{ \"name\": \"$LIB_NAME\", \"description\": \"infinite loop test\", \"type\": \"calibre\", \"calibre_library_uuid\": \"$CALIBRE_LIB_UUID\" }" "$API_URL/libraries")
+CREATE_LIB_RESP=$(parse_json "$CREATE_LIB_RESP_RAW" "create_library")
 LIB_ID=$(echo "$CREATE_LIB_RESP" | jq -r '.id // empty')
 if [ -z "$LIB_ID" ]; then
   echo "Failed creating library: $CREATE_LIB_RESP"
@@ -114,7 +120,8 @@ JSON
 
 echo "Creating $NUM_BOOKS books..."
 echo "CURL ARGS: $API_URL/sync -X POST -H \"Content-Type: application/json\" -H \"$AUTH_HEADER\" -d \"$CREATE_PAYLOAD\""
-CREATE_RESP=$(curl "$API_URL/sync" -X POST -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$CREATE_PAYLOAD")
+CREATE_RESP_RAW=$(curl "$API_URL/sync" -X POST -H "Content-Type: application/json" -H "$AUTH_HEADER" -d "$CREATE_PAYLOAD")
+CREATE_RESP=$(parse_json "$CREATE_RESP_RAW" "create_bulk_books")
 echo "$CREATE_RESP" | jq '.'
 
 # Test steps for infinite loop will be added here
@@ -131,7 +138,8 @@ while [ "$HAS_MORE" = "true" ]; do
   else
     PULL_URL="$API_URL/sync?library_id=$LIB_ID&calibre_library_uuid=$CALIBRE_LIB_UUID&limit=200"
   fi
-  PULL_RESP=$(curl "$PULL_URL")
+  PULL_RESP_RAW=$(curl "$PULL_URL")
+  PULL_RESP=$(parse_json "$PULL_RESP_RAW" "infinite_pull_${ITERATIONS}")
   
   HAS_MORE=$(echo "$PULL_RESP" | jq -r '.has_more')
   CURSOR=$(echo "$PULL_RESP" | jq -r '.new_cursor')
