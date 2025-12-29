@@ -9,6 +9,8 @@ from unittest.mock import Mock, MagicMock, patch
 from pathlib import Path
 from datetime import datetime, timezone
 import types
+import importlib.util
+import builtins
 
 # Provide minimal calibre stubs if Calibre is not installed (unit tests only).
 if 'calibre' not in sys.modules:
@@ -16,6 +18,8 @@ if 'calibre' not in sys.modules:
     calibre.utils = types.ModuleType('calibre.utils')
     calibre.utils.date = types.ModuleType('calibre.utils.date')
     calibre.utils.iso8601 = types.ModuleType('calibre.utils.iso8601')
+    calibre.utils.config = types.ModuleType('calibre.utils.config')
+    calibre.utils.icu = types.ModuleType('calibre.utils.icu')
     calibre.ebooks = types.ModuleType('calibre.ebooks')
     calibre.ebooks.metadata = types.ModuleType('calibre.ebooks.metadata')
     calibre.ebooks.metadata.book = types.ModuleType('calibre.ebooks.metadata.book')
@@ -27,6 +31,9 @@ if 'calibre' not in sys.modules:
 
     calibre.utils.date.UNDEFINED_DATE = object()
     calibre.utils.date.utcnow = lambda: datetime.now(timezone.utc)
+    calibre.utils.date.now = lambda: datetime.now(timezone.utc)
+    calibre.utils.date.format_date = lambda dt: dt.isoformat() if dt else ''
+    calibre.utils.date.parse_date = lambda val: datetime.fromisoformat(val) if val else None
 
     def _parse_iso8601(val):
         if not val:
@@ -40,9 +47,40 @@ if 'calibre' not in sys.modules:
 
     calibre.utils.iso8601.parse_iso8601 = _parse_iso8601
     calibre.utils.iso8601.format_iso8601 = lambda dt: dt.isoformat() if dt else None
+    class _JSONConfig(dict):
+        def __init__(self, *args, **kwargs):
+            super().__init__()
+            self.defaults = {}
+
+        def __getitem__(self, item):
+            if item in self:
+                return super().__getitem__(item)
+            return self.defaults.get(item)
+
+        def __setitem__(self, key, value):
+            super().__setitem__(key, value)
+
+        def get(self, key, default=None):
+            if key in self:
+                return super().get(key)
+            return self.defaults.get(key, default)
+
+        def setdefault(self, key, default=None):
+            return super().setdefault(key, default)
+
+    calibre.utils.config.JSONConfig = _JSONConfig
+    calibre.utils.config.config_dir = lambda *args, **kwargs: os.getcwd()
+    calibre.utils.config.tweaks = {'author_sort_copy_method': 'invert'}
+    calibre.utils.cleantext = types.ModuleType('calibre.utils.cleantext')
+    calibre.utils.cleantext.clean_ascii_chars = lambda text: text
+    calibre.utils.icu.sort_key = lambda text: text
 
     calibre.ebooks.metadata.authors_to_string = lambda authors: ', '.join(authors or [])
     calibre.ebooks.metadata.fmt_sidx = lambda x: x
+    calibre.ebooks.metadata.check_isbn = lambda isbn: True
+    calibre.ebooks.oeb = types.ModuleType('calibre.ebooks.oeb')
+    calibre.ebooks.oeb.parse_utils = types.ModuleType('calibre.ebooks.oeb.parse_utils')
+    calibre.ebooks.oeb.parse_utils.RECOVER_PARSER = object()
 
     class _Metadata(object):
         def __init__(self, title='', authors=None):
@@ -51,12 +89,40 @@ if 'calibre' not in sys.modules:
 
     calibre.ebooks.metadata.book.base.Metadata = _Metadata
     calibre.constants.DEBUG = False
+    calibre.constants.iswindows = False
+    calibre.constants.numeric_version = (7, 8, 0)
     calibre.devices.usbms.driver.debug_print = lambda *args, **kwargs: None
+    calibre.prints = lambda *args, **kwargs: None
+    calibre.get_parsed_proxy = lambda *args, **kwargs: None
+    calibre.browser = types.SimpleNamespace()
+    calibre.gui2 = types.ModuleType('calibre.gui2')
+    calibre.gui2.error_dialog = lambda *args, **kwargs: None
+    calibre.gui2.question_dialog = lambda *args, **kwargs: None
+    calibre.gui2.info_dialog = lambda *args, **kwargs: None
+    calibre.gui2.open_url = lambda *args, **kwargs: None
+    calibre.gui2.gprefs = {}
+    calibre.gui2.Application = type('Application', (), {})
+    calibre.gui2.UNDEFINED_QDATETIME = object()
+    calibre.gui2.keyboard = types.ModuleType('calibre.gui2.keyboard')
+    calibre.gui2.keyboard.ShortcutConfig = type('ShortcutConfig', (), {})
+    calibre.gui2.library = types.ModuleType('calibre.gui2.library')
+    calibre.gui2.library.delegates = types.ModuleType('calibre.gui2.library.delegates')
+    calibre.gui2.library.delegates.DateDelegate = type('DateDelegate', (), {})
+    sys.modules['calibre.gui2.keyboard'] = calibre.gui2.keyboard
+    sys.modules['calibre.gui2.library'] = calibre.gui2.library
+    sys.modules['calibre.gui2.library.delegates'] = calibre.gui2.library.delegates
+    calibre.gui2.complete2 = types.ModuleType('calibre.gui2.complete2')
+    calibre.gui2.complete2.EditWithComplete = type('EditWithComplete', (), {})
+    sys.modules['calibre.gui2'] = calibre.gui2
+    sys.modules['calibre.gui2.complete2'] = calibre.gui2.complete2
 
     sys.modules['calibre'] = calibre
     sys.modules['calibre.utils'] = calibre.utils
     sys.modules['calibre.utils.date'] = calibre.utils.date
     sys.modules['calibre.utils.iso8601'] = calibre.utils.iso8601
+    sys.modules['calibre.utils.config'] = calibre.utils.config
+    sys.modules['calibre.utils.icu'] = calibre.utils.icu
+    sys.modules['calibre.utils.cleantext'] = calibre.utils.cleantext
     sys.modules['calibre.ebooks'] = calibre.ebooks
     sys.modules['calibre.ebooks.metadata'] = calibre.ebooks.metadata
     sys.modules['calibre.ebooks.metadata.book'] = calibre.ebooks.metadata.book
@@ -65,14 +131,87 @@ if 'calibre' not in sys.modules:
     sys.modules['calibre.devices'] = calibre.devices
     sys.modules['calibre.devices.usbms'] = calibre.devices.usbms
     sys.modules['calibre.devices.usbms.driver'] = calibre.devices.usbms.driver
+    sys.modules['calibre.ebooks.oeb'] = calibre.ebooks.oeb
+    sys.modules['calibre.ebooks.oeb.parse_utils'] = calibre.ebooks.oeb.parse_utils
+
+if 'PyQt5' not in sys.modules:
+    pyqt5 = types.ModuleType('PyQt5')
+    policy_namespace = types.SimpleNamespace(
+        Minimum=1,
+        Maximum=2,
+        Expanding=3,
+        Preferred=4,
+        Ignored=5,
+    )
+
+    def _stub_class(name):
+        return type(name, (), {})
+
+    qt_module = types.SimpleNamespace(
+        QSizePolicy=types.SimpleNamespace(Policy=policy_namespace, Minimum=1, Maximum=2,
+                                          Expanding=3, Preferred=4, Ignored=5),
+        QTextEdit=types.SimpleNamespace(LineWrapMode=types.SimpleNamespace(NoWrap=0), NoWrap=0),
+        Qt=types.SimpleNamespace(DropAction=types.SimpleNamespace(CopyAction=1, MoveAction=2),
+                                 CopyAction=1, MoveAction=2),
+    )
+    for attr in ['QIcon', 'QPixmap', 'QWidget', 'QGroupBox', 'QAction', 'QDialog', 'QDialogButtonBox', 'QVBoxLayout', 'QHBoxLayout',
+                 'QGridLayout', 'QLabel', 'QLineEdit', 'QFormLayout', 'QComboBox',
+                 'QCheckBox', 'QTableWidget', 'QTableWidgetItem', 'QPushButton',
+                 'QInputDialog', 'QAbstractItemView', 'QToolButton', 'QSpacerItem',
+                 'QModelIndex', 'QFileDialog', 'QTimer', 'QFrame', 'QScrollArea',
+                 'QListWidget', 'QProgressBar', 'QApplication', 'QTextBrowser', 'QSize',
+                 'QFont', 'QDateTime', 'QStyledItemDelegate', 'QUrl']:
+        setattr(qt_module, attr, _stub_class(attr))
+    qt_module.QByteArray = type('QByteArray', (), {})
+    pyqt5.Qt = qt_module
+    pyqt5.QtCore = qt_module
+    sys.modules['PyQt5'] = pyqt5
+    sys.modules['PyQt5.Qt'] = qt_module
+    sys.modules['PyQt5.QtCore'] = qt_module
 
 # Provide minimal calibre_plugins stubs for patching config
 if 'calibre_plugins' not in sys.modules:
     calibre_plugins = types.ModuleType('calibre_plugins')
     sys.modules['calibre_plugins'] = calibre_plugins
+plugin_root = Path(__file__).resolve().parents[2] / 'sync_calimob'
+
+builtins._ = lambda x: x
+
 if 'calibre_plugins.sync_calimob' not in sys.modules:
     sync_pkg = types.ModuleType('calibre_plugins.sync_calimob')
+    sync_pkg.__path__ = [str(plugin_root)]
     sys.modules['calibre_plugins.sync_calimob'] = sync_pkg
+
+plugin_modules = [
+    'common_compatibility',
+    'common_icons',
+    'common_dialogs',
+    'common_widgets',
+    'core',
+    'library_utils',
+    'mapping_cache',
+    'rest_client',
+    'sync_mapper',
+    'sync_worker',
+]
+
+def _load_plugin_module(name):
+    module_path = plugin_root / f'{name}.py'
+    if module_path.exists():
+        spec = importlib.util.spec_from_file_location(f'calibre_plugins.sync_calimob.{name}', str(module_path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        sys.modules[f'calibre_plugins.sync_calimob.{name}'] = module
+        return module
+    return None
+
+for mod_name in plugin_modules:
+    _load_plugin_module(mod_name)
+
+cfg_module = sys.modules.get('calibre_plugins.sync_calimob.config')
+if cfg_module:
+    cfg_module.plugin_prefs.setdefault(cfg_module.STORE_PLUGIN, cfg_module.DEFAULT_STORE_VALUES.copy())
+    cfg_module.plugin_prefs.setdefault(cfg_module.STORE_USERS, {})
 if 'calibre_plugins.sync_calimob.config' not in sys.modules:
     cfg_mod = types.ModuleType('calibre_plugins.sync_calimob.config')
     cfg_mod.plugin_prefs = {}
