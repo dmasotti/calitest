@@ -27,6 +27,9 @@ Test di scenari di sync senza database Calibre.
 
 ## 🚀 Come Eseguire i Test
 
+### Goodreads-specific UI (hidden)
+- The plugin still includes dialogs/actions that reference Goodreads (linking books, shelves, etc.), but those flows are gated behind a hidden `showGoodreadsFeatures` flag in `sync_calimob/config.py`. For Caliweb we keep it `false`, so the menus/dialogs never appear unless the setting is force-enabled outside the UI (not recommended).
+
 ### ⚙️ Inizializzare l’ambiente headless
 
 Per evitare di superare il limite di librerie sul server e avere già pronta la configurazione plugin, esegui questo script prima di lanciare gli script headless:
