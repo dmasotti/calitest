@@ -181,4 +181,76 @@ class SyncPushTest extends TestCase
         $conflict->refresh();
         $this->assertSame('resolved', $conflict->status);
     }
+
+    public function test_update_fails_when_uuid_unknown(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        Sanctum::actingAs($user);
+
+        $uuid = (string) Str::uuid();
+        $payload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'update',
+                    'item' => [
+                        'id' => 500,
+                        'uuid' => $uuid,
+                        'title' => 'Unknown UUID',
+                        'last_modified' => now()->timestamp,
+                    ],
+                    'idempotency_key' => 'uuid-update-1',
+                ],
+            ],
+        ];
+
+        $response = $this->postJson('/api/sync', $payload);
+        $response->assertStatus(200);
+        $this->assertSame('error', $response->json('results.0.status'));
+        $this->assertSame('uuid_not_found', $response->json('results.0.error'));
+        $this->assertSame($uuid, $response->json('results.0.uuid'));
+        $this->assertDatabaseMissing('books', ['uuid' => $uuid]);
+    }
+
+    public function test_create_conflict_when_uuid_already_exists(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        Sanctum::actingAs($user);
+
+        $uuid = (string) Str::uuid();
+        UserBook::create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'uuid' => $uuid,
+            'id' => 600,
+            'title' => 'Existing Book',
+            'last_modified' => now(),
+        ]);
+
+        $payload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'create',
+                    'item' => [
+                        'id' => 601,
+                        'uuid' => $uuid,
+                        'title' => 'Duplicate UUID',
+                        'last_modified' => now()->timestamp,
+                    ],
+                    'idempotency_key' => 'uuid-create-1',
+                ],
+            ],
+        ];
+
+        $response = $this->postJson('/api/sync', $payload);
+        $response->assertStatus(200);
+        $this->assertSame('conflict', $response->json('results.0.status'));
+        $this->assertSame('uuid_collision', $response->json('results.0.reason'));
+        $this->assertSame($uuid, $response->json('results.0.server_item.uuid'));
+    }
 }
