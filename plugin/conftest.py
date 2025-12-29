@@ -193,6 +193,7 @@ plugin_modules = [
     'rest_client',
     'sync_mapper',
     'sync_worker',
+    'config',
 ]
 
 def _load_plugin_module(name):
@@ -212,10 +213,12 @@ cfg_module = sys.modules.get('calibre_plugins.sync_calimob.config')
 if cfg_module:
     cfg_module.plugin_prefs.setdefault(cfg_module.STORE_PLUGIN, cfg_module.DEFAULT_STORE_VALUES.copy())
     cfg_module.plugin_prefs.setdefault(cfg_module.STORE_USERS, {})
-if 'calibre_plugins.sync_calimob.config' not in sys.modules:
-    cfg_mod = types.ModuleType('calibre_plugins.sync_calimob.config')
-    cfg_mod.plugin_prefs = {}
-    sys.modules['calibre_plugins.sync_calimob.config'] = cfg_mod
+else:
+    cfg_module = types.ModuleType('calibre_plugins.sync_calimob.config')
+    cfg_module.plugin_prefs = {}
+    sys.modules['calibre_plugins.sync_calimob.config'] = cfg_module
+
+sys.modules['calibre_plugins.sync_calimob.cfg'] = cfg_module
 
 # Add sync_calimob to path
 plugin_path = Path(__file__).parent.parent.parent / 'sync_calimob'
