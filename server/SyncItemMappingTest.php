@@ -11,6 +11,7 @@ use App\Models\UserBook;
 use App\Services\SyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class SyncItemMappingTest extends TestCase
@@ -28,6 +29,7 @@ class SyncItemMappingTest extends TestCase
             'id' => 10,
             'title' => 'Mapping Book',
             'last_modified' => now(),
+            'uuid' => Str::uuid()->toString(),
         ]);
 
         $author = Author::create([
@@ -35,6 +37,7 @@ class SyncItemMappingTest extends TestCase
             'user_id' => $user->id,
             'library_id' => $library->id,
             'name' => 'Author A',
+            'uuid' => Str::uuid()->toString(),
         ]);
         DB::table('books_authors_link')->insert([
             'book' => $book->getAttribute('id'),
@@ -43,6 +46,7 @@ class SyncItemMappingTest extends TestCase
             'library_id' => $library->id,
             'created_at' => now(),
             'updated_at' => now(),
+            'uuid' => Str::uuid()->toString(),
         ]);
 
         $tag = Tag::create([
@@ -50,6 +54,7 @@ class SyncItemMappingTest extends TestCase
             'user_id' => $user->id,
             'library_id' => $library->id,
             'name' => 'Tag A',
+            'uuid' => Str::uuid()->toString(),
         ]);
         DB::table('books_tags_link')->insert([
             'book' => $book->getAttribute('id'),
@@ -58,6 +63,7 @@ class SyncItemMappingTest extends TestCase
             'library_id' => $library->id,
             'created_at' => now(),
             'updated_at' => now(),
+            'uuid' => Str::uuid()->toString(),
         ]);
 
         $series = Series::create([
@@ -65,6 +71,7 @@ class SyncItemMappingTest extends TestCase
             'user_id' => $user->id,
             'library_id' => $library->id,
             'name' => 'Series A',
+            'uuid' => Str::uuid()->toString(),
         ]);
         DB::table('books_series_link')->insert([
             'book' => $book->getAttribute('id'),
@@ -74,6 +81,7 @@ class SyncItemMappingTest extends TestCase
             'series_index' => 1,
             'created_at' => now(),
             'updated_at' => now(),
+            'uuid' => Str::uuid()->toString(),
         ]);
 
         $service = app(SyncService::class);

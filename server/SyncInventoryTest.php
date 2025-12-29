@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\UserBook;
 use App\Services\SyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class SyncInventoryTest extends TestCase
@@ -26,6 +27,7 @@ class SyncInventoryTest extends TestCase
                 'id' => $id,
                 'title' => 'Book ' . $id,
                 'last_modified' => now(),
+                'uuid' => Str::uuid()->toString(),
             ]);
         }
 
