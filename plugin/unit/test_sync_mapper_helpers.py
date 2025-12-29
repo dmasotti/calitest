@@ -79,3 +79,55 @@ def test_calibre_to_json_item_includes_expected_fields():
     assert item['status'] == 'reading'
     assert item['rating'] == 4
     assert item['comments'] == metadata.comments
+
+
+def test_json_item_to_calibre_populates_fields():
+    item = {
+        'title': 'Book',
+        'title_sort': 'Book',
+        'authors': [{'name': 'Author'}],
+        'author_sort': 'Author',
+        'series': {'name': 'Series', 'series_index': 2},
+        'identifiers': {'isbn': '123', 'ASIN': 'B00X'},
+        'publisher': 'Pub',
+        'pubdate': int(datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp()),
+        'languages': ['eng'],
+        'tags': [{'name': 'Fiction'}, 'Adventure'],
+        'rating': 4,
+        'comments': 'Nice',
+        'timestamps': {'created_at': int(datetime(2023, 1, 1, tzinfo=timezone.utc).timestamp())},
+        'uuid': 'uuid-value',
+        'last_modified': int(datetime(2023, 1, 2, tzinfo=timezone.utc).timestamp())
+    }
+    class DummyDb:
+        field_metadata = type('FM', (), {'key_to_label': lambda self, key: key})
+        def get_custom(self, book_id, label=None, index_is_id=False):
+            return None
+    metadata_dict = sync_mapper.json_item_to_calibre(item, DummyDb())
+    assert metadata_dict['title'] == 'Book'
+    assert metadata_dict['authors'] == ['Author']
+    assert metadata_dict['series'] == 'Series'
+    assert metadata_dict['series_index'] == 2
+    assert metadata_dict['identifiers']['ISBN'] == '123'
+    assert metadata_dict['isbn'] == '123'
+    assert metadata_dict['rating'] == 8
+    assert metadata_dict['uuid'] == 'uuid-value'
+    assert metadata_dict['timestamp'].year == 2023
+
+
+def test_calculate_cover_hash_bytes_and_file(tmp_path):
+    digest = sync_mapper.calculate_cover_hash(b'data')
+    assert digest.startswith('sha256:')
+    file_path = tmp_path / 'cover.jpg'
+    file_path.write_bytes(b'content')
+    file_digest = sync_mapper.calculate_cover_hash(str(file_path))
+    assert file_digest.startswith('sha256:')
+    missing = sync_mapper.calculate_cover_hash(str(file_path) + '.missing')
+    assert missing is None
+
+
+def test_get_calibre_book_id_from_client_ids():
+    client_ids = {'calibre:lib:1': '1'}
+    assert sync_mapper.get_calibre_book_id_from_client_ids(client_ids, 'lib') == 1
+    bad_client_ids = {'calibre:lib:1': 'notint'}
+    assert sync_mapper.get_calibre_book_id_from_client_ids(bad_client_ids, 'lib') is None
