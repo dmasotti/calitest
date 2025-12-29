@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\UserBook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class TombstoneAdminTest extends TestCase
@@ -17,7 +18,6 @@ class TombstoneAdminTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->markTestSkipped('Tombstone admin tests are skipped while sync conflict handling is under construction.');
     }
 
     public function test_cleanup_tombstones_removes_records_and_mappings(): void
@@ -32,6 +32,7 @@ class TombstoneAdminTest extends TestCase
             'id' => 500,
             'title' => 'Deleted Book',
             'last_modified' => now()->subDays(10),
+            'uuid' => Str::uuid()->toString(),
         ]);
         $book->deleted_at = now()->subDays(5);
         $book->save();
@@ -42,14 +43,16 @@ class TombstoneAdminTest extends TestCase
             'entity_type' => 'books',
             'client_key' => 'calibre:' . $library->calibre_library_id . ':500',
             'server_id' => $book->id,
-            'uuid' => null,
+            'uuid' => Str::uuid()->toString(),
         ]);
 
+        session()->start();
         $response = $this->actingAs($admin)
             ->from('/superadmin/library/' . $library->id . '/tombstones')
             ->post('/superadmin/library/tombstones/cleanup', [
                 'older_than_days' => 1,
                 'library_id' => $library->id,
+                '_token' => session()->token(),
             ]);
 
         $response->assertStatus(302);
@@ -63,6 +66,7 @@ class TombstoneAdminTest extends TestCase
         $admin = User::factory()->create(['is_superadmin' => true]);
         $library = Library::factory()->create(['user_id' => $admin->id]);
 
+        session()->start();
         $response = $this->actingAs($admin)
             ->from('/superadmin/library/' . $library->id . '/tombstones')
             ->post('/superadmin/library/tombstones/resolve', [
@@ -74,6 +78,7 @@ class TombstoneAdminTest extends TestCase
                         'entity_type' => 'books',
                     ],
                 ],
+                '_token' => session()->token(),
             ]);
 
         $response->assertStatus(302);

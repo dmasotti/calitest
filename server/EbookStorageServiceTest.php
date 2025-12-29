@@ -15,7 +15,6 @@ class EbookStorageServiceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->markTestSkipped('Ebook storage integration is disabled until the new storage workflow stabilizes.');
     }
 
     public function test_upload_ebook_hashes_and_uploads()
@@ -58,11 +57,35 @@ class EbookStorageServiceTest extends TestCase
         Config::set('filesystems.ebook_storage.secret', 'secret');
         Config::set('filesystems.ebook_storage.region', 'auto');
 
-        $service = \Mockery::mock(EbookStorageService::class)->makePartial();
+        $service = new EbookStorageService();
         $mockClient = \Mockery::mock(S3Client::class);
-        $mockCommand = \Mockery::mock();
+        $mockCommand = new class implements \ArrayAccess {
+            private array $data = [];
+
+            public function offsetExists($offset): bool
+            {
+                return isset($this->data[$offset]);
+            }
+
+            public function offsetGet($offset): mixed
+            {
+                return $this->data[$offset] ?? null;
+            }
+
+            public function offsetSet($offset, $value): void
+            {
+                $this->data[$offset] = $value;
+            }
+
+            public function offsetUnset($offset): void
+            {
+                unset($this->data[$offset]);
+            }
+        };
         $mockRequest = \Mockery::mock();
-        $mockRequest->shouldReceive('__toString')->andReturn('https://signed.example/book.epub');
+        $mockUri = \Mockery::mock();
+        $mockUri->shouldReceive('__toString')->andReturn('https://signed.example/book.epub');
+        $mockRequest->shouldReceive('getUri')->andReturn($mockUri);
 
         $mockClient->shouldReceive('getCommand')->andReturn($mockCommand);
         $mockClient->shouldReceive('createPresignedRequest')->andReturn($mockRequest);
