@@ -18,7 +18,11 @@ class StorageCalculationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->markTestSkipped('Storage calculation tests are temporarily disabled under the current schema/limits changes.');
+        Config::set('subscription.tiers', [
+            'free' => [
+                'max_storage_mb' => 500,
+            ],
+        ]);
     }
 
     /**
@@ -171,6 +175,7 @@ class StorageCalculationTest extends TestCase
             'file_path' => 'ebooks/uploaded.epub',
             'uncompressed_size' => 5 * 1024 * 1024,
             'is_uploaded' => true,
+            'format' => 'EPUB',
         ]);
         
         // Create non-uploaded file (should not count)
@@ -181,6 +186,7 @@ class StorageCalculationTest extends TestCase
             'file_path' => 'ebooks/queued.epub',
             'uncompressed_size' => 10 * 1024 * 1024,
             'is_uploaded' => false,
+            'format' => 'PDF',
         ]);
         
         $storageMB = $user->getStorageUsedMB();

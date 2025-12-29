@@ -7,6 +7,7 @@ use App\Models\Library;
 use App\Models\UserBook;
 use App\Models\Device;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 use Laravel\Sanctum\Sanctum;
@@ -18,7 +19,13 @@ class SyncLimitsTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->markTestSkipped('Sync limit enforcement tests are disabled until the subscription safeguards are revisited.');
+        Config::set('subscription.tiers', [
+            'free' => [
+                'max_libraries' => 1,
+                'max_books' => 50,
+                'max_storage_mb' => 500,
+            ],
+        ]);
     }
 
     /**

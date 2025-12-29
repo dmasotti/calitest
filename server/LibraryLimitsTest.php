@@ -5,6 +5,8 @@ namespace Tests\Server;
 use App\Models\User;
 use App\Models\Library;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 use Laravel\Sanctum\Sanctum;
 
@@ -15,7 +17,18 @@ class LibraryLimitsTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->markTestSkipped('Subscription limit enforcement tests are temporarily disabled under the new UUID-only sync.');
+        Config::set('subscription.tiers', [
+            'free' => [
+                'max_libraries' => 1,
+                'max_books' => 50,
+                'max_storage_mb' => 500,
+            ],
+            'basic' => [
+                'max_libraries' => 3,
+                'max_books' => 600,
+                'max_storage_mb' => 3072,
+            ],
+        ]);
     }
 
     /**
@@ -78,7 +91,11 @@ class LibraryLimitsTest extends TestCase
      */
     public function test_basic_tier_can_create_three_libraries(): void
     {
-        $user = User::factory()->create(['subscription_tier' => 'basic']);
+        $user = User::factory()->create([
+            'subscription_tier' => 'basic',
+            'subscription_status' => 'active',
+            'subscription_expires_at' => now()->addDays(30),
+        ]);
         Sanctum::actingAs($user);
 
         // Create 3 libraries (max for basic)

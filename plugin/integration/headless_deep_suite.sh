@@ -7,6 +7,14 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 ART_DIR=$(mktemp -d "/tmp/calimob_deep_artifacts_XXXXXX")
 echo "Artifacts in: $ART_DIR" >&2
 
+log_request_response() {
+  local context="$1"
+  local request="$2"
+  local response="$3"
+  printf '%s\n' "$request" >"$ART_DIR/${context}_request.log"
+  printf '%s\n' "$response" >"$ART_DIR/${context}_response.log"
+}
+
 # Load env if exists
 if [[ -f "$SCRIPT_DIR/../../server/.env" ]]; then
   # shellcheck disable=SC1091
@@ -45,18 +53,27 @@ if [[ ! -f "$CALIMOB_CONFIG_JSON" ]]; then
   exit 0
 fi
 
-API_URL=$(curl -s "${CALIMOB_DISCOVERY_URL}/discovery.php" | jq -r '.api_url // empty' 2>/dev/null || true)
+DISCOVERY_RESPONSE=$(curl -s "${CALIMOB_DISCOVERY_URL}/discovery.php")
+log_request_response "discovery_primary" "${CALIMOB_DISCOVERY_URL}/discovery.php" "$DISCOVERY_RESPONSE"
+API_URL=$(echo "$DISCOVERY_RESPONSE" | jq -r '.api_url // empty' 2>/dev/null || true)
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
-  API_URL=$(curl -s "${CALIMOB_DISCOVERY_URL}/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+  DISCOVERY_FALLBACK_RESPONSE=$(curl -s "${CALIMOB_DISCOVERY_URL}/api/discovery")
+  log_request_response "discovery_fallback" "${CALIMOB_DISCOVERY_URL}/api/discovery" "$DISCOVERY_FALLBACK_RESPONSE"
+  API_URL=$(echo "$DISCOVERY_FALLBACK_RESPONSE" | jq -r '.api_url // empty' 2>/dev/null || true)
 fi
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
   echo "FAIL: discovery failed" >&2
   exit 1
 fi
 
+LOGIN_PAYLOAD=$(cat <<JSON
+{"email":"$TEST_USER_EMAIL","password":"$TEST_USER_PASSWORD"}
+JSON
+)
 LOGIN_RESPONSE=$(curl -s -X POST "$API_URL/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"$TEST_USER_EMAIL\",\"password\":\"$TEST_USER_PASSWORD\"}")
+  -d "$LOGIN_PAYLOAD")
+log_request_response "auth_login" "$LOGIN_PAYLOAD" "$LOGIN_RESPONSE"
 TOKEN=$(echo "$LOGIN_RESPONSE" | jq -r '.token')
 if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
   echo "FAIL: login failed" >&2
@@ -146,8 +163,24 @@ CREATE_RES=$(curl -s -X POST "$API_URL/sync" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d "$CREATE_PAYLOAD")
+log_request_response "sync_create" "$CREATE_PAYLOAD" "$CREATE_RES"
 if ! echo "$CREATE_RES" | jq -e '.results' >/dev/null 2>&1; then
   echo "FAIL: create sync failed" >&2
+  echo "$CREATE_RES" >&2
+  exit 1
+fi
+
+CREATE_SERVER_UUID=$(echo "$CREATE_RES" | jq -r '.results[0].server_item.uuid // empty')
+if [[ -z "$CREATE_SERVER_UUID" ]]; then
+  echo "FAIL: create response missing server_item.uuid" >&2
+  echo "$CREATE_RES" >&2
+  exit 1
+fi
+
+if [[ "$CREATE_SERVER_UUID" != "$BOOK_UUID" ]]; then
+  echo "FAIL: create response returned a different UUID than requested" >&2
+  echo "Sent UUID:    $BOOK_UUID" >&2
+  echo "Server UUID:  $CREATE_SERVER_UUID" >&2
   echo "$CREATE_RES" >&2
   exit 1
 fi
@@ -214,6 +247,7 @@ UPDATE_RES=$(curl -s -X POST "$API_URL/sync" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d "$UPDATE_PAYLOAD")
+log_request_response "sync_update" "$UPDATE_PAYLOAD" "$UPDATE_RES"
 if ! echo "$UPDATE_RES" | jq -e '.results' >/dev/null 2>&1; then
   echo "FAIL: update sync failed" >&2
   echo "$UPDATE_RES" >&2

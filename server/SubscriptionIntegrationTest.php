@@ -8,6 +8,7 @@ use App\Models\UserBook;
 use App\Models\BookFile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 use Laravel\Sanctum\Sanctum;
@@ -23,7 +24,18 @@ class SubscriptionIntegrationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->markTestSkipped('Subscription integration tests are temporarily disabled pending the new sync protocol.');
+        Config::set('subscription.tiers', [
+            'free' => [
+                'max_libraries' => 1,
+                'max_books' => 50,
+                'max_storage_mb' => 500,
+            ],
+            'basic' => [
+                'max_libraries' => 3,
+                'max_books' => 600,
+                'max_storage_mb' => 3072,
+            ],
+        ]);
     }
 
     /**
@@ -226,10 +238,9 @@ class SubscriptionIntegrationTest extends TestCase
         ]);
         
         // Add 250 MB storage (50% of limit)
-        $userBook = UserBook::factory()->create([
-            'user_id' => $user->id,
-            'library_id' => $library->id,
-        ]);
+        $userBook = UserBook::where('user_id', $user->id)
+            ->where('library_id', $library->id)
+            ->first();
         
         BookFile::factory()->create([
             'book' => $userBook->id,

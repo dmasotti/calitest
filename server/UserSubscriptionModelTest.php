@@ -7,6 +7,7 @@ use App\Models\Library;
 use App\Models\UserBook;
 use App\Models\BookFile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
 
 class UserSubscriptionModelTest extends TestCase
@@ -16,7 +17,20 @@ class UserSubscriptionModelTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->markTestSkipped('Subscription model helpers rely on deprecated limits logic and are skipped under the new schema.');
+        Config::set('subscription.tiers', [
+            'free' => [
+                'max_libraries' => 1,
+                'max_books' => 50,
+                'max_storage_mb' => 500,
+                'features' => ['sync', 'covers'],
+            ],
+            'basic' => [
+                'max_libraries' => 3,
+                'max_books' => 600,
+                'max_storage_mb' => 3072,
+                'features' => ['sync', 'covers', 'export'],
+            ],
+        ]);
     }
 
     /**
@@ -103,6 +117,7 @@ class UserSubscriptionModelTest extends TestCase
             'library_id' => $userBook->library_id,
             'file_path' => 'ebooks/unit-test.epub',
             'uncompressed_size' => 5242880, // 5 MB
+            'format' => 'EPUB',
             'is_uploaded' => true,
         ]);
         
@@ -131,6 +146,7 @@ class UserSubscriptionModelTest extends TestCase
             'library_id' => $userBook->library_id,
             'file_path' => 'ebooks/mb-test.epub',
             'uncompressed_size' => 5242880,
+            'format' => 'EPUB',
             'is_uploaded' => true,
         ]);
         
@@ -181,6 +197,7 @@ class UserSubscriptionModelTest extends TestCase
             'library_id' => $userBook->library_id,
             'file_path' => 'ebooks/storage-limit.epub',
             'uncompressed_size' => 400 * 1024 * 1024, // 400 MB
+            'format' => 'PDF',
             'is_uploaded' => true,
         ]);
         
@@ -272,6 +289,7 @@ class UserSubscriptionModelTest extends TestCase
             'library_id' => $userBook->library_id,
             'file_path' => 'ebooks/uploaded-count.epub',
             'uncompressed_size' => 5242880,
+            'format' => 'EPUB',
             'is_uploaded' => true,
         ]);
         
@@ -282,6 +300,7 @@ class UserSubscriptionModelTest extends TestCase
             'library_id' => $userBook->library_id,
             'file_path' => 'ebooks/not-uploaded.epub',
             'uncompressed_size' => 10485760,
+            'format' => 'PDF',
             'is_uploaded' => false,
         ]);
         
