@@ -115,6 +115,41 @@ def test_json_item_to_calibre_populates_fields():
     assert metadata_dict['timestamp'].year == 2023
 
 
+def test_calibre_to_json_item_custom_columns(monkeypatch):
+    metadata = DummyMetadata()
+    class DummyDb:
+        class FieldMeta:
+            def key_to_label(self, key):
+                return key
+
+        field_metadata = FieldMeta()
+
+        def get_custom(self, book_id, label=None, index_is_id=False):
+            if 'progress' in label:
+                return '75'
+            if 'favorite' in label:
+                return '1'
+            return None
+
+    item = sync_mapper.calibre_to_json_item(
+        book_id=1,
+        metadata=metadata,
+        library_id='lib',
+        db=DummyDb(),
+        progress_percent_column='#progress',
+        favorite_column='#favorite',
+    )
+    assert item['progress_percent'] == 75.0
+    assert item['favorite'] is True
+
+
+def test_calibre_to_json_item_handles_missing_languages():
+    metadata = DummyMetadata()
+    metadata.languages = None
+    item = sync_mapper.calibre_to_json_item(1, metadata, 'lib')
+    assert item['languages'] == []
+
+
 def test_calculate_cover_hash_bytes_and_file(tmp_path):
     digest = sync_mapper.calculate_cover_hash(b'data')
     assert digest.startswith('sha256:')

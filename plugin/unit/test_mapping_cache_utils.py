@@ -32,3 +32,15 @@ def test_get_book_uuid_cache_for_library_returns_entries():
     mapping_cache.update_book_mapping(prefs, 'lib-2', 11, {'uuid': 'foo'})
     cache = mapping_cache.get_book_uuid_cache_for_library(prefs, 'lib-2')
     assert '11' in cache or 11 in cache
+
+
+def test_format_mapping_updates_iso_strings():
+    updates = {'created_at': datetime(2020, 1, 1), 'last_synced_at': None, 'foo': 'bar'}
+    formatted = mapping_cache._format_mapping_updates(updates)
+    assert formatted['created_at'].endswith('Z')
+    assert formatted['last_synced_at'] is None
+    assert formatted['foo'] == 'bar'
+
+
+def test_normalize_mapping_entry_str():
+    assert mapping_cache._normalize_mapping_entry('uuid-string') == {'uuid': 'uuid-string'}

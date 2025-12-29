@@ -69,3 +69,14 @@ def test_find_recent_libs_from_config(tmp_path, monkeypatch):
     monkeypatch.setattr(library_utils, '_find_config_dirs', lambda: [str(config_dir)])
     found = library_utils._find_recent_libs_from_config()
     assert candidate_path in found
+
+
+def test_find_config_dirs_windows(tmp_path, monkeypatch):
+    monkeypatch.setattr(platform, 'system', lambda: 'Windows')
+    monkeypatch.setenv('APPDATA', str(tmp_path / 'AppData'))
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'LocalAppData'))
+    for d in ('AppData', 'LocalAppData'):
+        path = tmp_path / d / 'calibre'
+        path.mkdir(parents=True)
+    dirs = library_utils._find_config_dirs()
+    assert any('calibre' in d.lower() for d in dirs)
