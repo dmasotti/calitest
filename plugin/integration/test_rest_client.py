@@ -308,6 +308,28 @@ class TestRestApiClientMethods:
         # Verify cover data was sent
         assert len(responses.calls) == 1
         assert responses.calls[0].request.body == cover_data
+
+    @responses.activate
+    def test_upload_file(self, rest_client_instance):
+        """Test upload_file() method."""
+        file_data = b'ebook binary'
+        responses.add(
+            responses.PUT,
+            'https://api.example.com/api/items/123/files/epub',
+            json={'file_hash': 'sha256:abc123'},
+            status=200
+        )
+        result = rest_client_instance.upload_file(
+            'https://api.example.com/api/items/123/files/epub',
+            file_data=file_data,
+            file_hash='sha256:abc123',
+            file_name='ebook.epub'
+        )
+
+        assert result['file_hash'] == 'sha256:abc123'
+        assert len(responses.calls) == 1
+        assert responses.calls[0].request.body == file_data
+        assert responses.calls[0].request.headers.get('X-File-Hash') == 'sha256:abc123'
     
     @responses.activate
     def test_download_cover(self, rest_client_instance):

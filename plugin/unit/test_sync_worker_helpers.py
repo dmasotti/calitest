@@ -141,3 +141,50 @@ def test_ensure_book_uuid_handles_failure(monkeypatch):
     worker.db.set_metadata = Mock(side_effect=Exception('boom'))
     result = worker._ensure_book_uuid(77, metadata)
     assert result is None
+
+
+def test_upload_files_for_batch_uses_rest_client(tmp_path):
+    worker = _make_worker()
+    worker.client = Mock()
+    worker.client.upload_file = Mock(return_value={'status': 'uploaded'})
+    book_path = tmp_path / 'book.epub'
+    book_path.write_bytes(b'binary content')
+    file_cache = {
+        1: {
+            'EPUB': {
+                'path': str(book_path),
+                'hash': 'sha256:abc123',
+                'name': 'book.epub',
+                'size': book_path.stat().st_size,
+            }
+        }
+    }
+    files_to_upload = [{
+        'server_item_id': 'server-1',
+        'calibre_book_id': 1,
+        'format': 'EPUB',
+        'upload_url': 'https://api.example.com/upload',
+        'book_title': 'Test Book',
+    }]
+    summary = {'file_results': [], 'files_uploaded': 0, 'files_failed': 0, 'errors': []}
+    worker._upload_files_for_batch(files_to_upload, summary, file_cache)
+    worker.client.upload_file.assert_called_once()
+    assert summary['files_uploaded'] == 1
+    assert summary['files_failed'] == 0
+
+
+def test_upload_file_missing_path(tmp_path):
+    worker = _make_worker()
+    worker.client = Mock()
+    worker.db.format = Mock(side_effect=AttributeError())
+    file_cache = {}
+    file_info = {
+        'server_item_id': 'server-2',
+        'calibre_book_id': 1,
+        'format': 'EPUB',
+        'upload_url': 'https://api.example.com/upload',
+        'book_title': 'Missing Book',
+    }
+    result = worker._upload_file(file_info, file_cache)
+    assert not result['success']
+    assert result['step'] == 'locate'
