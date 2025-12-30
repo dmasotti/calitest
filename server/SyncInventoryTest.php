@@ -7,7 +7,6 @@ use App\Models\User;
 use App\Models\UserBook;
 use App\Services\SyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class SyncInventoryTest extends TestCase
@@ -19,15 +18,19 @@ class SyncInventoryTest extends TestCase
         $user = User::factory()->create();
         $library = Library::factory()->create(['user_id' => $user->id]);
 
-        $ids = [1, 2, 3, 7, 9, 10];
-        foreach ($ids as $id) {
+        $uuids = [
+            '11111111-1111-1111-1111-111111111111',
+            '22222222-2222-2222-2222-222222222222',
+            '33333333-3333-3333-3333-333333333333',
+            '44444444-4444-4444-4444-444444444444',
+        ];
+        foreach ($uuids as $uuid) {
             UserBook::create([
                 'user_id' => $user->id,
                 'library_id' => $library->id,
-                'id' => $id,
-                'title' => 'Book ' . $id,
+                'title' => 'Book ' . $uuid,
                 'last_modified' => now(),
-                'uuid' => Str::uuid()->toString(),
+                'uuid' => $uuid,
             ]);
         }
 
@@ -36,51 +39,38 @@ class SyncInventoryTest extends TestCase
         $method->setAccessible(true);
         $inventory = $method->invoke($service, $user, $library->id, null);
 
-        $this->assertSame(1, $inventory['min']);
-        $this->assertSame(10, $inventory['max']);
-        $this->assertSame(['1-3', 7, '9-10'], $inventory['active']);
-        $this->assertSame(['4-6', 8], $inventory['missing']);
+        $this->assertSame($uuids, $inventory['uuids']);
     }
 
     public function test_expand_inventory_prefers_active(): void
     {
         $service = app(SyncService::class);
-        $method = new \ReflectionMethod($service, 'expandInventoryIds');
+        $method = new \ReflectionMethod($service, 'expandInventoryUuids');
         $method->setAccessible(true);
 
         $inventory = [
-            'min' => 1,
-            'max' => 5,
-            'active' => ['1-3', 5],
-            'missing' => [],
+            'uuids' => ['aaa', 'bbb', 'ccc'],
         ];
 
         $set = $method->invoke($service, $inventory);
-        $this->assertArrayHasKey(1, $set);
-        $this->assertArrayHasKey(2, $set);
-        $this->assertArrayHasKey(3, $set);
-        $this->assertArrayHasKey(5, $set);
-        $this->assertArrayNotHasKey(4, $set);
+        $this->assertArrayHasKey('aaa', $set);
+        $this->assertArrayHasKey('bbb', $set);
+        $this->assertArrayHasKey('ccc', $set);
+        $this->assertArrayNotHasKey('ddd', $set);
     }
 
     public function test_expand_inventory_from_missing_ranges(): void
     {
         $service = app(SyncService::class);
-        $method = new \ReflectionMethod($service, 'expandInventoryIds');
+        $method = new \ReflectionMethod($service, 'expandInventoryUuids');
         $method->setAccessible(true);
 
         $inventory = [
-            'min' => 1,
-            'max' => 5,
-            'active' => [],
-            'missing' => [2, '4-5'],
+            'uuids' => ['x1', 'x2'],
         ];
 
         $set = $method->invoke($service, $inventory);
-        $this->assertArrayHasKey(1, $set);
-        $this->assertArrayHasKey(3, $set);
-        $this->assertArrayNotHasKey(2, $set);
-        $this->assertArrayNotHasKey(4, $set);
-        $this->assertArrayNotHasKey(5, $set);
+        $this->assertArrayHasKey('x1', $set);
+        $this->assertArrayHasKey('x2', $set);
     }
 }
