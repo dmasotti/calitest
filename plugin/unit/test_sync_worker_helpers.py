@@ -37,41 +37,37 @@ def _make_worker(ids=None):
     return worker
 
 
-def test_build_client_inventory_empty():
+def test_build_client_inventory_empty(monkeypatch):
     worker = _make_worker([])
-    assert worker._build_client_inventory() == {
-        'min': None,
-        'max': None,
-        'active': [],
-        'missing': []
-    }
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_uuid_cache_for_library', lambda lib: {})
+    assert worker._build_client_inventory() is None
 
 
-def test_build_client_inventory_ranges():
-    worker = _make_worker([5, 1, 2, 4])
+def test_build_client_inventory_returns_uuids(monkeypatch):
+    worker = _make_worker()
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_uuid_cache_for_library', lambda lib: {
+        '1': {'uuid': 'u1'},
+        '2': {'uuid': 'u2'},
+        '3': {'uuid': 'u1'}
+    })
     inv = worker._build_client_inventory()
-    assert inv['min'] == 1
-    assert inv['max'] == 5
-    assert inv['active'] == ['1-2', '4-5']
+    assert inv['uuids'] == ['u1', 'u2']
 
 
-def test_compress_expand_ranges():
+def test_get_synced_uuids_from_cache(monkeypatch):
     worker = _make_worker()
-    assert worker._compress_to_ranges([3, 4, 7, 8, 9]) == ['3-4', '7-9']
-    assert worker._expand_ranges(['2-3', 5, 6]) == {2, 3, 5, 6}
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_uuid_cache_for_library', lambda lib: {
+        '1': {'uuid': 'a'},
+        '2': {'uuid': 'b'}
+    })
+    result = worker._get_synced_uuids()
+    assert result == {'a', 'b'}
 
 
-def test_expand_range_format():
+def test_ingest_inventory_sets_remote_uuids():
     worker = _make_worker()
-    payload = {'min': 1, 'max': 5, 'active': ['1-3', 5], 'missing': ['2']}
-    assert worker._expand_range_format(payload) == {1, 2, 3, 5}
-
-
-def test_iso_now_format():
-    worker = _make_worker()
-    now = worker._iso_now()
-    assert now.endswith('Z')
-    assert 'T' in now
+    worker._ingest_inventory({'uuids': [' foo ', 'bar']}, label='test')
+    assert worker._remote_uuids == {'foo', 'bar'}
 
 
 def test_cache_and_record_mapping(monkeypatch):

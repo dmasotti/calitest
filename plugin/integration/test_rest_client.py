@@ -134,7 +134,7 @@ class TestRestApiClientRequests:
             calibre_library_uuid='lib-uuid',
             include_inventory=True,
             include_inventory_hint=True,
-            client_inventory={'min': 1, 'max': 2, 'active': [1, 2], 'missing': []}
+            client_inventory={'uuids': ['uuid-1', 'uuid-2']}
         )
 
         assert response['new_cursor'] == 'abc'

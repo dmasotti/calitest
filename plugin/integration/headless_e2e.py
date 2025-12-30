@@ -155,9 +155,10 @@ def _require_inventory(block, label):
     inv = block.get(label)
     if not isinstance(inv, dict):
         raise AssertionError('%s missing' % label)
-    for k in ('version', 'min', 'max', 'active', 'missing'):
-        if k not in inv:
-            raise AssertionError('%s missing key %s' % (label, k))
+    if 'version' not in inv or 'uuids' not in inv:
+        raise AssertionError('%s missing required keys' % label)
+    if not isinstance(inv['uuids'], list):
+        raise AssertionError('%s uuids must be list' % label)
     return inv
 
 

@@ -188,23 +188,17 @@ def test_scenario_pull_with_inventory():
         'has_more': False,
         'inventory_hint': {
             'version': 'opaque-token-xyz',
-            'min': 1,
-            'max': 10,
-            'active': ['1-3', 7, '9-10'],
-            'missing': ['4-6', 8]
+            'uuids': ['uuid-1', 'uuid-2', 'uuid-3']
         }
     }
-    
+
     inv = response.get('inventory_hint')
     assert inv is not None
-    assert inv['min'] == 1
-    assert inv['max'] == 10
-    assert 'active' in inv
-    assert 'missing' in inv
-    
+    assert 'uuids' in inv
+    assert len(inv['uuids']) == 3
+
     print("  ✓ Inventory hint structure valid")
-    print(f"  ✓ Active ranges: {inv['active']}")
-    print(f"  ✓ Missing ranges: {inv['missing']}")
+    print(f"  ✓ UUIDs: {inv['uuids']}")
     
     return True
 
