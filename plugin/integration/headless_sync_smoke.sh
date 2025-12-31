@@ -57,13 +57,13 @@ import os
 
 cfg_path = os.path.join("$TMP_CFG", "plugins", "sync_calimob.json")
 data = json.load(open(cfg_path, "r"))
-store = data.get("Goodreads", {})
+store = data.get("Caliweb", {})
 store["discoveryUrl"] = "$CALIMOB_DISCOVERY_URL"
 store["restToken"] = "$TOKEN"
+store["restEndpoint"] = "$API_URL"
+store["discoveryCache"] = {}
 store.pop("deviceToken", None)
-store.pop("restEndpoint", None)
-store.pop("discoveryCache", None)
-data["Goodreads"] = store
+data["Caliweb"] = store
 with open(cfg_path, "w") as f:
     json.dump(data, f, indent=2, sort_keys=True)
 PY
@@ -78,6 +78,7 @@ OUTPUT=$(mktemp)
 set +e
 CALIBRE_CONFIG_DIRECTORY="$TMP_CFG" \
   "$CALIBRE_DEBUG" -e "$ROOT/sync_calimob/cli.py" -- \
+    --config-dir "$TMP_CFG" \
     --library-path "$CALIMOB_LIBRARY_PATH" \
     --library-id "$CALIMOB_LIBRARY_ID" \
     --calimob-library-id "$CALIMOB_SERVER_LIBRARY_ID" \
@@ -128,5 +129,31 @@ if command -v jq >/dev/null 2>&1; then
     exit 1
   fi
 fi
+
+METADATA_DB="$CALIMOB_LIBRARY_PATH/metadata.db"
+python - <<PY
+import os, sqlite3, sys
+
+db_path = os.path.join("$CALIMOB_LIBRARY_PATH", "metadata.db")
+if not os.path.isfile(db_path):
+    print("FAIL: metadata.db not found at {}".format(db_path), file=sys.stderr)
+    sys.exit(1)
+
+try:
+    conn = sqlite3.connect(db_path)
+    cursor = conn.execute(
+        "SELECT COUNT(*) FROM calimob_books_sync WHERE library_uuid=?",
+        ("$CALIMOB_LIBRARY_ID",)
+    )
+    count = cursor.fetchone()[0]
+finally:
+    conn.close()
+
+if count == 0:
+    print("FAIL: calimob_books_sync does not contain entries for library {}".format("$CALIMOB_LIBRARY_ID"), file=sys.stderr)
+    sys.exit(1)
+
+print("INFO: calimob_books_sync rows for library {} = {}".format("$CALIMOB_LIBRARY_ID", count))
+PY
 
 echo "PASS: headless sync smoke test"; echo "Output saved at $OUTPUT"
