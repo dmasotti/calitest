@@ -76,21 +76,21 @@ class ConfigHelpersTest(unittest.TestCase):
         book = {'calibre_isbn': '111'}
         cfg.plugin_prefs[cfg.STORE_PLUGIN] = cfg.plugin_prefs[cfg.STORE_PLUGIN].copy()
         cfg.plugin_prefs[cfg.STORE_PLUGIN][cfg.KEY_UPDATE_ISBN] = 'NEVER'
-        update_calibre_isbn_if_required(book, '222')
+        update_calibre_isbn_if_required(book, '222', update_isbn='NEVER')
         self.assertEqual(book['calibre_isbn'], '111')
 
     def test_update_isbn_always(self):
         book = {'calibre_isbn': '111'}
         cfg.plugin_prefs[cfg.STORE_PLUGIN] = cfg.plugin_prefs[cfg.STORE_PLUGIN].copy()
         cfg.plugin_prefs[cfg.STORE_PLUGIN][cfg.KEY_UPDATE_ISBN] = 'ALWAYS'
-        update_calibre_isbn_if_required(book, '222')
+        update_calibre_isbn_if_required(book, '222', update_isbn='ALWAYS')
         self.assertEqual(book['calibre_isbn'], '222')
 
     def test_update_isbn_if_missing(self):
         book = {'calibre_isbn': ''}
         cfg.plugin_prefs[cfg.STORE_PLUGIN] = cfg.plugin_prefs[cfg.STORE_PLUGIN].copy()
         cfg.plugin_prefs[cfg.STORE_PLUGIN][cfg.KEY_UPDATE_ISBN] = 'AUTO'
-        update_calibre_isbn_if_required(book, '333')
+        update_calibre_isbn_if_required(book, '333', update_isbn='AUTO')
         self.assertEqual(book['calibre_isbn'], '333')
 
 
@@ -102,7 +102,15 @@ class SearchableAuthorTest(unittest.TestCase):
         self.assertEqual(get_searchable_author('John Doe'), 'John Doe')
 
     def test_ln_fn_reordering(self):
-        result = get_searchable_author('Doe, John')
+        original = core.tweaks.get('author_sort_copy_method')
+        core.tweaks['author_sort_copy_method'] = 'swap'
+        try:
+            result = get_searchable_author('Doe, John')
+        finally:
+            if original is None:
+                core.tweaks.pop('author_sort_copy_method', None)
+            else:
+                core.tweaks['author_sort_copy_method'] = original
         self.assertEqual(result, 'John Doe')
 
     def test_multiple_authors(self):

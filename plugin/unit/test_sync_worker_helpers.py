@@ -39,13 +39,13 @@ def _make_worker(ids=None):
 
 def test_build_client_inventory_empty(monkeypatch):
     worker = _make_worker([])
-    monkeypatch.setattr(sync_worker.cfg, 'get_book_uuid_cache_for_library', lambda lib: {})
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_uuid_cache_for_library', lambda lib, db=None: {})
     assert worker._build_client_inventory() is None
 
 
 def test_build_client_inventory_returns_uuids(monkeypatch):
     worker = _make_worker()
-    monkeypatch.setattr(sync_worker.cfg, 'get_book_uuid_cache_for_library', lambda lib: {
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_uuid_cache_for_library', lambda lib, db=None: {
         '1': {'uuid': 'u1'},
         '2': {'uuid': 'u2'},
         '3': {'uuid': 'u1'}
@@ -56,7 +56,7 @@ def test_build_client_inventory_returns_uuids(monkeypatch):
 
 def test_get_synced_uuids_from_cache(monkeypatch):
     worker = _make_worker()
-    monkeypatch.setattr(sync_worker.cfg, 'get_book_uuid_cache_for_library', lambda lib: {
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_uuid_cache_for_library', lambda lib, db=None: {
         '1': {'uuid': 'a'},
         '2': {'uuid': 'b'}
     })
@@ -75,7 +75,7 @@ def test_cache_and_record_mapping(monkeypatch):
     worker._iso_now = lambda: '2025-01-01T00:00:00Z'
     captured = {}
 
-    def update(library_id, book_id, updates):
+    def update(library_id, book_id, updates, db=None):
         captured['args'] = (library_id, book_id)
         captured['updates'] = updates
 
@@ -90,7 +90,7 @@ def test_mark_book_deleted(monkeypatch):
     worker = _make_worker()
     called = {}
 
-    def mark(library_id, book_id, deleted_at):
+    def mark(library_id, book_id, deleted_at, db=None):
         called['args'] = (library_id, book_id, deleted_at)
 
     monkeypatch.setattr(sync_worker.cfg, 'mark_book_deleted', mark)
@@ -104,7 +104,7 @@ def test_cache_book_uuid(monkeypatch):
     worker = _make_worker()
     called = {}
 
-    def cache(library_id, book_id, book_uuid):
+    def cache(library_id, book_id, book_uuid, db=None):
         called['args'] = (library_id, book_id, book_uuid)
 
     monkeypatch.setattr(sync_worker.cfg, 'cache_book_uuid', cache)
