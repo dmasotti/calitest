@@ -5,6 +5,9 @@
 # Optionally set APP_PASS to test app-password instead of user password.
 # This script exercises OPDS root, acquisition feed and downloads the first available entry.
 
+# Tip: puoi caricare `html/.env` prima di eseguire lo script per usare le credenziali/dev defaults:
+#   set -a; source html/.env; set +a;
+
 set -euo pipefail
 HOST=${HOST:-http://127.0.0.1:8000}
 USER=${USER:-}

@@ -4,7 +4,6 @@ namespace Tests\Server;
 
 use App\Models\Library;
 use App\Models\SyncConflict;
-use App\Models\SyncMapping;
 use App\Models\User;
 use App\Models\UserBook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -88,13 +87,12 @@ class SyncPushTest extends TestCase
         $this->assertSame('error', $response->json('results.0.status'));
     }
 
-    public function test_sync_mappings_created_for_books(): void
+    public function test_sync_does_not_persist_client_ids_mappings(): void
     {
         $user = User::factory()->create();
         $library = Library::factory()->create(['user_id' => $user->id]);
         Sanctum::actingAs($user);
 
-        $clientKey = 'calibre:' . $library->calibre_library_id . ':200';
         $uuid = (string) Str::uuid();
         $payload = [
             'library_id' => $library->id,
@@ -107,7 +105,7 @@ class SyncPushTest extends TestCase
                         'uuid' => $uuid,
                         'title' => 'Mapping Book',
                         'authors' => [['name' => 'Tester', 'role' => 'author']],
-                        'client_ids' => [$clientKey => '200'],
+                        'client_ids' => ['calibre:' . $library->calibre_library_id . ':200' => '200'],
                         'last_modified' => now()->timestamp,
                     ],
                     'idempotency_key' => 'idem-map-1',
@@ -118,11 +116,9 @@ class SyncPushTest extends TestCase
         $this->postJson('/api/sync', $payload)
             ->assertStatus(200);
 
-        $this->assertDatabaseHas('sync_mappings', [
-            'user_id' => $user->id,
-            'library_id' => $library->id,
-            'entity_type' => 'books',
-            'client_key' => $clientKey,
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('sync_mappings'));
+        $this->assertDatabaseHas('books', [
+            'uuid' => $uuid,
         ]);
     }
 

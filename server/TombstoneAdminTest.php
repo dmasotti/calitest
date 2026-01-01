@@ -3,7 +3,6 @@
 namespace Tests\Server;
 
 use App\Models\Library;
-use App\Models\SyncMapping;
 use App\Models\User;
 use App\Models\UserBook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,15 +36,6 @@ class TombstoneAdminTest extends TestCase
         $book->deleted_at = now()->subDays(5);
         $book->save();
 
-        SyncMapping::create([
-            'user_id' => $admin->id,
-            'library_id' => $library->id,
-            'entity_type' => 'books',
-            'client_key' => 'calibre:' . $library->calibre_library_id . ':500',
-            'server_id' => $book->id,
-            'uuid' => Str::uuid()->toString(),
-        ]);
-
         session()->start();
         $response = $this->actingAs($admin)
             ->from('/superadmin/library/' . $library->id . '/tombstones')
@@ -57,7 +47,7 @@ class TombstoneAdminTest extends TestCase
 
         $response->assertStatus(302);
         $this->assertDatabaseMissing('books', ['id' => 500, 'library_id' => $library->id]);
-        $this->assertDatabaseMissing('sync_mappings', ['server_id' => 500, 'entity_type' => 'books']);
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('sync_mappings'));
     }
 
     public function test_resolve_tombstones_creates_sync_mapping(): void
@@ -82,12 +72,6 @@ class TombstoneAdminTest extends TestCase
             ]);
 
         $response->assertStatus(302);
-        $this->assertDatabaseHas('sync_mappings', [
-            'user_id' => $admin->id,
-            'library_id' => $library->id,
-            'entity_type' => 'books',
-            'client_key' => 'calibre:' . $library->calibre_library_id . ':900',
-            'server_id' => 900,
-        ]);
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('sync_mappings'));
     }
 }

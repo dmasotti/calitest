@@ -8,6 +8,7 @@
 2. Factory create per: User, Library, UserBook, BookFile, Device (in `html/database/factories/`)
 3. Config `subscription.php` presente (in `html/config/`)
 4. `phpunit.xml` nella root del progetto che punta a `html/` per Laravel
+5. **Utenti test presenti nel DB** (vedi `tests/server/.env`)
 
 ## Struttura
 
@@ -101,41 +102,54 @@ Usa lo script `scripts/upTest` che si connette al server e esegue i test:
 ## Esecuzione Test in Locale (Solo per sviluppo)
 
 **⚠️ NOTA**: Questi comandi funzionano solo se hai PHP e Laravel configurati localmente.
+**Usa sempre `html/.env`** per avere la stessa connessione DB usata dal server di sviluppo.
+
+### Verifica/creazione utenti test (console)
+```bash
+cd html
+set -a; source .env; set +a
+php artisan user:info dmasotti+test1@gmail.com
+php artisan user:info dmasotti+test2@gmail.com
+
+# Se mancano:
+php artisan user:create dmasotti+test1@gmail.com --password=firstsecret
+php artisan user:create dmasotti+test2@gmail.com --password=secondsecret
+```
 
 ### Tutti i test server
 ```bash
 # Dalla root del progetto
-./html/vendor/bin/phpunit -c phpunit.xml --testsuite=Server
+set -a; source html/.env; set +a; ./html/vendor/bin/phpunit -c phpunit.xml --testsuite=Server
 ```
 
 ### Con coverage
 ```bash
-./html/vendor/bin/phpunit -c phpunit.xml --testsuite=Server --coverage
+set -a; source html/.env; set +a; ./html/vendor/bin/phpunit -c phpunit.xml --testsuite=Server --coverage
 ```
 
 ### Con coverage HTML (dettagliato)
 ```bash
-./html/vendor/bin/phpunit -c phpunit.xml --testsuite=Server --coverage-html=coverage/server
+set -a; source html/.env; set +a; ./html/vendor/bin/phpunit -c phpunit.xml --testsuite=Server --coverage-html=coverage/server
 ```
 
 ### Singolo file di test
 ```bash
-./html/vendor/bin/phpunit -c phpunit.xml tests/server/SubscriptionApiTest.php
+set -a; source html/.env; set +a; ./html/vendor/bin/phpunit -c phpunit.xml tests/server/SubscriptionApiTest.php
 ```
 
 ### Singolo test specifico
 ```bash
-./html/vendor/bin/phpunit -c phpunit.xml --filter test_get_subscription_status_returns_correct_data
+set -a; source html/.env; set +a; ./html/vendor/bin/phpunit -c phpunit.xml --filter test_get_subscription_status_returns_correct_data
 ```
 
 ### Con output verbose
 ```bash
-./html/vendor/bin/phpunit -c phpunit.xml --testsuite=Server -v
+set -a; source html/.env; set +a; ./html/vendor/bin/phpunit -c phpunit.xml --testsuite=Server -v
 ```
 
 ### Con stop on failure
 ```bash
-./html/vendor/bin/phpunit -c phpunit.xml --testsuite=Server --stop-on-failure
+set -a; source html/.env; set +a; ./html/vendor/bin/phpunit -c phpunit.xml --testsuite=Server --stop-on-failure
 ```
 
 ## Test Disponibili
@@ -171,7 +185,7 @@ Usa lo script `scripts/upTest` che si connette al server e esegue i test:
 - Test cursor/last_modified, inventory_hint, POST /sync/pull, pagination
 
 ### 8. SyncPushTest (4 test)
-- Test idempotency, sync_mappings, conflitti e resolve
+- Test idempotency, conflitti e resolve
 
 ### 9. SyncItemMappingTest (1 test)
 - Test ID autori/tag/serie in buildItemFromUserBook

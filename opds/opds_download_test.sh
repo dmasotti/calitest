@@ -3,6 +3,9 @@
 # Simpler script focused on download endpoint validation
 # Usage: HOST=http://caliweb.test USER=alice PASS=secret BOOK_ID=123 ./tests/opds/opds_download_test.sh
 
+# Tip: puoi caricare `html/.env` prima di eseguire lo script per usare le credenziali/dev defaults:
+#   set -a; source html/.env; set +a;
+
 set -euo pipefail
 HOST=${HOST:-http://127.0.0.1:8000}
 USER=${USER:-}

@@ -129,6 +129,24 @@ Then run:
 ./tests/run_all_tests.sh
 ```
 
+### Verifica/creazione utenti test (console)
+```bash
+cd html
+set -a; source .env; set +a
+php artisan user:info dmasotti+test1@gmail.com
+php artisan user:info dmasotti+test2@gmail.com
+
+# Se mancano:
+php artisan user:create dmasotti+test1@gmail.com --password=firstsecret
+php artisan user:create dmasotti+test2@gmail.com --password=secondsecret
+```
+
+### Local PHPUnit (Server tests)
+Per eseguire i test PHPUnit locali usa **sempre** `html/.env` (connessione DB e config reali di dev):
+```bash
+set -a; source html/.env; set +a; ./html/vendor/bin/phpunit -c phpunit.xml --testsuite=Server
+```
+
 ### Environment Variables
 
 | Variable | Description | Required |

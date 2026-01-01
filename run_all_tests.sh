@@ -20,6 +20,15 @@ if [[ -f "$ENV_FILE" ]]; then
     source "$ENV_FILE"
 fi
 
+# Optional: load html/.env for local dev defaults (no override if already set)
+ROOT_ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/html/.env"
+if [[ -f "$ROOT_ENV_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ROOT_ENV_FILE"
+    set +a
+fi
+
 # Configuration
 DISCOVERY_URL=${DISCOVERY_URL:-}
 TEST_USER_EMAIL=${TEST_USER_EMAIL:-}

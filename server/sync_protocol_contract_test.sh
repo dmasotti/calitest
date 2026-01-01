@@ -80,7 +80,6 @@ cleanup_created_book() {
   local delete_sql
   delete_sql=$(cat <<EOF
 DELETE FROM sync_conflicts WHERE library_id=${LIBRARY_ID} AND calibre_book_id=${CREATED_BOOK_ID};
-DELETE FROM sync_mappings WHERE library_id=${LIBRARY_ID} AND entity_type='books' AND server_id=${CREATED_BOOK_ID};
 DELETE FROM books WHERE library_id=${LIBRARY_ID} AND id=${CREATED_BOOK_ID};
 EOF
 )

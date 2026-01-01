@@ -68,7 +68,6 @@ Suite completa di test per verificare il funzionamento corretto di subscription,
 ### 8. `SyncPushTest.php` (4 test)
 - ✅ Idempotency: stesso payload riusato
 - ✅ Idempotency: payload diverso → error
-- ✅ sync_mappings creati per books
 - ✅ conflitto crea record e API conflicts + resolve
 
 ### 9. `SyncItemMappingTest.php` (1 test)

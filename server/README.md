@@ -57,8 +57,16 @@ Test per pull sync:
 Test per push sync:
 - Idempotency (riuso stesso payload)
 - Idempotency con payload diverso (errore)
-- `sync_mappings` per books
 - Conflitti e `/api/sync/conflicts` + resolve
+
+### `Protocol*Test.php`
+Suite di conformità protocollo UUID‑only:
+- `client_change_id == idempotency_key`
+- UUID obbligatorio
+- Tombstone non resuscitabili
+- Pull senza `client_ids`
+- Filtro tombstone con `client_inventory`
+- Cursor monotono
 
 ### `SyncItemMappingTest.php`
 Test per mapping di relazioni:
@@ -108,9 +116,32 @@ php artisan test --testsuite=Server --coverage-html=coverage
 
 ## Requisiti
 
-- Database SQLite in-memory (configurato in `phpunit.xml`)
+- Usa la configurazione **dal file `html/.env`** (DB e servizi reali di sviluppo).
+- Database configurato in `html/.env` (non usare la connessione di default del sistema).
 - Factory per: User, Library, UserBook, BookFile, Device
 - Config `subscription.php` caricato
+- **Utenti test** già presenti nel database (vedi `tests/server/.env` per le credenziali).
+
+### Nota su .env
+Per allineare l’esecuzione locale al setup reale, carica `html/.env` prima di lanciare PHPUnit:
+```bash
+set -a; source html/.env; set +a; ./html/vendor/bin/phpunit -c phpunit.xml --testsuite=Server
+```
+
+### Verifica/creazione utenti test (console)
+Per verificare che gli utenti esistano:
+```bash
+cd html
+set -a; source .env; set +a
+php artisan user:info dmasotti+test1@gmail.com
+php artisan user:info dmasotti+test2@gmail.com
+```
+
+Se mancano, crearli con:
+```bash
+php artisan user:create dmasotti+test1@gmail.com --password=firstsecret
+php artisan user:create dmasotti+test2@gmail.com --password=secondsecret
+```
 
 ## Note
 

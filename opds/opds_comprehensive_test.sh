@@ -4,6 +4,9 @@
 # Usage:
 #   HOST=https://example.com USER=user@example.com PASS=secret ./tests/opds/opds_comprehensive_test.sh
 
+# Tip: puoi caricare `html/.env` prima di eseguire lo script per usare le credenziali/dev defaults:
+#   set -a; source html/.env; set +a;
+
 set -euo pipefail
 
 # Configuration
