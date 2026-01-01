@@ -113,6 +113,7 @@ TEST_USER_PASSWORD="your-password" \
 # Or run individually:
 /Applications/calibre.app/Contents/MacOS/calibre-debug -e tests/plugin/test_plugin_integration.py
 python3 -m pytest -q tests/plugin/unit
+python3 tests/plugin/integration/headless_protocol_compliance.py
 python tests/plugin/test_sync_scenarios.py
 ```
 

@@ -16,3 +16,7 @@ if [[ ! -x "$CALIBRE_DEBUG" ]]; then
 fi
 
 "$CALIBRE_DEBUG" -e "$ROOT_DIR/tests/plugin/test_plugin_integration.py"
+
+echo ""
+echo "== Plugin protocol compliance (headless) =="
+python3 "$ROOT_DIR/tests/plugin/integration/headless_protocol_compliance.py"
