@@ -103,10 +103,7 @@ class SyncPullTest extends TestCase
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => $cursor,
             'client_inventory' => [
-                'min' => 42,
-                'max' => 42,
-                'active' => [42],
-                'missing' => [],
+                'uuids' => [$book->uuid],
             ],
         ];
 
@@ -119,10 +116,7 @@ class SyncPullTest extends TestCase
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => $cursor,
             'client_inventory' => [
-                'min' => 42,
-                'max' => 42,
-                'active' => [],
-                'missing' => [42],
+                'uuids' => [],
             ],
         ];
 

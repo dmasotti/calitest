@@ -61,6 +61,12 @@ I server headless/script di scenario generano `uuid` dinamici prima di fare `POS
 
 1. **Calibre installato** con `calibre-debug` disponibile
 2. **Plugin installato** in Calibre
+3. **Configurazione**: se usi test headless/E2E, carica le variabili da `html/.env` (DB/endpoint reali di dev)
+
+Esempio:
+```bash
+set -a; source html/.env; set +a;
+```
 
 ### Eseguire Integration Tests
 

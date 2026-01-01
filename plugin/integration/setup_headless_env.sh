@@ -68,7 +68,10 @@ function login() {
   local payload
   payload=$(jq -nc --arg email "$TEST_USER_EMAIL" --arg password "$TEST_USER_PASSWORD" '{email: $email, password: $password}')
   local response
-  response=$(curl -s -X POST "$api_url/auth/login" -H "Content-Type: application/json" -d "$payload")
+  response=$(curl -s -X POST "$api_url/auth/login" \
+    -H "Accept: application/json" \
+    -H "Content-Type: application/json" \
+    -d "$payload")
   local token
   token=$(echo "$response" | jq -r '.token // empty')
   if [[ -z "$token" || "$token" == "null" ]]; then
@@ -147,11 +150,21 @@ mkdir -p "$(dirname "$CONFIG_PATH")"
 
 cat <<EOF >"$CONFIG_PATH"
 {
+  "Caliweb": {
+    "discoveryCache": {},
+    "discoveryUrl": "$DISCOVERY_URL",
+    "restEndpoint": "$API_URL",
+    "restToken": "$REST_TOKEN",
+    "restUsername": "",
+    "restPassword": "",
+    "debugApiLogs": true,
+    "uploadTimeout": 120,
+    "httpTimeout": 30
+  },
   "Goodreads": {
     "discoveryUrl": "$DISCOVERY_URL",
-    "restToken": "$REST_TOKEN",
     "restEndpoint": "$API_URL",
-    "deviceToken": "",
+    "restToken": "$REST_TOKEN",
     "discoveryCache": {}
   },
   "LibraryMappings": {

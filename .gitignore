@@ -4,3 +4,10 @@ server/run_sync_debug.log
 server/run_sync_fixed.log
 server/run_sync_http.log
 tmp/
+.phpunit.result.cache
+.scannerwork/
+__pycache__/
+plugin/**/__pycache__/
+plugin/CalibreTest/metadata.db
+plugin/integration/generated_sync_calimob.json
+phpunit.mysql.xml

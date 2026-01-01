@@ -33,6 +33,7 @@ if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
 fi
 
 LOGIN_RESPONSE=$(curl -s -X POST "$API_URL/auth/login" \
+  -H "Accept: application/json" \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"$TEST_USER_EMAIL\",\"password\":\"$TEST_USER_PASSWORD\"}")
 TOKEN=$(echo "$LOGIN_RESPONSE" | jq -r '.token')

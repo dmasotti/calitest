@@ -18,7 +18,7 @@ class ProtocolPullTest extends TestCase
         $user = User::factory()->create();
         $library = Library::factory()->create(['user_id' => $user->id]);
         Sanctum::actingAs($user);
-        $calibreUuid = (string) Str::uuid();
+        $calibreUuid = $library->calibre_library_id;
 
         return [$user, $library, $calibreUuid];
     }

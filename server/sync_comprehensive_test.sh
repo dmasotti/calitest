@@ -249,8 +249,7 @@ PUSH_PAYLOAD=$(cat <<EOF
             "timestamps": {
                 "created_at": $TIMESTAMP
             },
-            "last_modified": $TIMESTAMP,
-            "client_ids": {"calibre:$LIBRARY_ID:$BOOK_ID": "$BOOK_ID"}
+            "last_modified": $TIMESTAMP
         },
         "idempotency_key": "test-create-$TIMESTAMP"
     }]
@@ -303,7 +302,7 @@ fi
 log_test "Pull sync - verifying changes"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 USER_BOOKS_AFTER=$(api_get "/user-books")
-FOUND_BOOK=$(json_parse "$USER_BOOKS_AFTER" ".[] | select(.id == $CREATED_BOOK_ID) | .title // empty" "user_books_for_verify")
+FOUND_BOOK=$(json_parse "$USER_BOOKS_AFTER" ".[] | select(.uuid == \"$BOOK_UUID\") | .title // empty" "user_books_for_verify")
 if [[ "$FOUND_BOOK" == *"Updated"* ]]; then
     log_pass "Verified book changes on server"
 else
@@ -334,7 +333,7 @@ echo "=== Metadata Operations ==="
 log_test "Getting book details"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 BOOK_DETAIL=$(api_get "/user-books")
-BOOK_TITLE=$(json_parse "$BOOK_DETAIL" ".[] | select(.id == $CREATED_BOOK_ID) | .title // empty" "book_details")
+BOOK_TITLE=$(json_parse "$BOOK_DETAIL" ".[] | select(.uuid == \"$BOOK_UUID\") | .title // empty" "book_details")
 if [[ -n "$BOOK_TITLE" ]]; then
     log_pass "Got book details: $BOOK_TITLE"
 else

@@ -56,7 +56,7 @@ class FileUploadTest extends TestCase
             ->where('format', 'EPUB')
             ->firstOrFail();
 
-        $this->assertTrue($file->is_uploaded);
+        $this->assertTrue((bool) $file->is_uploaded);
         $this->assertFalse($file->needs_file_upload);
         $this->assertFalse($file->file_missing);
         $this->assertNotEmpty($file->storage_key);
