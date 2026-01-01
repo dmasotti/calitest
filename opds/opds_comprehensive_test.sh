@@ -9,10 +9,18 @@
 
 set -euo pipefail
 
+# Auto-load local test env if present
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/../server/.env" ]]; then
+  set -a
+  source "$SCRIPT_DIR/../server/.env"
+  set +a
+fi
+
 # Configuration
 HOST=${HOST:-http://127.0.0.1:8000}
-USER=${USER:-}
-PASS=${PASS:-}
+USER=${OPDS_USER:-${TEST_USER_EMAIL:-}}
+PASS=${OPDS_PASS:-${TEST_USER_PASSWORD:-}}
 APP_PASS=${APP_PASS:-}
 TMPDIR=$(mktemp -d)
 VERBOSE=${VERBOSE:-0}
