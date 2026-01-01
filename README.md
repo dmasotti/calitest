@@ -60,6 +60,7 @@ Tests Calibre plugin sync_calimob:
 - ✅ Payload validation
 - ✅ Hash calculation
 - ✅ Client ID handling
+- ✅ Progress cursor (resume after interruption)
 
 **Tests:** 11 test cases
 
@@ -124,9 +125,9 @@ python tests/plugin/test_sync_scenarios.py
 Create `tests/server/.env`:
 
 ```bash
-DISCOVERY_URL="https://your-server.com"
-TEST_USER_EMAIL="user@example.com"
-TEST_USER_PASSWORD="your-password"
+DISCOVERY_URL="http://caliserver.test"
+TEST_USER_EMAIL="dmasotti+test1@gmail.com"
+TEST_USER_PASSWORD="firstsecret"
 ```
 
 Then run:
@@ -144,6 +145,9 @@ php artisan user:info dmasotti+test2@gmail.com
 # Se mancano:
 php artisan user:create dmasotti+test1@gmail.com --password=firstsecret
 php artisan user:create dmasotti+test2@gmail.com --password=secondsecret
+
+Nota: questi utenti sono quelli usati dagli script di test/headless. Se non esistono sul server,
+vanno creati prima di lanciare qualsiasi test E2E/headless o script di sync.
 ```
 
 ### Local PHPUnit (Server tests)
@@ -156,9 +160,9 @@ set -a; source html/.env; set +a; ./html/vendor/bin/phpunit -c phpunit.xml --tes
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `DISCOVERY_URL` | Server base URL | Yes |
-| `TEST_USER_EMAIL` | Test user email | Yes |
-| `TEST_USER_PASSWORD` | Test user password | Yes |
+| `DISCOVERY_URL` | Server base URL (default test env: `http://caliserver.test`) | Yes |
+| `TEST_USER_EMAIL` | Test user email (default: `dmasotti+test1@gmail.com`) | Yes |
+| `TEST_USER_PASSWORD` | Test user password (default: `firstsecret`) | Yes |
 | `VERBOSE` | Enable verbose output (0/1) | No |
 
 ## 📊 Test Output
