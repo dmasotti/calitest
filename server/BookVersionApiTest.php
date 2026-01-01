@@ -37,6 +37,29 @@ class BookVersionApiTest extends TestCase
         $this->assertNotEmpty($response->json('versions'));
     }
 
+    public function test_versions_endpoint_uuid_includes_trashed_book(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $book = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+
+        $book->update(['favorite' => true]);
+        $book->delete();
+
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/items/uuid/' . $book->uuid . '/versions?calibre_library_uuid=' . $library->calibre_library_id);
+        $response->assertStatus(200);
+        $response->assertJsonStructure([
+            'book' => ['id', 'client_id', 'library_id'],
+            'versions',
+        ]);
+        $this->assertNotEmpty($response->json('versions'));
+    }
+
     public function test_restore_and_undelete_restores_snapshot_and_undeletes_book(): void
     {
         $user = User::factory()->create();
@@ -64,6 +87,46 @@ class BookVersionApiTest extends TestCase
 
         $response = $this->postJson(
             '/api/items/' . $book->id . '/versions/' . $version->id . '/restore-and-undelete?library_id=' . $library->id
+        );
+        $response->assertStatus(200);
+        $response->assertJson([
+            'status' => 'restored',
+            'undeleted' => true,
+        ]);
+
+        $book->refresh();
+        $this->assertFalse($book->trashed());
+        $this->assertNull($book->status);
+        $this->assertFalse((bool) $book->favorite);
+    }
+
+    public function test_restore_and_undelete_uuid_restores_snapshot_and_undeletes_book(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $book = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+
+        $book->update(['favorite' => true]);
+        $version = UserBookVersion::where('book_id', $book->id)
+            ->orderByDesc('created_at')
+            ->first();
+
+        $this->assertNotNull($version);
+
+        $book->delete();
+        $this->assertSoftDeleted('books', [
+            'id' => $book->id,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson(
+            '/api/items/uuid/' . $book->uuid . '/versions/' . $version->id . '/restore-and-undelete?calibre_library_uuid=' . $library->calibre_library_id
         );
         $response->assertStatus(200);
         $response->assertJson([
