@@ -121,12 +121,33 @@ echo ""
 run_test_suite "Metadata Comprehensive" "$SCRIPT_DIR/server/metadata_test.sh" || true
 
 echo ""
+
+# 6. PHPUnit Server Suite (protocol + unit/integration)
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}Running: PHPUnit Server Suite${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+if [[ -x "$SCRIPT_DIR/../html/vendor/bin/phpunit" ]]; then
+    if ( set -a; source "$ROOT_ENV_FILE"; set +a; "$SCRIPT_DIR/../html/vendor/bin/phpunit" -c "$SCRIPT_DIR/../phpunit.xml" --testsuite=Server ); then
+        echo ""
+        echo -e "${GREEN}✓ PHPUnit Server Suite PASSED${NC}"
+    else
+        echo ""
+        echo -e "${RED}✗ PHPUnit Server Suite FAILED${NC}"
+        FAILED_SUITES+=("PHPUnit Server Suite")
+    fi
+else
+    echo -e "${YELLOW}⚠ PHPUnit not found (skipped)${NC}"
+    FAILED_SUITES+=("PHPUnit Server Suite")
+fi
+
+echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${CYAN}           Test Execution Summary         ${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-TOTAL_SUITES=4
+TOTAL_SUITES=6
 PASSED_SUITES=$((TOTAL_SUITES - ${#FAILED_SUITES[@]}))
 
 echo "Total test suites: $TOTAL_SUITES"
