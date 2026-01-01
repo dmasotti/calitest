@@ -107,10 +107,12 @@ TEST_USER_PASSWORD="your-password" \
 
 **Plugin Tests:**
 ```bash
-# Integration tests (requires Calibre)
-/Applications/calibre.app/Contents/MacOS/calibre-debug -e tests/plugin/test_plugin_integration.py
+# Run both unit + integration
+./tests/run_plugin_tests.sh
 
-# Scenario tests (no Calibre required)
+# Or run individually:
+/Applications/calibre.app/Contents/MacOS/calibre-debug -e tests/plugin/test_plugin_integration.py
+python3 -m pytest -q tests/plugin/unit
 python tests/plugin/test_sync_scenarios.py
 ```
 

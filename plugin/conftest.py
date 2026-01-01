@@ -181,6 +181,7 @@ if 'calibre_plugins.sync_calimob' not in sys.modules:
     sync_pkg = types.ModuleType('calibre_plugins.sync_calimob')
     sync_pkg.__path__ = [str(plugin_root)]
     sys.modules['calibre_plugins.sync_calimob'] = sync_pkg
+    sys.modules['calibre_plugins'].sync_calimob = sync_pkg
 
 plugin_modules = [
     'common_compatibility',
