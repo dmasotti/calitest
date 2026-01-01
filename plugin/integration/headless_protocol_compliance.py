@@ -163,11 +163,25 @@ def main():
     miss_status = missing.get("results", [{}])[0].get("status")
     assert_true(miss_status in ("noop", "conflict", "error"), "Delete missing should not be applied")
 
-    # Cleanup: delete library
+    # Cleanup + coverage: soft-delete library and ensure sync is blocked
+    client._request("DELETE", f"/libraries/{lib_id}")
+
+    # After delete, library should not be accessible or syncable
+    blocked = False
     try:
-        client._request("DELETE", f"/libraries/{lib_id}")
-    except RestApiError:
-        pass
+        client.get_sync(library_id=lib_id, calibre_library_uuid=cal_lib_uuid)
+    except RestApiError as exc:
+        blocked = True
+        assert_true(exc.status_code in (403, 404, 410), "Expected sync blocked for deleted library")
+    assert_true(blocked, "Sync should be blocked after library delete")
+
+    blocked_push = False
+    try:
+        client.post_sync([change], library_id=lib_id, calibre_library_uuid=cal_lib_uuid)
+    except RestApiError as exc:
+        blocked_push = True
+        assert_true(exc.status_code in (403, 404, 410), "Expected push blocked for deleted library")
+    assert_true(blocked_push, "Push should be blocked after library delete")
 
     print("Protocol compliance suite: PASS")
 
