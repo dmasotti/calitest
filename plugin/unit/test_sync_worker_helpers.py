@@ -81,7 +81,7 @@ def test_cache_and_record_mapping(monkeypatch):
 
     monkeypatch.setattr(sync_worker.cfg, 'update_book_mapping', update)
     worker._cache_book_uuid = sync_worker.SyncWorker._cache_book_uuid.__get__(worker, sync_worker.SyncWorker)
-    worker._record_book_mapping(10, {'uuid': 'UUID-A', 'title': 'T', 'version': 'v1', 'cover': {'cover_hash': 'h'}, 'client_ids': {'calibre': '1'}})
+    worker._record_book_mapping(10, {'uuid': 'UUID-A', 'title': 'T', 'version': 'v1', 'cover': {'cover_hash': 'h'}})
     assert captured['args'] == ('lib-123', 10)
     assert captured['updates']['last_sync_result'] == 'collected'
 

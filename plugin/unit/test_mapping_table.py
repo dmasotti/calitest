@@ -18,7 +18,6 @@ def test_upsert_entry_creates_row(tmp_path):
     updates = {
         'uuid': '11111111-2222-3333-4444-555555555555',
         'title': 'Mapped Title',
-        'client_ids': {'calibre:lib:1': '1'},
         'pending_cover_upload': True,
         'last_sync_result': 'collected',
         'version': 'v1',
@@ -27,7 +26,6 @@ def test_upsert_entry_creates_row(tmp_path):
     entry = mapping_table.fetch_entry(library_path, 'library-uuid', 1)
     assert entry['uuid'] == updates['uuid']
     assert entry['title'] == 'Mapped Title'
-    assert entry['client_ids'] == {'calibre:lib:1': '1'}
     assert entry['pending_cover_upload'] is True
     assert entry['last_sync_result'] == 'collected'
 
@@ -37,7 +35,6 @@ def test_upsert_entry_updates_row(tmp_path):
     initial = {
         'uuid': '22222222-3333-4444-5555-666666666666',
         'title': 'Original',
-        'client_ids': {'calibre:lib:5': '5'},
     }
     mapping_table.upsert_entry(library_path, 'library-uuid', 5, initial)
     before = mapping_table.fetch_entry(library_path, 'library-uuid', 5)

@@ -353,9 +353,6 @@ def sample_json_item():
     return {
         'id': 1,
         'uuid': 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-        'client_ids': {
-            'calibre:test-library-id:1': '1'
-        },
         'title': 'Test Book',
         'title_sort': 'Test Book',
         'author_sort': 'Author, Test',

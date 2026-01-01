@@ -23,12 +23,13 @@ def test_scenario_create_book():
     print("\n[SCENARIO] Client creates new book")
     
     book_id = 1001
-    library_id = "test-library"
+    book_uuid = "11111111-2222-3333-4444-555555555555"
     
     change = {
         'op': 'create',
         'item': {
             'id': book_id,
+            'uuid': book_uuid,
             'title': 'New Book Title',
             'authors': [
                 {'name': 'John Doe', 'role': 'author', 'position': 0}
@@ -44,7 +45,6 @@ def test_scenario_create_book():
                 'created_at': 1766248800
             },
             'last_modified': 1766248800,
-            'client_ids': {f'calibre:{library_id}:{book_id}': str(book_id)}
         },
         'idempotency_key': 'test-create-key-001'
     }
@@ -56,10 +56,11 @@ def test_scenario_create_book():
     
     item = change['item']
     assert 'id' in item, "Must have 'id' field"
+    assert 'uuid' in item, "Must have 'uuid' field"
     assert 'title' in item
     assert 'authors' in item and len(item['authors']) > 0
     assert 'timestamps' in item
-    assert 'client_ids' in item
+    assert 'client_ids' not in item
     
     print("  ✓ Create payload structure valid")
     print(f"  ✓ Book ID: {item['id']}")
@@ -74,11 +75,13 @@ def test_scenario_update_book():
     print("\n[SCENARIO] Client updates book")
     
     book_id = 1001
+    book_uuid = "11111111-2222-3333-4444-555555555555"
     
     change = {
         'op': 'update',
         'item': {
             'id': book_id,
+            'uuid': book_uuid,
             'title': 'Updated Book Title',
             'status': 'reading',
             'progress_percent': 50,
@@ -107,13 +110,13 @@ def test_scenario_delete_book():
     print("\n[SCENARIO] Client deletes book")
     
     book_id = 1001
-    library_id = "test-library"
+    book_uuid = "11111111-2222-3333-4444-555555555555"
     
     change = {
         'op': 'delete',
         'item': {
             'id': book_id,
-            'client_ids': {f'calibre:{library_id}:{book_id}': str(book_id)},
+            'uuid': book_uuid,
             'last_modified': 1766256000
         },
         'idempotency_key': 'test-delete-key-001'
@@ -121,7 +124,8 @@ def test_scenario_delete_book():
     
     assert change['op'] == 'delete'
     assert change['item']['id'] == book_id
-    assert 'client_ids' in change['item']
+    assert 'uuid' in change['item']
+    assert 'client_ids' not in change['item']
     
     print("  ✓ Delete payload structure valid")
     print(f"  ✓ Deleted book ID: {change['item']['id']}")
@@ -139,6 +143,7 @@ def test_scenario_pull_response():
                 'op': 'create',
                 'item': {
                     'id': '2001',
+                    'uuid': 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
                     'title': 'Server Book',
                     'authors': [{'name': 'Server Author'}],
                     'timestamps': {
@@ -151,6 +156,7 @@ def test_scenario_pull_response():
                 'op': 'update',
                 'item': {
                     'id': '1001',
+                    'uuid': '11111111-2222-3333-4444-555555555555',
                     'title': 'Updated from Server',
                     'last_modified': 1766241000
                 }

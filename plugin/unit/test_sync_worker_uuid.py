@@ -43,23 +43,9 @@ class TestSyncWorkerUuid:
 
         item = {
             'id': 10,
-            'client_ids': {'calibre:test-lib:99': '99'},
             'uuid': '11111111-2222-3333-4444-555555555555',
         }
         assert worker._resolve_local_book_id(item) == 10
-
-    def test_resolve_local_book_id_uses_client_ids(self):
-        db = Mock()
-        db.data = Mock()
-        db.data.has_id = Mock(side_effect=lambda bid: bid == 42)
-        worker = self._make_worker(db)
-
-        item = {
-            'id': None,
-            'client_ids': {'calibre:test-lib:42': '42'},
-            'uuid': '11111111-2222-3333-4444-555555555555',
-        }
-        assert worker._resolve_local_book_id(item) == 42
 
     def test_resolve_local_book_id_uses_uuid(self):
         db = Mock()
@@ -70,7 +56,6 @@ class TestSyncWorkerUuid:
 
         item = {
             'id': None,
-            'client_ids': {},
             'uuid': '11111111-2222-3333-4444-555555555555',
         }
         assert worker._resolve_local_book_id(item) == 77

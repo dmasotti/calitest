@@ -33,8 +33,7 @@ class TestCalibreToJsonItem:
         assert item['authors'][0]['role'] == 'author'
         assert item['id'] == 123
         assert item['uuid'] == mock_calibre_metadata.uuid
-        assert 'client_ids' in item
-        assert 'calibre:test-library-id:123' in item['client_ids']
+        assert 'client_ids' not in item
     
     def test_with_series(self, mock_calibre_metadata):
         """Test conversion with series information."""

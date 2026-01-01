@@ -27,7 +27,6 @@ class TestSyncMappingCache(unittest.TestCase):
         updates = {
             'uuid': '11111111-2222-3333-4444-555555555555',
             'title': 'Traceable Book',
-            'client_ids': {'calibre:lib-1:42': '42'},
             'cover_hash': 'sha256:abc',
             'version': 'v1',
         }
@@ -36,7 +35,6 @@ class TestSyncMappingCache(unittest.TestCase):
         entry = get_book_mapping_entry(self.plugin_prefs, 'lib-1', 42)
         self.assertEqual(entry['uuid'], updates['uuid'])
         self.assertEqual(entry['title'], 'Traceable Book')
-        self.assertEqual(entry['client_ids'], {'calibre:lib-1:42': '42'})
         self.assertEqual(entry['cover_hash'], 'sha256:abc')
         self.assertEqual(entry['version'], 'v1')
 

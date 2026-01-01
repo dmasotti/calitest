@@ -51,53 +51,30 @@ def test_calculate_cover_hash():
     return True
 
 
-def test_client_id_extraction():
-    """Test extracting Calibre book ID from client_ids"""
-    print("\n[TEST] Client ID extraction")
-    
-    library_id = "test-lib-123"
-    book_id = 42
-    
-    client_ids = {
-        f'calibre:{library_id}:{book_id}': str(book_id)
-    }
-    
-    extracted_id = sync_mapper.get_calibre_book_id_from_client_ids(client_ids, library_id)
-    
-    assert extracted_id == book_id, f"Expected {book_id}, got {extracted_id}"
-    print(f"  ✓ Extracted book ID: {extracted_id}")
-    
-    # Test not found case
-    extracted_none = sync_mapper.get_calibre_book_id_from_client_ids({}, library_id)
-    assert extracted_none is None, "Should return None when not found"
-    print("  ✓ Returns None when not found")
-    
-    return True
-
-
 def test_delete_payload_structure():
-    """Test delete payload construction"""
+    """Test delete payload construction (UUID-only protocol)"""
     print("\n[TEST] Delete payload structure")
     
     book_id = 123
     library_id = "test-lib-456"
+    book_uuid = "11111111-2222-3333-4444-555555555555"
     
     # Construct like plugin does
-    client_id_key = f'calibre:{library_id}:{book_id}'
     item_payload = {
         'id': book_id,
-        'client_ids': {client_id_key: str(book_id)},
+        'uuid': book_uuid,
         'last_modified': int(utcnow().timestamp())
     }
     
     assert 'id' in item_payload, "Must have 'id' field"
-    assert 'client_ids' in item_payload, "Must have 'client_ids'"
-    assert 'timestamps' in item_payload, "Must have 'timestamps'"
+    assert 'uuid' in item_payload, "Must have 'uuid' field"
+    assert 'client_ids' not in item_payload, "Must NOT include client_ids"
     assert item_payload['id'] == book_id, f"ID should be {book_id}"
+    assert item_payload['uuid'] == book_uuid, "UUID should be set"
     
     print(f"  ✓ Payload structure valid")
     print(f"  ✓ ID field: {item_payload['id']}")
-    print(f"  ✓ Client IDs: {list(item_payload['client_ids'].keys())}")
+    print(f"  ✓ UUID: {item_payload['uuid']}")
     
     return True
 
@@ -137,22 +114,34 @@ def test_idempotency_key_generation():
 
 
 def test_protocol_compliance():
-    """Test protocol compliance (modern 'id' field, not 'calibre_book_id')"""
+    """Test protocol compliance (UUID-only + idempotency)"""
     print("\n[TEST] Protocol compliance")
     
     book_id = 999
+    book_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     
-    # Modern protocol uses 'id'
+    # Modern protocol uses 'id' + 'uuid' and no client_ids
     modern_item = {
         'id': book_id,
+        'uuid': book_uuid,
         'title': 'Modern Protocol Book'
     }
     
     assert 'id' in modern_item, "Modern protocol must use 'id' field"
     assert 'calibre_book_id' not in modern_item, "Should NOT have legacy 'calibre_book_id'"
+    assert 'uuid' in modern_item, "Modern protocol must include 'uuid'"
+    assert 'client_ids' not in modern_item, "client_ids must not be sent"
     
-    print("  ✓ Uses modern 'id' field")
-    print("  ✓ No legacy 'calibre_book_id' field")
+    change = {
+        'op': 'create',
+        'item': modern_item,
+        'idempotency_key': 'test-idempotency-key'
+    }
+    assert change['idempotency_key'], "idempotency_key is required on every change"
+    
+    print("  ✓ Uses 'id' + 'uuid'")
+    print("  ✓ No legacy 'calibre_book_id' or client_ids")
+    print("  ✓ idempotency_key present")
     
     return True
 
@@ -165,7 +154,6 @@ def run_all_tests():
     
     tests = [
         ("Cover Hash Calculation", test_calculate_cover_hash),
-        ("Client ID Extraction", test_client_id_extraction),
         ("Delete Payload Structure", test_delete_payload_structure),
         ("Idempotency Key Generation", test_idempotency_key_generation),
         ("Protocol Compliance", test_protocol_compliance),

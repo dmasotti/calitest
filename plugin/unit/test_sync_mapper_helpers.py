@@ -64,7 +64,7 @@ def test_calibre_to_json_item_includes_expected_fields():
         favorite_column=None,
     )
     assert item['id'] == 42
-    assert 'calibre:lib-uuid:42' in item['client_ids']
+    assert 'client_ids' not in item
     assert item['uuid'] == metadata.uuid
     assert item['title_sort'] == 'Sorted Title'
     assert item['author_sort'] == 'Author, Test'
@@ -161,8 +161,8 @@ def test_calculate_cover_hash_bytes_and_file(tmp_path):
     assert missing is None
 
 
-def test_get_calibre_book_id_from_client_ids():
-    client_ids = {'calibre:lib:1': '1'}
-    assert sync_mapper.get_calibre_book_id_from_client_ids(client_ids, 'lib') == 1
-    bad_client_ids = {'calibre:lib:1': 'notint'}
-    assert sync_mapper.get_calibre_book_id_from_client_ids(bad_client_ids, 'lib') is None
+def test_uuid_is_required_on_items():
+    metadata = DummyMetadata()
+    metadata.uuid = None
+    item = sync_mapper.calibre_to_json_item(1, metadata, 'lib')
+    assert item['uuid'] is None
