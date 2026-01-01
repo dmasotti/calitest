@@ -200,12 +200,11 @@ CLIENT_BOOK_ID=100000
 CLIENT_TITLE="Sync Created Book $(date +%s)"
 CLIENT_CHANGE_KEY="c_$(date +%s)"
 CLIENT_UUID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "client-$(date +%s)-$RANDOM")
-CHANGE_PAYLOAD=$(jq -n --arg id "$CLIENT_BOOK_ID" --arg title "$CLIENT_TITLE" --arg client_key "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID" --arg uuid "$CLIENT_UUID" '{ client_cursor: null, library_id: ($env.LIB_ID|tonumber), calibre_library_uuid: $env.CALIBRE_LIB_UUID, changes: [ { op: "create", idempotency_key: ($env.CLIENT_CHANGE_KEY), item: { id: ($env.CLIENT_BOOK_ID|tonumber), uuid: $uuid, title: $env.CLIENT_TITLE, client_ids: { ($env.CLIENT_KEY): ($env.CLIENT_BOOK_ID|tostring) }, last_modified: (now | floor) } } ] }' 2>/dev/null || true)
+CHANGE_PAYLOAD=$(jq -n --arg id "$CLIENT_BOOK_ID" --arg title "$CLIENT_TITLE" --arg client_key "calibre:$CALIBRE_LIB_UUID:$CLIENT_BOOK_ID" --arg uuid "$CLIENT_UUID" '{ client_cursor: null, calibre_library_uuid: $env.CALIBRE_LIB_UUID, changes: [ { op: "create", idempotency_key: ($env.CLIENT_CHANGE_KEY), item: { id: ($env.CLIENT_BOOK_ID|tonumber), uuid: $uuid, title: $env.CLIENT_TITLE, client_ids: { ($env.CLIENT_KEY): ($env.CLIENT_BOOK_ID|tostring) }, last_modified: (now | floor) } } ] }' 2>/dev/null || true)
 # fallback simpler payload if jq complex interpolation fails
 CHANGE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
-  "library_id": $LIB_ID,
   "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
@@ -247,7 +246,6 @@ echo "Deleting client-created book via sync (op=delete)"
 DELETE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
-  "library_id": $LIB_ID,
   "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
@@ -268,9 +266,9 @@ DELETE_RESP_RAW=$(curl -sS -X POST "$API_URL/sync" -H "Content-Type: application
 DELETE_RESP=$(parse_json "$DELETE_RESP_RAW" "sync_delete")
 echo "$DELETE_RESP" | jq '.'
 
-# 7) Verify deletion by requesting item (items/{id} returns withTrashed)
-echo "Verify tombstone exists via GET /api/items/$CLIENT_BOOK_ID"
-ITEM_RESP_RAW=$(api_curl "$API_URL/items/$CLIENT_BOOK_ID?library_id=$LIB_ID&calibre_library_uuid=$CALIBRE_LIB_UUID")
+# 7) Verify deletion by requesting item (items/uuid/{uuid})
+echo "Verify tombstone exists via GET /api/items/uuid/$CLIENT_UUID"
+ITEM_RESP_RAW=$(api_curl "$API_URL/items/uuid/$CLIENT_UUID?calibre_library_uuid=$CALIBRE_LIB_UUID")
 ITEM_RESP=$(parse_json "$ITEM_RESP_RAW" "item_lookup")
 echo "$ITEM_RESP" | jq '.'
 
@@ -281,7 +279,6 @@ CONFLICT2_TITLE="Real Conflict Book $(date +%s)"
 CONFLICT2_CREATE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
-  "library_id": $LIB_ID,
   "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
@@ -315,7 +312,6 @@ SERVER_TITLE_A_TS="2025-01-01T14:00:00Z"
 SERVER_TITLE_UPDATE=$(cat <<JSON
 {
   "client_cursor": null,
-  "library_id": $LIB_ID,
   "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
@@ -345,7 +341,6 @@ CLIENT_TITLE_B_TS="2025-01-01T13:00:00Z"
 CLIENT_TITLE_UPDATE=$(cat <<JSON
 {
   "client_cursor": null,
-  "library_id": $LIB_ID,
   "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
@@ -392,7 +387,6 @@ CONFLICT_UUID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/n
 CONFLICT_CREATE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
-  "library_id": $LIB_ID,
   "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
@@ -422,7 +416,6 @@ SERVER_NEWER_TS="2025-01-01T12:00:00Z"
 SERVER_UPDATE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
-  "library_id": $LIB_ID,
   "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
@@ -450,7 +443,6 @@ CLIENT_OLDER_TS="2025-01-01T11:00:00Z"
 CLIENT_OLDER_UPDATE_PAYLOAD=$(cat <<JSON
 {
   "client_cursor": null,
-  "library_id": $LIB_ID,
   "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
@@ -513,7 +505,6 @@ if [ -n "${TEST_USER_EMAIL_2:-}" ] && [ -n "${TEST_USER_PASSWORD_2:-}" ]; then
     PAYLOAD1=$(cat <<JSON
 {
   "client_cursor": null,
-  "library_id": $LIB_ID,
   "calibre_library_uuid": "$CALIBRE_LIB_UUID",
   "changes": [
     {
@@ -540,7 +531,6 @@ JSON
     PAYLOAD2=$(cat <<JSON
 {
   "client_cursor": null,
-  "library_id": $LIB2_ID,
   "calibre_library_uuid": "$CALIBRE_LIB_UUID2",
   "changes": [
     {

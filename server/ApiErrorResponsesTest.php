@@ -51,7 +51,7 @@ class ApiErrorResponsesTest extends TestCase
         $user = User::factory()->create();
         $library = Library::factory()->create(['user_id' => $user->id]);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id);
+        $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);
 
         $response->assertStatus(401);
         $this->assertSame('Unauthenticated', $response->json('message'));
@@ -97,7 +97,7 @@ class ApiErrorResponsesTest extends TestCase
 
         Sanctum::actingAs($user);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id);
+        $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);
 
         $response->assertStatus(404);
         $this->assertSame('Library not found or access denied', $response->json('error'));

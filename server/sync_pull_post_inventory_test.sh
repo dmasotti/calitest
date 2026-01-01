@@ -110,7 +110,7 @@ fi
 pass "Create applied"
 
 log "Get cursor before delete"
-CURSOR_RESP=$(api_post "/sync/pull" "{\"library_id\":$LIBRARY_ID,\"calibre_library_uuid\":\"$CALIBRE_LIBRARY_ID\",\"limit\":1}")
+CURSOR_RESP=$(api_post "/sync/pull" "{\"calibre_library_uuid\":\"$CALIBRE_LIBRARY_ID\",\"limit\":1}")
 CURSOR_BEFORE=$(echo "$CURSOR_RESP" | jq -r '.new_cursor // empty')
 if [[ -z "$CURSOR_BEFORE" || "$CURSOR_BEFORE" == "null" ]]; then
   fail "No cursor returned"
@@ -120,7 +120,6 @@ pass "Cursor obtained"
 log "Delete test book $BOOK_ID"
 DELETE_PAYLOAD=$(cat <<EOF
 {
-  "library_id": $LIBRARY_ID,
   "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "changes": [{
     "op": "delete",
@@ -140,7 +139,6 @@ pass "Delete applied"
 log "POST /sync/pull with client_inventory including deleted ID (should include delete)"
 INV_INCLUDE=$(cat <<EOF
 {
-  "library_id": $LIBRARY_ID,
   "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "cursor": "$CURSOR_BEFORE",
   "limit": 200,
@@ -161,7 +159,6 @@ echo "$PULL_INC" | jq -e --arg id "$BOOK_ID" '.changes[]? | select(.op=="delete"
 log "POST /sync/pull with client_inventory excluding deleted ID (should NOT include delete)"
 INV_EXCLUDE=$(cat <<EOF
 {
-  "library_id": $LIBRARY_ID,
   "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "cursor": "$CURSOR_BEFORE",
   "limit": 200,

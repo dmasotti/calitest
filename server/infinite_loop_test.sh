@@ -134,9 +134,9 @@ MAX_ITERATIONS=$((NUM_BOOKS / 200 + 5))
 while [ "$HAS_MORE" = "true" ]; do
   echo "Iteration $ITERATIONS, cursor: $CURSOR"
   if [ -n "$CURSOR" ] && [ "$CURSOR" != "null" ]; then
-    PULL_URL="$API_URL/sync?library_id=$LIB_ID&calibre_library_uuid=$CALIBRE_LIB_UUID&cursor=$CURSOR&limit=200"
+    PULL_URL="$API_URL/sync?calibre_library_uuid=$CALIBRE_LIB_UUID&cursor=$CURSOR&limit=200"
   else
-    PULL_URL="$API_URL/sync?library_id=$LIB_ID&calibre_library_uuid=$CALIBRE_LIB_UUID&limit=200"
+    PULL_URL="$API_URL/sync?calibre_library_uuid=$CALIBRE_LIB_UUID&limit=200"
   fi
   PULL_RESP_RAW=$(curl "$PULL_URL")
   PULL_RESP=$(parse_json "$PULL_RESP_RAW" "infinite_pull_${ITERATIONS}")

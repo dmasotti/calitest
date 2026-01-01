@@ -139,7 +139,6 @@ SERIES_NAME="Series UUID Test $TIMESTAMP"
 log "Create book with uuid (local id is client-side only)"
 CREATE_PAYLOAD=$(cat <<EOF
 {
-  "library_id": $LIBRARY_ID,
   "calibre_library_uuid": "$CAL_LIB_UUID",
   "device_uuid": "uuid-test-device-$TIMESTAMP",
   "changes": [{
@@ -183,7 +182,6 @@ pass "Create applied ($CREATE_STATUS)"
 log "Reconcile via uuid (local id may change)"
 UPDATE_PAYLOAD=$(cat <<EOF
 {
-  "library_id": $LIBRARY_ID,
   "calibre_library_uuid": "$CAL_LIB_UUID",
   "device_uuid": "uuid-test-device-$TIMESTAMP",
   "changes": [{
@@ -232,7 +230,6 @@ MISSING_ID=$(( RANDOM % 100000 + 90000 ))
 MISSING_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
 DELETE_MISSING_PAYLOAD=$(cat <<EOF
 {
-  "library_id": $LIBRARY_ID,
   "calibre_library_uuid": "$CAL_LIB_UUID",
   "device_uuid": "uuid-test-device-$TIMESTAMP",
   "changes": [{
@@ -259,7 +256,6 @@ pass "Delete idempotent OK"
 log "Cleanup: delete reconciled book"
 CLEANUP_PAYLOAD=$(cat <<EOF
 {
-  "library_id": $LIBRARY_ID,
   "calibre_library_uuid": "$CAL_LIB_UUID",
   "device_uuid": "uuid-test-device-$TIMESTAMP",
   "changes": [{

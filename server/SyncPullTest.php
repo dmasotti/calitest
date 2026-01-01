@@ -70,12 +70,12 @@ class SyncPullTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         Sanctum::actingAs($user);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id . '&include_inventory_hint=true');
+        $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id . '&include_inventory_hint=true');
         $response->assertStatus(200);
         $this->assertNull($response->json('inventory_hint'));
 
         $cursor = base64_encode((string) now()->subHours(1)->timestamp);
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id . '&include_inventory_hint=true&cursor=' . $cursor);
+        $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id . '&include_inventory_hint=true&cursor=' . $cursor);
         $response->assertStatus(200);
         $this->assertIsArray($response->json('inventory_hint'));
     }
@@ -168,7 +168,7 @@ class SyncPullTest extends TestCase
             'uuid' => Str::uuid()->toString(),
         ]);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id . '&limit=2');
+        $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id . '&limit=2');
         $response->assertStatus(200);
         $this->assertTrue((bool) $response->json('has_more'));
         $this->assertCount(2, $response->json('changes'));
@@ -194,7 +194,7 @@ class SyncPullTest extends TestCase
             'cover_url' => null,
         ]);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id);
+        $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);
         $response->assertStatus(200);
 
         // Expect server not to claim cover availability without a URL/path.
@@ -233,7 +233,7 @@ class SyncPullTest extends TestCase
             'file_missing' => true,
         ]);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id);
+        $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);
         $response->assertStatus(200);
 
         $this->assertTrue((bool) $response->json('changes.0.item.files.0.file_missing'));
@@ -259,7 +259,7 @@ class SyncPullTest extends TestCase
             'cover_url' => null,
         ]);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id);
+        $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);
         $response->assertStatus(200);
 
         $this->assertNull($response->json('changes.0.item.cover.cover_hash'));
@@ -297,7 +297,7 @@ class SyncPullTest extends TestCase
             'file_missing' => false,
         ]);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id);
+        $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);
         $response->assertStatus(200);
 
         $this->assertNull($response->json('changes.0.item.files.0.upload_url'));
@@ -312,7 +312,7 @@ class SyncPullTest extends TestCase
         ]);
         Sanctum::actingAs($user);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id);
+        $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);
         $response->assertStatus(404);
     }
 
@@ -335,7 +335,7 @@ class SyncPullTest extends TestCase
             'cover_url' => null,
         ]);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id);
+        $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);
         $response->assertStatus(200);
 
         $this->assertFalse((bool) $response->json('changes.0.item.cover.has_cover'));
@@ -375,7 +375,7 @@ class SyncPullTest extends TestCase
             'file_missing' => false,
         ]);
 
-        $response = $this->getJson('/api/sync?library_id=' . $library->id . '&calibre_library_uuid=' . $library->calibre_library_id);
+        $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);
         $response->assertStatus(200);
 
         $this->assertTrue((bool) $response->json('changes.0.item.files.0.is_uploaded'));

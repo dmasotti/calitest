@@ -141,7 +141,7 @@ pass "Using library id=$LIBRARY_ID"
 
 # Validation: missing calibre_library_uuid
 log "GET /sync missing calibre_library_uuid should 422"
-request "GET" "/sync?library_id=$LIBRARY_ID&limit=1"
+request "GET" "/sync?limit=1"
 if [[ "$RESPONSE_CODE" != "422" ]]; then
   fail "Expected 422, got $RESPONSE_CODE: $RESPONSE_BODY"
 fi
@@ -149,7 +149,7 @@ pass "Missing calibre_library_uuid rejected"
 
 # Validation: calibre_library_uuid mismatch
 log "GET /sync with wrong calibre_library_uuid should 403"
-request "GET" "/sync?library_id=$LIBRARY_ID&calibre_library_uuid=wrong-$CALIBRE_LIBRARY_UUID&limit=1"
+request "GET" "/sync?calibre_library_uuid=wrong-$CALIBRE_LIBRARY_UUID&limit=1"
 if [[ "$RESPONSE_CODE" != "403" ]]; then
   fail "Expected 403, got $RESPONSE_CODE: $RESPONSE_BODY"
 fi
@@ -157,7 +157,7 @@ pass "calibre_library_uuid mismatch rejected"
 
 # Inventory on full sync
 log "GET /sync include_inventory returns inventory payload"
-request "GET" "/sync?library_id=$LIBRARY_ID&calibre_library_uuid=$CALIBRE_LIBRARY_UUID&include_inventory=true&limit=1"
+request "GET" "/sync?calibre_library_uuid=$CALIBRE_LIBRARY_UUID&include_inventory=true&limit=1"
 if [[ "$RESPONSE_CODE" != "200" ]]; then
   fail "GET /sync failed ($RESPONSE_CODE): $RESPONSE_BODY"
 fi
@@ -171,7 +171,6 @@ BOOK_ID=$((900000 + (RANDOM % 10000)))
 BOOK_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
 CREATE_PAYLOAD=$(cat <<EOF
 {
-  "library_id": $LIBRARY_ID,
   "calibre_library_uuid": "$CALIBRE_LIBRARY_UUID",
   "changes": [{
     "op": "create",
@@ -207,7 +206,7 @@ CREATED_BOOK_ID=$BOOK_ID
 
 # Inventory hint on incremental pull (cursor not empty)
 log "GET /sync include_inventory_hint on delta"
-request "GET" "/sync?library_id=$LIBRARY_ID&calibre_library_uuid=$CALIBRE_LIBRARY_UUID&cursor=$NEW_CURSOR&include_inventory_hint=true&limit=1"
+request "GET" "/sync?calibre_library_uuid=$CALIBRE_LIBRARY_UUID&cursor=$NEW_CURSOR&include_inventory_hint=true&limit=1"
 if [[ "$RESPONSE_CODE" != "200" ]]; then
   fail "GET /sync delta failed ($RESPONSE_CODE): $RESPONSE_BODY"
 fi
@@ -245,7 +244,6 @@ if [[ "$OLDER_VERSION" -lt 0 ]]; then
 fi
 CONFLICT_PAYLOAD=$(cat <<EOF
 {
-  "library_id": $LIBRARY_ID,
   "calibre_library_uuid": "$CALIBRE_LIBRARY_UUID",
   "changes": [{
     "op": "update",
@@ -274,7 +272,6 @@ pass "Conflict detected"
 log "Delete book"
 DELETE_PAYLOAD=$(cat <<EOF
 {
-  "library_id": $LIBRARY_ID,
   "calibre_library_uuid": "$CALIBRE_LIBRARY_UUID",
   "changes": [{
     "op": "delete",
@@ -294,7 +291,6 @@ pass "Delete applied"
 log "Update on deleted book should conflict"
 RESURRECT_PAYLOAD=$(cat <<EOF
 {
-  "library_id": $LIBRARY_ID,
   "calibre_library_uuid": "$CALIBRE_LIBRARY_UUID",
   "changes": [{
     "op": "update",

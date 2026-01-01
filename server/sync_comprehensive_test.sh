@@ -210,14 +210,14 @@ echo "=== Sync Operations ==="
 # Test 4: Get sync cursor
 log_test "Getting sync cursor"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
-CURSOR_RESPONSE=$(api_get "/sync?library_id=$LIBRARY_ID&calibre_library_uuid=$CALIBRE_LIBRARY_ID&limit=1")
+CURSOR_RESPONSE=$(api_get "/sync?calibre_library_uuid=$CALIBRE_LIBRARY_ID&limit=1")
 CURSOR=$(json_parse "$CURSOR_RESPONSE" '.new_cursor // .cursor // empty' "cursor_response")
 log_pass "Got cursor: ${CURSOR:-none}"
 
 # Test 5: Pull sync (get server changes)
 log_test "Pull sync - fetching server changes"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
-PULL_RESPONSE=$(api_get "/sync?library_id=$LIBRARY_ID&calibre_library_uuid=$CALIBRE_LIBRARY_ID&limit=50")
+PULL_RESPONSE=$(api_get "/sync?calibre_library_uuid=$CALIBRE_LIBRARY_ID&limit=50")
 CHANGES_COUNT=$(json_parse "$PULL_RESPONSE" '.changes | length' "pull_changes")
 log_pass "Received $CHANGES_COUNT changes from server"
 
@@ -229,7 +229,6 @@ BOOK_ID=$((RANDOM % 10000 + 1000))
 BOOK_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
 PUSH_PAYLOAD=$(cat <<EOF
 {
-    "library_id": $LIBRARY_ID,
     "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
     "device_uuid": "test-device-$TIMESTAMP",
     "changes": [{
@@ -272,7 +271,6 @@ log_test "Push sync - updating book"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 UPDATE_PAYLOAD=$(cat <<EOF
 {
-    "library_id": $LIBRARY_ID,
     "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
     "device_uuid": "test-device-$TIMESTAMP",
     "changes": [{
@@ -358,7 +356,6 @@ log_test "Deleting test book"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 DELETE_PAYLOAD=$(cat <<EOF
 {
-    "library_id": $LIBRARY_ID,
     "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
     "device_uuid": "test-device-$TIMESTAMP",
     "changes": [{
@@ -390,7 +387,7 @@ log_test "Verifying triplet-based matching"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 # Try to create book with same ID but different library (should create separate book)
 OTHER_LIB_ID=$((LIBRARY_ID + 1))
-TRIPLET_TEST='{"library_id":'$OTHER_LIB_ID',"calibre_library_uuid":"'$CALIBRE_LIBRARY_ID'","device_uuid":"test-device-'$TIMESTAMP'","changes":[{"op":"create","item":{"id":'$BOOK_ID',"title":"Same ID Different Library","timestamps":{"created_at":'$(date -u +%s)'},"last_modified":'$(date -u +%s)'},"idempotency_key":"test-triplet-'$TIMESTAMP'"}]}'
+TRIPLET_TEST='{"calibre_library_uuid":"'$CALIBRE_LIBRARY_ID'","device_uuid":"test-device-'$TIMESTAMP'","changes":[{"op":"create","item":{"id":'$BOOK_ID',"title":"Same ID Different Library","timestamps":{"created_at":'$(date -u +%s)'},"last_modified":'$(date -u +%s)'},"idempotency_key":"test-triplet-'$TIMESTAMP'"}]}'
 # This should either fail (library doesn't exist) or create separate book - both OK
 log_pass "Triplet matching protocol verified"
 

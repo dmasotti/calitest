@@ -201,7 +201,7 @@ echo "Cursor after delete: $DELETE_CURSOR"
 
 # 3. Perform a pull sync to check for resurrection
 echo "Performing pull sync with cursor after delete to check for resurrection"
-PULL_RESP=$(api_curl "$API_URL/sync?library_id=$LIB_ID&calibre_library_uuid=$CALIBRE_LIB_UUID&cursor=$DELETE_CURSOR")
+PULL_RESP=$(api_curl "$API_URL/sync?calibre_library_uuid=$CALIBRE_LIB_UUID&cursor=$DELETE_CURSOR")
 echo "$PULL_RESP" | jq '.'
 
 # 4. Assert: Check if the pull response contains an op for the deleted book
