@@ -24,7 +24,7 @@ class BookVersionApiTest extends TestCase
             'status' => 'tbr',
         ]);
 
-        $book->update(['status' => 'reading']);
+        $book->update(['favorite' => true]);
         $book->delete();
 
         Sanctum::actingAs($user);
@@ -48,7 +48,7 @@ class BookVersionApiTest extends TestCase
             'status' => 'tbr',
         ]);
 
-        $book->update(['status' => 'reading']);
+        $book->update(['favorite' => true]);
         $version = UserBookVersion::where('book_id', $book->id)
             ->orderByDesc('created_at')
             ->first();
@@ -76,6 +76,7 @@ class BookVersionApiTest extends TestCase
         $book->refresh();
         $this->assertFalse($book->trashed());
         $this->assertSame('tbr', $book->status);
+        $this->assertFalse((bool) $book->favorite);
     }
 
     public function test_web_restore_and_undelete_redirects_and_restores(): void
@@ -88,7 +89,7 @@ class BookVersionApiTest extends TestCase
             'status' => 'tbr',
         ]);
 
-        $book->update(['status' => 'reading']);
+        $book->update(['favorite' => true]);
         $version = UserBookVersion::where('book_id', $book->id)
             ->orderByDesc('created_at')
             ->first();
@@ -108,5 +109,6 @@ class BookVersionApiTest extends TestCase
         $book->refresh();
         $this->assertFalse($book->trashed());
         $this->assertSame('tbr', $book->status);
+        $this->assertFalse((bool) $book->favorite);
     }
 }
