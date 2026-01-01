@@ -65,7 +65,7 @@ class ApiErrorResponsesTest extends TestCase
 
         Sanctum::actingAs($user);
 
-        $response = $this->getJson('/api/libraries/' . $library->id);
+        $response = $this->getJson('/api/libraries/uuid/' . $library->calibre_library_id);
 
         $response->assertStatus(404);
         $this->assertSame('Library not found', $response->json('error'));
