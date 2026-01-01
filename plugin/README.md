@@ -134,7 +134,7 @@ tests/plugin/integration/headless_sync_smoke.sh
 
 Il test usa `calibre-debug -e sync_calimob/cli.py` con una config temporanea. Se mancano prerequisiti stampa “SKIP”; fallisce solo se il comando esce in errore o se `jq` trova errori nei blocchi `pull`/`push`.
 
-Dopo aver verificato l’output JSON, lo script apre `metadata.db` e assicura che la tabella `calimob_books_sync` contenga almeno una riga per la libreria in questione: è il modo automatico per testare che la cache `{calibre_book_id ↔ uuid}` sia stata effettivamente popolata, come richiesto dal protocollo di sincronia (§9/§14 di `docs/server/protocollo_sync/PROTOCOLLO_SYNC_AGGIORNATO2.md`).
+Dopo aver verificato l’output JSON, lo script apre `metadata.db` e assicura che la tabella `calimob_books_sync` contenga almeno una riga per la libreria in questione: è il modo automatico per testare che la cache `{calibre_book_id ↔ uuid}` sia stata effettivamente popolata, come richiesto dal protocollo di sincronia (`docs/server/PROTOCOLLO_SYNC_UNIFICATO.md`).
 
 ### Headless E2E (scenari approfonditi)
 Script: `tests/plugin/integration/headless_e2e.py`
@@ -338,7 +338,7 @@ Per integrare in CI/CD serve ambiente con Calibre:
 
 - [Calibre Plugin Development](https://manual.calibre-ebook.com/creating_plugins.html)
 - [calibre-debug Documentation](https://manual.calibre-ebook.com/generated/en/calibre-debug.html)
-- Protocollo Sync: `../docs/server/PROTOCOLLO_SYNC_AGGIORNATO1.md`
+- Protocollo Sync: `../docs/server/PROTOCOLLO_SYNC_UNIFICATO.md`
 
 ## 📄 License
 
