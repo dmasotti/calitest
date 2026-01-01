@@ -160,6 +160,7 @@ Verifica:
 - Full sync (opzionale) restituisce `inventory` compresso
 - Incrementale restituisce `inventory_hint`
 - Cursor monotono (non regredisce)
+- Resume dopo interruzione: `progress_cursor` salvato per batch e riutilizzato al sync successivo
 Richiede:
 - `CALIMOB_DISCOVERY_URL`
 - `CALIMOB_LIBRARY_PATH`
