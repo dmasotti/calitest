@@ -66,6 +66,9 @@ ensure_test_users() {
     if echo "$info_out" | rg -q "Utente non trovato|User not found"; then
         echo -e "${YELLOW}Creating test user: $TEST_USER_EMAIL${NC}"
         php artisan user:create "$TEST_USER_EMAIL" --password="$TEST_USER_PASSWORD" >/dev/null
+    elif ! echo "$info_out" | rg -q "User found|Utente trovato"; then
+        echo -e "${YELLOW}Creating test user: $TEST_USER_EMAIL${NC}"
+        php artisan user:create "$TEST_USER_EMAIL" --password="$TEST_USER_PASSWORD" >/dev/null
     fi
 
     # Always generate a fresh app password for OPDS (avoids stale creds)
@@ -76,6 +79,13 @@ ensure_test_users() {
         export APP_PASS
         export OPDS_PASS="$APP_PASS"
         echo -e "${YELLOW}Generated app password for OPDS tests${NC}"
+        if [[ -f "$ENV_FILE" ]]; then
+            if rg -q '^APP_PASS=' "$ENV_FILE"; then
+                perl -0pi -e "s/^APP_PASS=.*/APP_PASS=\\\"$APP_PASS\\\"/m" "$ENV_FILE"
+            else
+                echo "APP_PASS=\\\"$APP_PASS\\\"" >> "$ENV_FILE"
+            fi
+        fi
     else
         echo -e "${YELLOW}⚠ Unable to generate app password (OPDS may fail)${NC}"
     fi
