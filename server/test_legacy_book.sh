@@ -3,9 +3,9 @@
 
 set -e
 
-API_URL="https://coral-shark-984693.hostingersite.com/api"
-EMAIL="dmasotti+test1@gmail.com"
-PASSWORD="firstsecret"
+API_URL="${API_URL:-${DISCOVERY_URL:-http://127.0.0.1:8000}/api}"
+EMAIL="${TEST_USER_EMAIL:-dmasotti+test1@gmail.com}"
+PASSWORD="${TEST_USER_PASSWORD:-firstsecret}"
 
 echo "=== Testing Legacy Book Creation Fix ==="
 echo ""
@@ -90,14 +90,14 @@ STATUS=$(echo "$LEGACY_RESP" | jq -r '.results[0].status // empty')
 if [ "$STATUS" == "created" ] || [ "$STATUS" == "ok" ] || [ "$STATUS" == "merged" ] || [ "$STATUS" == "applied" ]; then
   echo "✅ SUCCESS: Book created/applied via legacy endpoint (status: $STATUS)!"
   
-  # Verify id field is set correctly
-  BOOK_ID=$(echo "$LEGACY_RESP" | jq -r '.results[0].server_item.id // empty')
-  if [ -n "$BOOK_ID" ] && [ "$BOOK_ID" != "null" ]; then
-    echo "   ✅ Book ID set correctly: $BOOK_ID"
+  # UUID-only protocol: server_item.id is not required; verify UUID instead
+  BOOK_UUID=$(echo "$LEGACY_RESP" | jq -r '.results[0].server_item.uuid // empty')
+  if [ -n "$BOOK_UUID" ] && [ "$BOOK_UUID" != "null" ]; then
+    echo "   ✅ Book UUID set correctly: $BOOK_UUID"
     echo "   Fix is working correctly!"
     exit 0
   else
-    echo "   ❌ Book ID is missing or null!"
+    echo "   ❌ Book UUID is missing or null!"
     exit 1
   fi
 else

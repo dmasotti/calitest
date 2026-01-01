@@ -120,26 +120,23 @@ fi
 log "Using library_id=$LIBRARY_ID calibre_library_uuid=$CAL_LIB_UUID"
 
 TIMESTAMP=$(date +%s)
-BOOK_NEG_ID=$(( -1 * (RANDOM % 10000 + 1000) ))
-BOOK_POS_ID=$(( RANDOM % 10000 + 1000 ))
+BOOK_LOCAL_ID_1=$(( RANDOM % 10000 + 1000 ))
+BOOK_LOCAL_ID_2=$(( RANDOM % 10000 + 1000 ))
 BOOK_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
 
 AUTHOR_ID=$(( RANDOM % 100000 + 90000 ))
 AUTHOR_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
-AUTHOR_KEY="calibre:$CAL_LIB_UUID:$AUTHOR_ID"
 AUTHOR_NAME="Author UUID Test $TIMESTAMP"
 
 TAG_ID=$(( RANDOM % 100000 + 90000 ))
 TAG_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
-TAG_KEY="calibre:$CAL_LIB_UUID:$TAG_ID"
 TAG_NAME="Tag UUID Test $TIMESTAMP"
 
 SERIES_ID=$(( RANDOM % 100000 + 90000 ))
 SERIES_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
-SERIES_KEY="calibre:$CAL_LIB_UUID:$SERIES_ID"
 SERIES_NAME="Series UUID Test $TIMESTAMP"
 
-log "Create book with negative id + uuid"
+log "Create book with uuid (local id is client-side only)"
 CREATE_PAYLOAD=$(cat <<EOF
 {
   "library_id": $LIBRARY_ID,
@@ -149,30 +146,26 @@ CREATE_PAYLOAD=$(cat <<EOF
     "op": "create",
     "idempotency_key": "uuid-create-$TIMESTAMP",
     "item": {
-      "id": $BOOK_NEG_ID,
+      "id": $BOOK_LOCAL_ID_1,
       "uuid": "$BOOK_UUID",
       "title": "UUID Reconcile Test $TIMESTAMP",
       "authors": [{
         "id": $AUTHOR_ID,
         "uuid": "$AUTHOR_UUID",
-        "client_ids": {"$AUTHOR_KEY": "$AUTHOR_ID"},
         "name": "$AUTHOR_NAME",
         "role": "author"
       }],
       "tags": [{
         "id": $TAG_ID,
         "uuid": "$TAG_UUID",
-        "client_ids": {"$TAG_KEY": "$TAG_ID"},
         "name": "$TAG_NAME"
       }],
       "series": {
         "id": $SERIES_ID,
         "uuid": "$SERIES_UUID",
-        "client_ids": {"$SERIES_KEY": "$SERIES_ID"},
         "name": "$SERIES_NAME",
         "series_index": 1
       },
-      "client_ids": {"calibre:$CAL_LIB_UUID:$BOOK_NEG_ID": "$BOOK_NEG_ID"},
       "last_modified": $TIMESTAMP
     }
   }]
@@ -187,7 +180,7 @@ if [[ "$CREATE_STATUS" != "applied" && "$CREATE_STATUS" != "merged" ]]; then
 fi
 pass "Create applied ($CREATE_STATUS)"
 
-log "Reconcile id via update with positive id"
+log "Reconcile via uuid (local id may change)"
 UPDATE_PAYLOAD=$(cat <<EOF
 {
   "library_id": $LIBRARY_ID,
@@ -197,17 +190,15 @@ UPDATE_PAYLOAD=$(cat <<EOF
     "op": "update",
     "idempotency_key": "uuid-update-$TIMESTAMP",
     "item": {
-      "id": $BOOK_POS_ID,
+      "id": $BOOK_LOCAL_ID_2,
       "uuid": "$BOOK_UUID",
       "title": "UUID Reconcile Test Updated $TIMESTAMP",
       "series": {
         "id": $SERIES_ID,
         "uuid": "$SERIES_UUID",
-        "client_ids": {"$SERIES_KEY": "$SERIES_ID"},
         "name": "$SERIES_NAME",
         "series_index": 1
       },
-      "client_ids": {"calibre:$CAL_LIB_UUID:$BOOK_POS_ID": "$BOOK_POS_ID"},
       "last_modified": $((TIMESTAMP + 10))
     }
   }]
@@ -217,76 +208,24 @@ EOF
 
 UPDATE_RESPONSE=$(api_post "/sync" "$UPDATE_PAYLOAD")
 UPDATE_STATUS=$(echo "$UPDATE_RESPONSE" | jq -r '.results[0].status // empty')
-SERVER_ITEM_ID=$(echo "$UPDATE_RESPONSE" | jq -r '.results[0].server_item.id // empty')
+SERVER_ITEM_UUID=$(echo "$UPDATE_RESPONSE" | jq -r '.results[0].server_item.uuid // empty')
+SERVER_ITEM_TITLE=$(echo "$UPDATE_RESPONSE" | jq -r '.results[0].server_item.title // empty')
 if [[ "$UPDATE_STATUS" != "applied" && "$UPDATE_STATUS" != "merged" ]]; then
   fail "Update failed: $UPDATE_RESPONSE"
 fi
-if [[ "$SERVER_ITEM_ID" != "$BOOK_POS_ID" ]]; then
-  fail "Reconcile failed: expected server_item.id=$BOOK_POS_ID got $SERVER_ITEM_ID"
+if [[ "$SERVER_ITEM_UUID" != "$BOOK_UUID" ]]; then
+  fail "Reconcile failed: expected server_item.uuid=$BOOK_UUID got $SERVER_ITEM_UUID"
 fi
-pass "Reconcile id OK (server_item.id=$SERVER_ITEM_ID)"
-
-log "Verify client_ids/uuid for related entities in response"
-AUTHOR_MATCH=$(echo "$UPDATE_RESPONSE" | jq -r --arg name "$AUTHOR_NAME" --arg key "$AUTHOR_KEY" --arg val "$AUTHOR_ID" --arg uuid "$AUTHOR_UUID" '
-  .results[0].server_item.authors[]?
-  | select(.name == $name)
-  | select((.client_ids | type) == "object")
-  | select((.client_ids[$key] // empty) == $val)
-  | select(.uuid == $uuid)
-  | .name // empty' | head -n1)
-TAG_MATCH=$(echo "$UPDATE_RESPONSE" | jq -r --arg name "$TAG_NAME" --arg key "$TAG_KEY" --arg val "$TAG_ID" --arg uuid "$TAG_UUID" '
-  .results[0].server_item.tags[]?
-  | select(.name == $name)
-  | select((.client_ids | type) == "object")
-  | select((.client_ids[$key] // empty) == $val)
-  | select(.uuid == $uuid)
-  | .name // empty' | head -n1)
-SERIES_MATCH=$(echo "$UPDATE_RESPONSE" | jq -r --arg name "$SERIES_NAME" --arg key "$SERIES_KEY" --arg val "$SERIES_ID" --arg uuid "$SERIES_UUID" '
-  .results[0].server_item.series?
-  | select(.name == $name)
-  | select((.client_ids | type) == "object")
-  | select((.client_ids[$key] // empty) == $val)
-  | select(.uuid == $uuid)
-  | .name // empty' | head -n1)
-
-if [[ -z "$AUTHOR_MATCH" || -z "$TAG_MATCH" ]]; then
-  fail "Missing author/tag mapping data in response: $UPDATE_RESPONSE"
+if [[ "$SERVER_ITEM_TITLE" != "UUID Reconcile Test Updated $TIMESTAMP" ]]; then
+  fail "Reconcile failed: title not updated (got: $SERVER_ITEM_TITLE)"
 fi
-if [[ -z "$SERIES_MATCH" ]]; then
-  echo "⚠ Series mapping missing in response (server_item.series is null)"
-else
-  pass "Series mapping returned in server_item"
-fi
-pass "Author/Tag mappings returned in server_item"
+pass "Reconcile OK (uuid authoritative)"
 
-log "Hard collision on same id with different uuid"
-COLLISION_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
-COLLISION_PAYLOAD=$(cat <<EOF
-{
-  "library_id": $LIBRARY_ID,
-  "calibre_library_uuid": "$CAL_LIB_UUID",
-  "device_uuid": "uuid-test-device-$TIMESTAMP",
-  "changes": [{
-    "op": "create",
-    "idempotency_key": "uuid-collision-$TIMESTAMP",
-    "item": {
-      "id": $BOOK_POS_ID,
-      "uuid": "$COLLISION_UUID",
-      "title": "UUID Collision Test $TIMESTAMP",
-      "last_modified": $((TIMESTAMP + 20))
-    }
-  }]
-}
-EOF
-)
-
-COLLISION_RESPONSE=$(api_post "/sync" "$COLLISION_PAYLOAD")
-COLLISION_STATUS=$(echo "$COLLISION_RESPONSE" | jq -r '.results[0].status // empty')
-COLLISION_REASON=$(echo "$COLLISION_RESPONSE" | jq -r '.results[0].reason // empty')
-if [[ "$COLLISION_STATUS" != "conflict" || "$COLLISION_REASON" != "uuid_collision" ]]; then
-  fail "Collision check failed: $COLLISION_RESPONSE"
+log "Verify server echoes UUID (metadata echo is optional)"
+if [[ -z "$SERVER_ITEM_UUID" ]]; then
+  fail "Server did not return uuid in response: $UPDATE_RESPONSE"
 fi
-pass "Collision detected (uuid_collision)"
+pass "UUID returned in server_item"
 
 log "Delete idempotent for missing record"
 MISSING_ID=$(( RANDOM % 100000 + 90000 ))
@@ -327,7 +266,7 @@ CLEANUP_PAYLOAD=$(cat <<EOF
     "op": "delete",
     "idempotency_key": "uuid-delete-cleanup-$TIMESTAMP",
     "item": {
-      "id": $BOOK_POS_ID,
+      "id": $BOOK_LOCAL_ID_2,
       "uuid": "$BOOK_UUID",
       "last_modified": $((TIMESTAMP + 40))
     }
