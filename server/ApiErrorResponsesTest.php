@@ -30,6 +30,22 @@ class ApiErrorResponsesTest extends TestCase
         $this->assertSame('The provided credentials are incorrect.', $response->json('errors.email.0'));
     }
 
+    public function test_api_errors_return_json_without_accept_header(): void
+    {
+        $user = User::factory()->create([
+            'password' => Hash::make('secret123'),
+        ]);
+
+        $response = $this->post('/api/auth/login', [
+            'email' => $user->email,
+            'password' => 'wrong-password',
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertStringContainsString('application/json', (string) $response->headers->get('Content-Type'));
+        $response->assertJsonValidationErrors(['email']);
+    }
+
     public function test_sync_requires_authentication(): void
     {
         $user = User::factory()->create();
