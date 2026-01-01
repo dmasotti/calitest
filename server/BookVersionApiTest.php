@@ -21,7 +21,6 @@ class BookVersionApiTest extends TestCase
         $book = UserBook::factory()->create([
             'user_id' => $user->id,
             'library_id' => $library->id,
-            'status' => 'tbr',
         ]);
 
         $book->update(['favorite' => true]);
@@ -45,7 +44,6 @@ class BookVersionApiTest extends TestCase
         $book = UserBook::factory()->create([
             'user_id' => $user->id,
             'library_id' => $library->id,
-            'status' => 'tbr',
         ]);
 
         $book->update(['favorite' => true]);
@@ -75,7 +73,7 @@ class BookVersionApiTest extends TestCase
 
         $book->refresh();
         $this->assertFalse($book->trashed());
-        $this->assertSame('tbr', $book->status);
+        $this->assertNull($book->status);
         $this->assertFalse((bool) $book->favorite);
     }
 
@@ -86,7 +84,6 @@ class BookVersionApiTest extends TestCase
         $book = UserBook::factory()->create([
             'user_id' => $user->id,
             'library_id' => $library->id,
-            'status' => 'tbr',
         ]);
 
         $book->update(['favorite' => true]);
@@ -108,7 +105,7 @@ class BookVersionApiTest extends TestCase
 
         $book->refresh();
         $this->assertFalse($book->trashed());
-        $this->assertSame('tbr', $book->status);
+        $this->assertNull($book->status);
         $this->assertFalse((bool) $book->favorite);
     }
 }
