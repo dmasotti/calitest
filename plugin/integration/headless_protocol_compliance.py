@@ -183,6 +183,11 @@ def main():
         assert_true(exc.status_code in (403, 404, 410), "Expected push blocked for deleted library")
     assert_true(blocked_push, "Push should be blocked after library delete")
 
+    # Restore library and ensure sync works again
+    client._request("POST", f"/libraries/{lib_id}/restore")
+    restored_pull = client.get_sync(library_id=lib_id, calibre_library_uuid=cal_lib_uuid)
+    assert_true("changes" in restored_pull, "Sync should work after restore")
+
     print("Protocol compliance suite: PASS")
 
 
