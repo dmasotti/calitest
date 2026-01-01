@@ -60,7 +60,6 @@ NOW_TS=$(date -u +%s)
 
 CREATE_PAYLOAD=$(cat <<JSON
 {
-  "library_id": $CALIMOB_LIBRARY_ID,
   "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "changes": [
     {
@@ -95,7 +94,6 @@ fi
 OLDER_VERSION=$((SERVER_VERSION - 1))
 UPDATE_PAYLOAD=$(cat <<JSON
 {
-  "library_id": $CALIMOB_LIBRARY_ID,
   "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "changes": [
     {

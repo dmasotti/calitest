@@ -20,7 +20,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
-            'library_id' => $library->id,
+            
         ]);
 
         // Force local storage path for covers
@@ -33,8 +33,8 @@ class CoverUploadTest extends TestCase
         $coverHash = 'sha256:' . hash('sha256', $coverData);
 
         $response = $this->actingAs($user)
-            ->call('PUT', route('api.items.cover.upload', ['id' => $userBook->id]), [
-                'library_id' => $library->id,
+            ->call('PUT', route('api.items.cover.upload.uuid', ['uuid' => $userBook->uuid, 'calibre_library_uuid' => $library->calibre_library_id]), [
+                
             ], [], [], [
                 'CONTENT_TYPE' => 'image/jpeg',
                 'HTTP_X_COVER_HASH' => $coverHash,
@@ -60,7 +60,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
-            'library_id' => $library->id,
+            
         ]);
 
         config([
@@ -90,7 +90,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
-            'library_id' => $library->id,
+            
         ]);
 
         config([
@@ -109,8 +109,8 @@ class CoverUploadTest extends TestCase
         $coverHash = 'sha256:' . hash('sha256', $coverData);
 
         $response = $this->actingAs($user)
-            ->call('PUT', route('api.items.cover.upload', ['id' => $userBook->id]), [
-                'library_id' => $library->id,
+            ->call('PUT', route('api.items.cover.upload.uuid', ['uuid' => $userBook->uuid, 'calibre_library_uuid' => $library->calibre_library_id]), [
+                
             ], [], [], [
                 'CONTENT_TYPE' => 'image/jpeg',
                 'HTTP_X_COVER_HASH' => $coverHash,
@@ -130,7 +130,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
-            'library_id' => $library->id,
+            
             'cover_original_hash' => 'sha256:' . str_repeat('c', 64),
             'cover_missing' => true,
         ]);
@@ -144,8 +144,8 @@ class CoverUploadTest extends TestCase
         $coverHash = 'sha256:' . hash('sha256', $coverData);
 
         $response = $this->actingAs($user)
-            ->call('PUT', route('api.items.cover.upload', ['id' => $userBook->id]), [
-                'library_id' => $library->id,
+            ->call('PUT', route('api.items.cover.upload.uuid', ['uuid' => $userBook->uuid, 'calibre_library_uuid' => $library->calibre_library_id]), [
+                
             ], [], [], [
                 'CONTENT_TYPE' => 'image/jpeg',
                 'HTTP_X_COVER_HASH' => $coverHash,
@@ -166,12 +166,12 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
-            'library_id' => $library->id,
+            
             'cover_optimized_path' => 'images/covers/missing.jpg',
             'cover_missing' => false,
         ]);
 
-        $response = $this->actingAs($user)->get('/api/items/' . $userBook->id . '/cover?library_id=' . $library->id);
+        $response = $this->actingAs($user)->get('/api/items/uuid/' . $userBook->uuid . '/cover?calibre_library_uuid=' . $library->calibre_library_id);
         $response->assertStatus(200);
         $response->assertJsonFragment(['cover_missing' => true]);
 
@@ -187,7 +187,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
-            'library_id' => $library->id,
+            
             'cover_optimized_path' => 'images/covers/missing.jpg',
             'cover_missing' => false,
         ]);
@@ -210,12 +210,12 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
-            'library_id' => $library->id,
+            
             'deleted_at' => now(),
             'cover_optimized_path' => 'images/covers/deleted.jpg',
         ]);
 
-        $response = $this->actingAs($user)->get('/api/items/' . $userBook->id . '/cover?library_id=' . $library->id);
+        $response = $this->actingAs($user)->get('/api/items/uuid/' . $userBook->uuid . '/cover?calibre_library_uuid=' . $library->calibre_library_id);
         $response->assertStatus(404);
     }
 
@@ -227,14 +227,14 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
-            'library_id' => $library->id,
+            
             'cover_original_hash' => 'sha256:' . str_repeat('f', 64),
             'cover_optimized_path' => null,
             'cover_url' => 'https://cdn.example.test/covers/bad.jpg',
             'cover_missing' => false,
         ]);
 
-        $response = $this->actingAs($user)->get('/api/items/' . $userBook->id . '/cover?library_id=' . $library->id);
+        $response = $this->actingAs($user)->get('/api/items/uuid/' . $userBook->uuid . '/cover?calibre_library_uuid=' . $library->calibre_library_id);
         $response->assertStatus(200);
 
         $userBook->refresh();
@@ -247,7 +247,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
-            'library_id' => $library->id,
+            
             'deleted_at' => now(),
         ]);
 
@@ -255,8 +255,8 @@ class CoverUploadTest extends TestCase
         $coverHash = 'sha256:' . hash('sha256', $coverData);
 
         $response = $this->actingAs($user)
-            ->call('PUT', route('api.items.cover.upload', ['id' => $userBook->id]), [
-                'library_id' => $library->id,
+            ->call('PUT', route('api.items.cover.upload.uuid', ['uuid' => $userBook->uuid, 'calibre_library_uuid' => $library->calibre_library_id]), [
+                
             ], [], [], [
                 'CONTENT_TYPE' => 'image/jpeg',
                 'HTTP_X_COVER_HASH' => $coverHash,
@@ -271,7 +271,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
-            'library_id' => $library->id,
+            
         ]);
 
         config([
@@ -282,8 +282,8 @@ class CoverUploadTest extends TestCase
         $coverData = str_repeat('k', 2048);
         $coverHash = 'sha256:' . hash('sha256', $coverData);
 
-        $this->actingAs($user)->call('PUT', route('api.items.cover.upload', ['id' => $userBook->id]), [
-            'library_id' => $library->id,
+        $this->actingAs($user)->call('PUT', route('api.items.cover.upload.uuid', ['uuid' => $userBook->uuid, 'calibre_library_uuid' => $library->calibre_library_id]), [
+            
         ], [], [], [
             'CONTENT_TYPE' => 'image/jpeg',
             'HTTP_X_COVER_HASH' => $coverHash,
@@ -292,8 +292,8 @@ class CoverUploadTest extends TestCase
         $first = $userBook->fresh();
         $firstPath = $first->cover_optimized_path;
 
-        $this->actingAs($user)->call('PUT', route('api.items.cover.upload', ['id' => $userBook->id]), [
-            'library_id' => $library->id,
+        $this->actingAs($user)->call('PUT', route('api.items.cover.upload.uuid', ['uuid' => $userBook->uuid, 'calibre_library_uuid' => $library->calibre_library_id]), [
+            
         ], [], [], [
             'CONTENT_TYPE' => 'image/jpeg',
             'HTTP_X_COVER_HASH' => $coverHash,

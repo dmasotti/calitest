@@ -63,6 +63,23 @@ I server headless/script di scenario generano `uuid` dinamici prima di fare `POS
 2. **Plugin installato** in Calibre
 3. **Configurazione**: se usi test headless/E2E, carica le variabili da `html/.env` (DB/endpoint reali di dev)
 
+### Utenti test (verifica/creazione)
+Gli script headless/E2E usano questi utenti **di default**:
+- `dmasotti+test1@gmail.com` / `firstsecret`
+- `dmasotti+test2@gmail.com` / `secondsecret`
+
+Se non esistono sul server, crearli prima di lanciare gli script:
+```bash
+cd html
+set -a; source .env; set +a
+php artisan user:info dmasotti+test1@gmail.com
+php artisan user:info dmasotti+test2@gmail.com
+
+# Se mancano:
+php artisan user:create dmasotti+test1@gmail.com --password=firstsecret
+php artisan user:create dmasotti+test2@gmail.com --password=secondsecret
+```
+
 Esempio:
 ```bash
 set -a; source html/.env; set +a;
@@ -186,7 +203,7 @@ Script disponibili:
 - `tests/plugin/integration/headless_scenario_conflict_e2e.sh`
   - End‑to‑end: server elimina il libro, client fa update in full sync → conflitto `reason=deleted`.
 - `tests/plugin/integration/headless_scenario_cover_upload.sh`
-  - Crea un libro via `/api/sync`, poi carica una copertina con `PUT /api/items/{id}/cover` e verifica il download.
+  - Crea un libro via `/api/sync`, poi carica una copertina con `PUT /api/items/uuid/{uuid}/cover` e verifica il download.
   - Richiede `CALIMOB_COVER_IMAGE` (file jpg/png locale).
 - `tests/plugin/integration/headless_scenario_cover_missing.sh`
   - Imposta `cover_missing=1` via `tools/sql`, verifica che il flag compaia in pull e si azzeri dopo l’upload cover.

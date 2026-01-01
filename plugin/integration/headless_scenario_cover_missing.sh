@@ -83,7 +83,6 @@ NOW_TS=$(date -u +%s)
 
 CREATE_PAYLOAD=$(cat <<JSON
 {
-  "library_id": $CALIMOB_LIBRARY_ID,
   "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "changes": [
     {
@@ -136,7 +135,7 @@ if ! echo "$UPDATE_RES" | jq -e '.affected' >/dev/null 2>&1; then
 fi
 
 PULL_RES=$(curl -s -H "Authorization: Bearer $TOKEN" \
-  "$API_URL/sync?library_id=$CALIMOB_LIBRARY_ID&calibre_library_uuid=$CALIBRE_LIBRARY_ID&limit=50")
+  "$API_URL/sync?calibre_library_uuid=$CALIBRE_LIBRARY_ID&limit=50")
 
 if ! echo "$PULL_RES" | jq -e --arg id "$BOOK_ID" \
   '.changes[]? | select((.item.id|tostring)==$id) | .cover_missing == true' >/dev/null 2>&1; then
@@ -145,7 +144,7 @@ if ! echo "$PULL_RES" | jq -e --arg id "$BOOK_ID" \
   exit 1
 fi
 
-UPLOAD_RES=$(curl -s -X PUT "$API_URL/items/$BOOK_ID/cover?library_id=$CALIMOB_LIBRARY_ID" \
+UPLOAD_RES=$(curl -s -X PUT "$API_URL/items/uuid/$BOOK_UUID/cover?calibre_library_uuid=$CALIBRE_LIBRARY_ID" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: image/png" \
   --data-binary "@$CALIMOB_COVER_IMAGE")

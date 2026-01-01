@@ -292,16 +292,18 @@ class TestRestApiClientMethods:
         
         responses.add(
             responses.PUT,
-            'https://api.example.com/api/items/123/cover',
+            'https://api.example.com/api/items/uuid/123/cover?calibre_library_uuid=lib-uuid',
             json={'status': 'uploaded', 'cover_hash': 'abc123'},
             status=200
         )
         
         result = rest_client_instance.upload_cover(
             calibre_book_id=123,
-            library_id='lib-123',
+            library_id=None,
             cover_data=cover_data,
-            cover_hash='abc123'
+            cover_hash='abc123',
+            item_uuid='123',
+            calibre_library_uuid='lib-uuid'
         )
         
         assert result['status'] == 'uploaded'
@@ -338,7 +340,7 @@ class TestRestApiClientMethods:
         
         responses.add(
             responses.GET,
-            'https://api.example.com/api/items/123/cover',
+            'https://api.example.com/api/items/uuid/123/cover',
             body=cover_data,
             content_type='image/jpeg',
             status=200

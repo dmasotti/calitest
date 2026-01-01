@@ -44,7 +44,7 @@ class FileUploadTest extends TestCase
         $hash = hash('sha256', $content);
 
         $response = $this->actingAs($user)
-            ->call('PUT', route('api.items.file.upload', ['id' => $userBook->id, 'format' => 'epub']), [], [], [], [
+            ->call('PUT', route('api.items.file.upload.uuid', ['uuid' => $userBook->uuid, 'format' => 'epub', 'calibre_library_uuid' => $library->calibre_library_id]), [], [], [], [
                 'CONTENT_TYPE' => 'application/octet-stream',
                 'HTTP_X_FILE_HASH' => 'sha256:' . $hash,
                 'HTTP_X_FILE_NAME' => 'uploaded.epub',
@@ -136,7 +136,7 @@ class FileUploadTest extends TestCase
         $hash = hash('sha256', $content);
 
         $response = $this->actingAs($user)
-            ->call('PUT', route('api.items.file.upload', ['id' => $userBook->id, 'format' => 'epub']), [], [], [], [
+            ->call('PUT', route('api.items.file.upload.uuid', ['uuid' => $userBook->uuid, 'format' => 'epub', 'calibre_library_uuid' => $library->calibre_library_id]), [], [], [], [
                 'CONTENT_TYPE' => 'application/octet-stream',
                 'HTTP_X_FILE_HASH' => 'sha256:' . $hash,
                 'HTTP_X_FILE_NAME' => 'uploaded.epub',
@@ -184,7 +184,7 @@ class FileUploadTest extends TestCase
         $hash = hash('sha256', $content);
 
         $response = $this->actingAs($user)
-            ->call('PUT', route('api.items.file.upload', ['id' => $userBook->id, 'format' => 'epub']), [], [], [], [
+            ->call('PUT', route('api.items.file.upload.uuid', ['uuid' => $userBook->uuid, 'format' => 'epub', 'calibre_library_uuid' => $library->calibre_library_id]), [], [], [], [
                 'CONTENT_TYPE' => 'application/octet-stream',
                 'HTTP_X_FILE_HASH' => 'sha256:' . $hash,
                 'HTTP_X_FILE_NAME' => 'uploaded.epub',
@@ -227,7 +227,7 @@ class FileUploadTest extends TestCase
         $content = 'repeat upload payload';
         $hash = hash('sha256', $content);
 
-        $this->actingAs($user)->call('PUT', route('api.items.file.upload', ['id' => $userBook->id, 'format' => 'epub']), [], [], [], [
+        $this->actingAs($user)->call('PUT', route('api.items.file.upload.uuid', ['uuid' => $userBook->uuid, 'format' => 'epub', 'calibre_library_uuid' => $library->calibre_library_id]), [], [], [], [
             'CONTENT_TYPE' => 'application/octet-stream',
             'HTTP_X_FILE_HASH' => 'sha256:' . $hash,
             'HTTP_X_FILE_NAME' => 'uploaded.epub',
@@ -236,7 +236,7 @@ class FileUploadTest extends TestCase
         $first = BookFile::where('book', $userBook->id)->where('format', 'EPUB')->firstOrFail();
         $firstKey = $first->storage_key;
 
-        $this->actingAs($user)->call('PUT', route('api.items.file.upload', ['id' => $userBook->id, 'format' => 'epub']), [], [], [], [
+        $this->actingAs($user)->call('PUT', route('api.items.file.upload.uuid', ['uuid' => $userBook->uuid, 'format' => 'epub', 'calibre_library_uuid' => $library->calibre_library_id]), [], [], [], [
             'CONTENT_TYPE' => 'application/octet-stream',
             'HTTP_X_FILE_HASH' => 'sha256:' . $hash,
             'HTTP_X_FILE_NAME' => 'uploaded.epub',
@@ -262,7 +262,7 @@ class FileUploadTest extends TestCase
         $hash = hash('sha256', $content);
 
         $response = $this->actingAs($user)
-            ->call('PUT', route('api.items.file.upload', ['id' => $userBook->id, 'format' => 'epub']), [], [], [], [
+            ->call('PUT', route('api.items.file.upload.uuid', ['uuid' => $userBook->uuid, 'format' => 'epub', 'calibre_library_uuid' => $library->calibre_library_id]), [], [], [], [
                 'CONTENT_TYPE' => 'application/octet-stream',
                 'HTTP_X_FILE_HASH' => 'sha256:' . $hash,
                 'HTTP_X_FILE_NAME' => 'uploaded.epub',

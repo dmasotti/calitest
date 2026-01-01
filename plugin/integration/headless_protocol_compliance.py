@@ -92,7 +92,7 @@ def main():
     assert_true(lib_id, "Library creation failed")
 
     # 1) Initial pull with inventory
-    pull = client.get_sync(library_id=lib_id, calibre_library_uuid=cal_lib_uuid, include_inventory=True)
+    pull = client.get_sync(calibre_library_uuid=cal_lib_uuid, include_inventory=True)
     assert_true("changes" in pull, "Pull response missing changes")
     assert_true("new_cursor" in pull, "Pull response missing new_cursor")
     assert_true("inventory" in pull, "Pull response missing inventory")
@@ -110,13 +110,13 @@ def main():
     }
     change = {"op": "create", "item": item, "idempotency_key": f"proto-create-{now}"}
     assert_true("client_ids" not in change["item"], "client_ids must not be sent")
-    resp = client.post_sync([change], library_id=lib_id, calibre_library_uuid=cal_lib_uuid)
+    resp = client.post_sync([change], calibre_library_uuid=cal_lib_uuid)
     result = resp.get("results", [{}])[0]
     assert_true(result.get("status") in ("applied", "merged"), f"Create failed: {json.dumps(resp)}")
     assert_true(result.get("server_item", {}).get("uuid") == book_uuid, "Server UUID mismatch")
 
     # 3) Idempotency: same payload OK
-    resp2 = client.post_sync([change], library_id=lib_id, calibre_library_uuid=cal_lib_uuid)
+    resp2 = client.post_sync([change], calibre_library_uuid=cal_lib_uuid)
     assert_true(resp2.get("results", [{}])[0].get("status") in ("applied", "merged", "noop"),
                 "Idempotency reuse failed")
 
@@ -124,13 +124,13 @@ def main():
     bad_item = dict(item)
     bad_item["title"] = "Protocol Suite Book (changed)"
     bad_change = {"op": "create", "item": bad_item, "idempotency_key": change["idempotency_key"]}
-    bad = client.post_sync([bad_change], library_id=lib_id, calibre_library_uuid=cal_lib_uuid)
+    bad = client.post_sync([bad_change], calibre_library_uuid=cal_lib_uuid)
     bad_status = bad.get("results", [{}])[0].get("status")
     assert_true(bad_status in ("error", "conflict"), "Expected idempotency mismatch to fail")
 
     # 5) Pull delta with inventory hint
     cursor = resp.get("new_cursor")
-    delta = client.get_sync(library_id=lib_id, calibre_library_uuid=cal_lib_uuid,
+    delta = client.get_sync(calibre_library_uuid=cal_lib_uuid,
                             cursor=cursor, include_inventory_hint=True)
     assert_true("inventory_hint" in delta, "Delta missing inventory_hint")
 
@@ -140,7 +140,7 @@ def main():
         "item": {"id": book_id, "uuid": book_uuid, "last_modified": now + 10},
         "idempotency_key": f"proto-delete-{now}"
     }
-    deleted = client.post_sync([delete_change], library_id=lib_id, calibre_library_uuid=cal_lib_uuid)
+    deleted = client.post_sync([delete_change], calibre_library_uuid=cal_lib_uuid)
     del_status = deleted.get("results", [{}])[0].get("status")
     assert_true(del_status in ("applied", "merged", "noop"), "Delete failed")
 
@@ -149,7 +149,7 @@ def main():
         "item": {"id": book_id, "uuid": book_uuid, "title": "Should not resurrect", "last_modified": now + 20},
         "idempotency_key": f"proto-update-after-delete-{now}"
     }
-    upd = client.post_sync([update_after_delete], library_id=lib_id, calibre_library_uuid=cal_lib_uuid)
+    upd = client.post_sync([update_after_delete], calibre_library_uuid=cal_lib_uuid)
     upd_status = upd.get("results", [{}])[0].get("status")
     assert_true(upd_status in ("conflict", "noop", "error"), "Deleted book should not resurrect")
 
@@ -159,17 +159,17 @@ def main():
         "item": {"id": book_id + 9999, "uuid": str(uuid.uuid4()), "last_modified": now + 30},
         "idempotency_key": f"proto-delete-missing-{now}"
     }
-    missing = client.post_sync([missing_change], library_id=lib_id, calibre_library_uuid=cal_lib_uuid)
+    missing = client.post_sync([missing_change], calibre_library_uuid=cal_lib_uuid)
     miss_status = missing.get("results", [{}])[0].get("status")
     assert_true(miss_status in ("noop", "conflict", "error"), "Delete missing should not be applied")
 
     # Cleanup + coverage: soft-delete library and ensure sync is blocked
-    client._request("DELETE", f"/libraries/{lib_id}")
+    client._request("DELETE", f"/libraries/uuid/{cal_lib_uuid}")
 
     # After delete, library should not be accessible or syncable
     blocked = False
     try:
-        client.get_sync(library_id=lib_id, calibre_library_uuid=cal_lib_uuid)
+        client.get_sync(calibre_library_uuid=cal_lib_uuid)
     except RestApiError as exc:
         blocked = True
         assert_true(exc.status_code in (403, 404, 410), "Expected sync blocked for deleted library")
@@ -177,15 +177,15 @@ def main():
 
     blocked_push = False
     try:
-        client.post_sync([change], library_id=lib_id, calibre_library_uuid=cal_lib_uuid)
+        client.post_sync([change], calibre_library_uuid=cal_lib_uuid)
     except RestApiError as exc:
         blocked_push = True
         assert_true(exc.status_code in (403, 404, 410), "Expected push blocked for deleted library")
     assert_true(blocked_push, "Push should be blocked after library delete")
 
     # Restore library and ensure sync works again
-    client._request("POST", f"/libraries/{lib_id}/restore")
-    restored_pull = client.get_sync(library_id=lib_id, calibre_library_uuid=cal_lib_uuid)
+    client._request("POST", f"/libraries/uuid/{cal_lib_uuid}/restore")
+    restored_pull = client.get_sync(calibre_library_uuid=cal_lib_uuid)
     assert_true("changes" in restored_pull, "Sync should work after restore")
 
     print("Protocol compliance suite: PASS")

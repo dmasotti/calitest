@@ -65,7 +65,6 @@ NOW_TS=$(date -u +%s)
 
 CREATE_PAYLOAD=$(cat <<JSON
 {
-  "library_id": $CALIMOB_LIBRARY_ID,
   "calibre_library_uuid": "$CALIBRE_LIBRARY_ID",
   "changes": [
     {
@@ -91,7 +90,7 @@ CREATE_RES=$(curl -s -X POST "$API_URL/sync" \
   -d "$CREATE_PAYLOAD")
 
 # Upload cover
-UPLOAD_RES=$(curl -s -X PUT "$API_URL/items/$BOOK_ID/cover?library_id=$CALIMOB_LIBRARY_ID" \
+UPLOAD_RES=$(curl -s -X PUT "$API_URL/items/uuid/$BOOK_UUID/cover?calibre_library_uuid=$CALIBRE_LIBRARY_ID" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: image/jpeg" \
   --data-binary "@$CALIMOB_COVER_IMAGE")
@@ -105,7 +104,7 @@ fi
 
 # Fetch cover to ensure it exists
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-  -H "Authorization: Bearer $TOKEN" "$API_URL/items/$BOOK_ID/cover")
+  -H "Authorization: Bearer $TOKEN" "$API_URL/items/uuid/$BOOK_UUID/cover?calibre_library_uuid=$CALIBRE_LIBRARY_ID")
 
 if [[ "$HTTP_CODE" != "200" && "$HTTP_CODE" != "302" ]]; then
   echo "FAIL: cover fetch returned $HTTP_CODE" >&2

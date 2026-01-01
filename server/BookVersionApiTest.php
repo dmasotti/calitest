@@ -28,7 +28,7 @@ class BookVersionApiTest extends TestCase
 
         Sanctum::actingAs($user);
 
-        $response = $this->getJson('/api/items/' . $book->id . '/versions?library_id=' . $library->id);
+        $response = $this->getJson('/api/items/uuid/' . $book->uuid . '/versions?calibre_library_uuid=' . $library->calibre_library_id);
         $response->assertStatus(200);
         $response->assertJsonStructure([
             'book' => ['id', 'client_id', 'library_id'],
@@ -86,7 +86,7 @@ class BookVersionApiTest extends TestCase
         Sanctum::actingAs($user);
 
         $response = $this->postJson(
-            '/api/items/' . $book->id . '/versions/' . $version->id . '/restore-and-undelete?library_id=' . $library->id
+            '/api/items/uuid/' . $book->uuid . '/versions/' . $version->id . '/restore-and-undelete?calibre_library_uuid=' . $library->calibre_library_id
         );
         $response->assertStatus(200);
         $response->assertJson([
