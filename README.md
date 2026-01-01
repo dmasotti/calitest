@@ -77,6 +77,8 @@ export TEST_USER_PASSWORD="your-password"
 ./tests/run_all_tests.sh
 ```
 
+**Nota:** `run_all_tests.sh` ora include anche la **suite PHPUnit Server**.
+
 ### Run Individual Test Suites
 
 **OPDS Tests:**
