@@ -20,7 +20,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
-            
+            'library_id' => $library->id,
         ]);
 
         // Force local storage path for covers
@@ -60,6 +60,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
+            'library_id' => $library->id,
             
         ]);
 
@@ -90,6 +91,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
+            'library_id' => $library->id,
             
         ]);
 
@@ -130,6 +132,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
+            'library_id' => $library->id,
             
             'cover_original_hash' => 'sha256:' . str_repeat('c', 64),
             'cover_missing' => true,
@@ -166,6 +169,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
+            'library_id' => $library->id,
             
             'cover_optimized_path' => 'images/covers/missing.jpg',
             'cover_missing' => false,
@@ -187,6 +191,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
+            'library_id' => $library->id,
             
             'cover_optimized_path' => 'images/covers/missing.jpg',
             'cover_missing' => false,
@@ -210,6 +215,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
+            'library_id' => $library->id,
             
             'deleted_at' => now(),
             'cover_optimized_path' => 'images/covers/deleted.jpg',
@@ -227,6 +233,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
+            'library_id' => $library->id,
             
             'cover_original_hash' => 'sha256:' . str_repeat('f', 64),
             'cover_optimized_path' => null,
@@ -247,6 +254,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
+            'library_id' => $library->id,
             
             'deleted_at' => now(),
         ]);
@@ -271,6 +279,7 @@ class CoverUploadTest extends TestCase
         $library = Library::factory()->create(['user_id' => $user->id]);
         $userBook = UserBook::factory()->create([
             'user_id' => $user->id,
+            'library_id' => $library->id,
             
         ]);
 

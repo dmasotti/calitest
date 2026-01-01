@@ -68,17 +68,16 @@ ensure_test_users() {
         php artisan user:create "$TEST_USER_EMAIL" --password="$TEST_USER_PASSWORD" >/dev/null
     fi
 
-    # Ensure OPDS app password for this run if missing
-    if [[ -z "${APP_PASS:-}" ]]; then
-        local pass_out
-        pass_out="$(php artisan auth:create-app-password "$TEST_USER_EMAIL" --name=\"tests\" 2>&1 || true)"
-        APP_PASS="$(echo "$pass_out" | rg "App Password:" | sed -E 's/.*App Password:\\s*//')"
-        if [[ -n "$APP_PASS" ]]; then
-            export APP_PASS
-            echo -e "${YELLOW}Generated app password for OPDS tests${NC}"
-        else
-            echo -e "${YELLOW}⚠ Unable to generate app password (OPDS may fail)${NC}"
-        fi
+    # Always generate a fresh app password for OPDS (avoids stale creds)
+    local pass_out
+    pass_out="$(php artisan auth:create-app-password "$TEST_USER_EMAIL" --name=\"tests\" 2>&1 || true)"
+    APP_PASS="$(echo "$pass_out" | rg -e "App Password:" -e "Password App:" | tail -n1 | sed -E 's/.*(App Password:|Password App:)\\s*//')"
+    if [[ -n "$APP_PASS" ]]; then
+        export APP_PASS
+        export OPDS_PASS="$APP_PASS"
+        echo -e "${YELLOW}Generated app password for OPDS tests${NC}"
+    else
+        echo -e "${YELLOW}⚠ Unable to generate app password (OPDS may fail)${NC}"
     fi
     popd >/dev/null
 }
