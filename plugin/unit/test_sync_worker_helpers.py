@@ -188,3 +188,62 @@ def test_upload_file_missing_path(tmp_path):
     result = worker._upload_file(file_info, file_cache)
     assert not result['success']
     assert result['step'] == 'locate'
+
+
+def test_push_sync_saves_progress_cursor(monkeypatch):
+    worker = _make_worker()
+    worker.mapping = {}
+    worker.client = Mock()
+    worker.client.post_sync = Mock(return_value={
+        'results': [{'status': 'applied', 'client_change_id': 'c1'}],
+        'progress_cursor': 'progress-123',
+        'new_cursor': None,
+    })
+    worker._process_batch_results = Mock()
+    worker._collect_local_changes_progressive = Mock(return_value=[(
+        [{'op': 'update', 'item': {'id': 1, 'uuid': 'u1', 'title': 'T', 'last_modified': 1}, 'idempotency_key': 'c1'}],
+        {},
+        {},
+    )])
+    saved = {}
+
+    def save_cursor(cursor):
+        saved['cursor'] = cursor
+
+    worker.save_cursor = save_cursor
+
+    summary = worker.push_sync(progress_callback=None, full_sync=False)
+    assert saved.get('cursor') == 'progress-123'
+
+
+def test_push_sync_saves_progress_cursor_each_batch():
+    worker = _make_worker()
+    worker.mapping = {}
+    worker.client = Mock()
+    worker.client.post_sync = Mock(side_effect=[
+        {
+            'results': [{'status': 'applied', 'client_change_id': 'c1'}],
+            'progress_cursor': 'progress-1',
+            'new_cursor': 'new-1',
+        },
+        {
+            'results': [{'status': 'applied', 'client_change_id': 'c2'}],
+            'progress_cursor': 'progress-2',
+            'new_cursor': 'new-2',
+        },
+    ])
+    worker._process_batch_results = Mock()
+    worker._collect_local_changes_progressive = Mock(return_value=[
+        ([{'op': 'update', 'item': {'id': 1, 'uuid': 'u1', 'title': 'T1', 'last_modified': 1}, 'idempotency_key': 'c1'}], {}, {}),
+        ([{'op': 'update', 'item': {'id': 2, 'uuid': 'u2', 'title': 'T2', 'last_modified': 2}, 'idempotency_key': 'c2'}], {}, {}),
+    ])
+
+    saved = []
+
+    def save_cursor(cursor):
+        saved.append(cursor)
+
+    worker.save_cursor = save_cursor
+
+    worker.push_sync(progress_callback=None, full_sync=False)
+    assert saved == ['progress-1', 'progress-2']
