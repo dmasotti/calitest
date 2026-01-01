@@ -48,6 +48,41 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FAILED_SUITES=()
 
+ensure_test_users() {
+    local html_dir="$SCRIPT_DIR/../html"
+    if [[ ! -x "$html_dir/artisan" ]]; then
+        echo -e "${YELLOW}⚠ Skipping user prep: artisan not found${NC}"
+        return 0
+    fi
+
+    if [[ -z "${TEST_USER_EMAIL:-}" || -z "${TEST_USER_PASSWORD:-}" ]]; then
+        echo -e "${YELLOW}⚠ Skipping user prep: TEST_USER_EMAIL/TEST_USER_PASSWORD not set${NC}"
+        return 0
+    fi
+
+    pushd "$html_dir" >/dev/null
+    local info_out
+    info_out="$(php artisan user:info "$TEST_USER_EMAIL" 2>&1 || true)"
+    if echo "$info_out" | rg -q "Utente non trovato|User not found"; then
+        echo -e "${YELLOW}Creating test user: $TEST_USER_EMAIL${NC}"
+        php artisan user:create "$TEST_USER_EMAIL" --password="$TEST_USER_PASSWORD" >/dev/null
+    fi
+
+    # Ensure OPDS app password for this run if missing
+    if [[ -z "${APP_PASS:-}" ]]; then
+        local pass_out
+        pass_out="$(php artisan auth:create-app-password "$TEST_USER_EMAIL" --name=\"tests\" 2>&1 || true)"
+        APP_PASS="$(echo "$pass_out" | rg "App Password:" | sed -E 's/.*App Password:\\s*//')"
+        if [[ -n "$APP_PASS" ]]; then
+            export APP_PASS
+            echo -e "${YELLOW}Generated app password for OPDS tests${NC}"
+        else
+            echo -e "${YELLOW}⚠ Unable to generate app password (OPDS may fail)${NC}"
+        fi
+    fi
+    popd >/dev/null
+}
+
 echo -e "${CYAN}"
 echo "╔════════════════════════════════════════╗"
 echo "║   CaliWeb Comprehensive Test Suite    ║"
@@ -92,6 +127,9 @@ export TEST_USER_PASSWORD
 export HOST="$DISCOVERY_URL"
 export USER="$TEST_USER_EMAIL"
 export PASS="$TEST_USER_PASSWORD"
+export APP_PASS="${APP_PASS:-}"
+
+ensure_test_users
 
 # Run test suites
 echo -e "${YELLOW}Starting test execution...${NC}"
