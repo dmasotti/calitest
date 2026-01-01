@@ -122,6 +122,83 @@ class SyncPushTest extends TestCase
         ]);
     }
 
+    public function test_sync_can_update_and_clear_status(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        Sanctum::actingAs($user);
+
+        $uuid = (string) Str::uuid();
+        $createPayload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'create',
+                    'item' => [
+                        'id' => 321,
+                        'uuid' => $uuid,
+                        'title' => 'Status Book',
+                        'authors' => [['name' => 'Tester', 'role' => 'author']],
+                        'last_modified' => now()->timestamp,
+                    ],
+                    'idempotency_key' => 'status-1',
+                ],
+            ],
+        ];
+
+        $this->postJson('/api/sync', $createPayload)->assertStatus(200);
+
+        $book = UserBook::where('uuid', $uuid)->firstOrFail();
+        $this->assertNull($book->status);
+
+        $updatePayload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'update',
+                    'item' => [
+                        'id' => 321,
+                        'uuid' => $uuid,
+                        'title' => 'Status Book',
+                        'authors' => [['name' => 'Tester', 'role' => 'author']],
+                        'last_modified' => now()->timestamp,
+                        'status' => 'reading',
+                    ],
+                    'idempotency_key' => 'status-2',
+                ],
+            ],
+        ];
+
+        $this->postJson('/api/sync', $updatePayload)->assertStatus(200);
+        $book->refresh();
+        $this->assertSame('reading', $book->status);
+
+        $clearPayload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'update',
+                    'item' => [
+                        'id' => 321,
+                        'uuid' => $uuid,
+                        'title' => 'Status Book',
+                        'authors' => [['name' => 'Tester', 'role' => 'author']],
+                        'last_modified' => now()->timestamp,
+                        'status' => null,
+                    ],
+                    'idempotency_key' => 'status-3',
+                ],
+            ],
+        ];
+
+        $this->postJson('/api/sync', $clearPayload)->assertStatus(200);
+        $book->refresh();
+        $this->assertNull($book->status);
+    }
+
     public function test_conflict_creates_record_and_api_lists_it(): void
     {
         $user = User::factory()->create();
