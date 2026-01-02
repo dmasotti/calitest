@@ -11,3 +11,12 @@ plugin/**/__pycache__/
 plugin/CalibreTest/metadata.db
 plugin/integration/generated_sync_calimob.json
 phpunit.mysql.xml
+# Test artifacts
+plugin/CalibreTest/
+plugin/__pycache__/
+plugin/**/__pycache__/
+plugin/**.pyc
+plugin/integration/generated_sync_calimob.json
+plugin/integration/headless_*.py
+plugin/integration/headless_*.sh
+plugin/integration/sync_calimob_config.json
