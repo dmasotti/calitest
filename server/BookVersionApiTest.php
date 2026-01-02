@@ -161,10 +161,10 @@ class BookVersionApiTest extends TestCase
         $token = 'test-csrf-token';
         $this->withSession(['_token' => $token]);
 
-        $response = $this->post('/library/' . $library->id . '/book/' . $book->id . '/versions/' . $version->id . '/restore-and-undelete', [
+        $response = $this->post('/library/' . $library->calibre_library_id . '/book/' . $book->uuid . '/versions/' . $version->id . '/restore-and-undelete', [
             '_token' => $token,
         ]);
-        $response->assertRedirect('/library/' . $library->id . '/book/' . $book->id . '/versions');
+        $response->assertRedirect('/library/' . $library->calibre_library_id . '/book/' . $book->uuid . '/versions');
 
         $book->refresh();
         $this->assertFalse($book->trashed());

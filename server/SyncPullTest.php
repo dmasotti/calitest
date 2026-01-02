@@ -217,7 +217,7 @@ class SyncPullTest extends TestCase
         ]);
 
         BookFile::create([
-            'book' => $book->id,
+            'book' => $book->uuid,
             'user_id' => $user->id,
             'library_id' => $library->id,
             'format' => 'EPUB',
@@ -281,7 +281,7 @@ class SyncPullTest extends TestCase
         ]);
 
         BookFile::create([
-            'book' => $book->id,
+            'book' => $book->uuid,
             'user_id' => $user->id,
             'library_id' => $library->id,
             'format' => 'EPUB',
@@ -359,7 +359,7 @@ class SyncPullTest extends TestCase
         ]);
 
         BookFile::create([
-            'book' => $book->id,
+            'book' => $book->uuid,
             'user_id' => $user->id,
             'library_id' => $library->id,
             'format' => 'EPUB',

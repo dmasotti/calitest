@@ -27,7 +27,7 @@ class FileDownloadTest extends TestCase
         ]);
 
         BookFile::factory()->create([
-            'book' => $userBook->id,
+            'book' => $userBook->uuid,
             'user_id' => $user->id,
             'library_id' => $library->id,
             'format' => 'EPUB',
@@ -55,7 +55,7 @@ class FileDownloadTest extends TestCase
         $this->app->instance(EbookStorageService::class, $mockService);
 
         $response = $this->actingAs($user)
-            ->get(route('files.ebook.download', ['userBook' => $userBook->id]) . '?format=epub');
+            ->get(route('files.ebook.download', ['userBook' => $userBook->uuid]) . '?format=epub');
 
         $response->assertRedirect('https://signed.example/test.epub');
     }
@@ -72,10 +72,12 @@ class FileDownloadTest extends TestCase
         ]);
 
         $filePath = 'ebooks/local-test.epub';
-        Storage::disk('local')->put($filePath, str_repeat('a', 1024));
+        $fileContents = str_repeat('a', 1024);
+        Storage::disk('local')->put($filePath, $fileContents);
+        $fileHash = hash('sha256', $fileContents);
 
         BookFile::factory()->create([
-            'book' => $userBook->id,
+            'book' => $userBook->uuid,
             'user_id' => $user->id,
             'library_id' => $library->id,
             'format' => 'EPUB',
@@ -83,13 +85,121 @@ class FileDownloadTest extends TestCase
             'storage_key' => '',
             'is_uploaded' => false,
             'name' => 'local-test.epub',
+            'file_hash' => $fileHash,
             'uuid' => Str::uuid()->toString(),
         ]);
 
         $response = $this->actingAs($user)
-            ->get(route('files.ebook.download', ['userBook' => $userBook->id]) . '?format=epub');
+            ->get(route('files.ebook.download', ['userBook' => $userBook->uuid]) . '?format=epub');
 
         $response->assertOk();
         $response->assertHeader('content-disposition', 'attachment; filename=local-test.epub');
+    }
+
+    public function test_download_missing_file_marks_missing_flag()
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $userBook = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+
+        BookFile::factory()->create([
+            'book' => $userBook->uuid,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'format' => 'EPUB',
+            'file_path' => 'missing/book.epub',
+            'storage_key' => '',
+            'storage_provider' => 'local',
+            'is_uploaded' => true,
+            'needs_file_upload' => false,
+            'file_missing' => false,
+            'name' => 'missing.epub',
+            'uuid' => Str::uuid()->toString(),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->get(route('files.ebook.download', ['userBook' => $userBook->uuid]) . '?format=epub');
+
+        $response->assertStatus(404);
+
+        $file = BookFile::where('book', $userBook->uuid)->where('format', 'EPUB')->firstOrFail();
+        $this->assertTrue((bool) $file->file_missing);
+    }
+
+    public function test_download_rejects_deleted_book()
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $userBook = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'deleted_at' => now(),
+        ]);
+
+        BookFile::factory()->create([
+            'book' => $userBook->uuid,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'format' => 'EPUB',
+            'file_path' => 'ebooks/deleted.epub',
+            'storage_key' => '',
+            'storage_provider' => 'local',
+            'is_uploaded' => true,
+            'needs_file_upload' => false,
+            'file_missing' => false,
+            'name' => 'deleted.epub',
+            'uuid' => Str::uuid()->toString(),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->get(route('files.ebook.download', ['userBook' => $userBook->uuid]) . '?format=epub');
+
+        $response->assertStatus(404);
+    }
+
+    public function test_download_marks_missing_on_hash_mismatch()
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $userBook = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+
+        $filePath = 'ebooks/mismatch.epub';
+        Storage::disk('local')->put($filePath, 'real content');
+
+        BookFile::factory()->create([
+            'book' => $userBook->uuid,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'format' => 'EPUB',
+            'file_path' => $filePath,
+            'storage_key' => '',
+            'storage_provider' => 'local',
+            'file_hash' => str_repeat('0', 64),
+            'is_uploaded' => true,
+            'needs_file_upload' => false,
+            'file_missing' => false,
+            'name' => 'mismatch.epub',
+            'uuid' => Str::uuid()->toString(),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->get(route('files.ebook.download', ['userBook' => $userBook->uuid]) . '?format=epub');
+
+        $response->assertStatus(404);
+
+        $file = BookFile::where('book', $userBook->uuid)->where('format', 'EPUB')->firstOrFail();
+        $this->assertTrue((bool) $file->file_missing);
     }
 }

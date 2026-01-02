@@ -40,7 +40,7 @@ class SyncItemMappingTest extends TestCase
             'uuid' => Str::uuid()->toString(),
         ]);
         DB::table('books_authors_link')->insert([
-            'book' => $book->getAttribute('id'),
+            'book' => $book->getAttribute('uuid'),
             'author' => $author->getAttribute('id'),
             'user_id' => $user->id,
             'library_id' => $library->id,
@@ -57,7 +57,7 @@ class SyncItemMappingTest extends TestCase
             'uuid' => Str::uuid()->toString(),
         ]);
         DB::table('books_tags_link')->insert([
-            'book' => $book->getAttribute('id'),
+            'book' => $book->getAttribute('uuid'),
             'tag' => $tag->getAttribute('id'),
             'user_id' => $user->id,
             'library_id' => $library->id,
@@ -74,7 +74,7 @@ class SyncItemMappingTest extends TestCase
             'uuid' => Str::uuid()->toString(),
         ]);
         DB::table('books_series_link')->insert([
-            'book' => $book->getAttribute('id'),
+            'book' => $book->getAttribute('uuid'),
             'series' => $series->getAttribute('id'),
             'user_id' => $user->id,
             'library_id' => $library->id,
