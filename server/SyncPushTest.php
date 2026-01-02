@@ -326,4 +326,210 @@ class SyncPushTest extends TestCase
         $this->assertSame('uuid_collision', $response->json('results.0.reason'));
         $this->assertSame($uuid, $response->json('results.0.server_item.uuid'));
     }
+
+    public function test_sync_marks_cover_missing_when_only_hash_provided(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        Sanctum::actingAs($user);
+
+        $uuid = (string) Str::uuid();
+        $payload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'create',
+                    'item' => [
+                        'id' => 400,
+                        'uuid' => $uuid,
+                        'title' => 'Cover Hash Only',
+                        'authors' => [['name' => 'Tester', 'role' => 'author']],
+                        'last_modified' => now()->timestamp,
+                        'cover' => [
+                            'has_cover' => true,
+                            'cover_hash' => 'sha256:' . str_repeat('a', 64),
+                            'cover_url' => null,
+                        ],
+                    ],
+                    'idempotency_key' => 'cover-hash-only-1',
+                ],
+            ],
+        ];
+
+        $response = $this->postJson('/api/sync', $payload);
+        $response->assertStatus(200);
+
+        // Expect server to request a cover upload when only hash is provided.
+        $this->assertTrue((bool) $response->json('results.0.needs_cover_upload'));
+    }
+
+    public function test_sync_marks_ebook_missing_when_files_have_no_storage_key(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        Sanctum::actingAs($user);
+
+        $uuid = (string) Str::uuid();
+        $payload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'create',
+                    'item' => [
+                        'id' => 401,
+                        'uuid' => $uuid,
+                        'title' => 'File Missing',
+                        'authors' => [['name' => 'Tester', 'role' => 'author']],
+                        'last_modified' => now()->timestamp,
+                        'files' => [
+                            [
+                                'format' => 'epub',
+                                'name' => 'File Missing.epub',
+                                // No storage_key or upload data yet
+                            ],
+                        ],
+                    ],
+                    'idempotency_key' => 'file-missing-1',
+                ],
+            ],
+        ];
+
+        $response = $this->postJson('/api/sync', $payload);
+        $response->assertStatus(200);
+
+        // Expect server to flag ebook missing when file metadata is present but not uploaded.
+        $this->assertTrue((bool) $response->json('results.0.ebook_missing'));
+    }
+
+    public function test_sync_rejects_upload_for_deleted_library(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create([
+            'user_id' => $user->id,
+            'deleted_at' => now(),
+        ]);
+        Sanctum::actingAs($user);
+
+        $payload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'create',
+                    'item' => [
+                        'id' => 500,
+                        'uuid' => (string) Str::uuid(),
+                        'title' => 'Deleted Library',
+                        'last_modified' => now()->timestamp,
+                    ],
+                    'idempotency_key' => 'deleted-library-1',
+                ],
+            ],
+        ];
+
+        $response = $this->postJson('/api/sync', $payload);
+        $this->assertSame(404, $response->status());
+    }
+
+    public function test_sync_does_not_mark_conflict_when_only_missing_flags_change(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        Sanctum::actingAs($user);
+
+        $uuid = (string) Str::uuid();
+        $createPayload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'create',
+                    'item' => [
+                        'id' => 700,
+                        'uuid' => $uuid,
+                        'title' => 'Missing Flags',
+                        'authors' => [['name' => 'Tester', 'role' => 'author']],
+                        'last_modified' => now()->timestamp,
+                        'files' => [
+                            ['format' => 'epub', 'name' => 'Missing.epub'],
+                        ],
+                        'cover' => [
+                            'has_cover' => true,
+                            'cover_hash' => 'sha256:' . str_repeat('a', 64),
+                        ],
+                    ],
+                    'idempotency_key' => 'missing-flags-1',
+                ],
+            ],
+        ];
+
+        $response = $this->postJson('/api/sync', $createPayload);
+        $response->assertStatus(200);
+        $this->assertNotSame('conflict', $response->json('results.0.status'));
+    }
+
+    public function test_sync_response_includes_progress_cursor(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        Sanctum::actingAs($user);
+
+        $payload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'create',
+                    'item' => [
+                        'id' => 9000,
+                        'uuid' => (string) Str::uuid(),
+                        'title' => 'Progress Cursor',
+                        'last_modified' => now()->timestamp,
+                    ],
+                    'idempotency_key' => 'progress-1',
+                ],
+            ],
+        ];
+
+        $response = $this->postJson('/api/sync', $payload);
+        $response->assertStatus(200);
+        $this->assertNotEmpty($response->json('progress_cursor'));
+    }
+
+    public function test_sync_accepts_upsert_operation(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        Sanctum::actingAs($user);
+
+        $uuid = (string) Str::uuid();
+        $payload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'upsert',
+                    'item' => [
+                        'id' => 400,
+                        'uuid' => $uuid,
+                        'title' => 'Upsert Book',
+                        'authors' => [['name' => 'Tester', 'role' => 'author']],
+                        'last_modified' => now()->timestamp,
+                    ],
+                    'idempotency_key' => 'upsert-1',
+                ],
+            ],
+        ];
+
+        $response = $this->postJson('/api/sync', $payload);
+        $response->assertStatus(200);
+        $this->assertSame('applied', $response->json('results.0.status'));
+        $this->assertDatabaseHas('books', [
+            'uuid' => $uuid,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+    }
 }
