@@ -238,6 +238,21 @@ class TestRestApiClientMethods:
         
         assert result['id'] == 'new-lib-123'
         assert result['name'] == 'New Library'
+
+    @responses.activate
+    def test_get_library_uses_uuid_endpoint(self, rest_client_instance):
+        """Test get_library() uses /libraries/uuid/{uuid}."""
+        responses.add(
+            responses.GET,
+            'https://api.example.com/api/libraries/uuid/11111111-2222-3333-4444-555555555555',
+            json={'id': '1', 'name': 'Library 1', 'calibre_library_uuid': '11111111-2222-3333-4444-555555555555'},
+            status=200
+        )
+
+        result = rest_client_instance.get_library('11111111222233334444555555555555')
+
+        assert result['id'] == '1'
+        assert result['calibre_library_uuid'] == '11111111-2222-3333-4444-555555555555'
     
     @responses.activate
     def test_pull_changes(self, rest_client_instance):
