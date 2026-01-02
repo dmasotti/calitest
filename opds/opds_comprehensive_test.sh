@@ -25,6 +25,10 @@ APP_PASS=${APP_PASS:-}
 TMPDIR=$(mktemp -d)
 VERBOSE=${VERBOSE:-0}
 
+# Strip accidental surrounding quotes (can happen if .env was written with escaped quotes)
+APP_PASS="${APP_PASS#\"}"
+APP_PASS="${APP_PASS%\"}"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'

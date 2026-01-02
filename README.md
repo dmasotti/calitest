@@ -90,6 +90,9 @@ PASS="your-password" \
 ./tests/opds/opds_comprehensive_test.sh
 ```
 
+**Nota OPDS**: puoi usare una **app‑password** generata via `POST /api/app-passwords`
+come password per Basic Auth (username = email).
+
 **Sync API Tests:**
 ```bash
 DISCOVERY_URL="https://your-server.com" \

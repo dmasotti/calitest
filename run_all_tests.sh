@@ -71,25 +71,79 @@ ensure_test_users() {
         php artisan user:create "$TEST_USER_EMAIL" --password="$TEST_USER_PASSWORD" >/dev/null
     fi
 
-    # Always generate a fresh app password for OPDS (avoids stale creds)
-    local pass_out
-    pass_out="$(php artisan auth:create-app-password "$TEST_USER_EMAIL" --name=\"tests\" 2>&1 || true)"
-    APP_PASS="$(echo "$pass_out" | rg -e "App Password:" -e "Password App:" | tail -n1 | sed -E 's/.*(App Password:|Password App:)\\s*//')"
-    if [[ -n "$APP_PASS" ]]; then
-        export APP_PASS
-        export OPDS_PASS="$APP_PASS"
-        echo -e "${YELLOW}Generated app password for OPDS tests${NC}"
-        if [[ -f "$ENV_FILE" ]]; then
-            if rg -q '^APP_PASS=' "$ENV_FILE"; then
-                perl -0pi -e "s/^APP_PASS=.*/APP_PASS=\\\"$APP_PASS\\\"/m" "$ENV_FILE"
+    popd >/dev/null
+
+    # Always generate a fresh app password for OPDS via API (uses the same DB as the web server)
+    if [[ -n "${DISCOVERY_URL:-}" ]]; then
+        local api_base="${DISCOVERY_URL%/}/api"
+        local login_resp token pass_resp
+        login_resp="$(curl -s -X POST "$api_base/auth/login" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            -d "{\"email\":\"$TEST_USER_EMAIL\",\"password\":\"$TEST_USER_PASSWORD\"}")"
+        token="$(python -c 'import json,sys; data=json.loads(sys.stdin.read()); print(data.get("token",""))' <<<"$login_resp" 2>/dev/null || true)"
+
+        if [[ -z "$token" ]]; then
+            register_resp="$(curl -s -X POST "$api_base/auth/register" \
+                -H "Content-Type: application/json" \
+                -H "Accept: application/json" \
+                -d "{\"name\":\"test\",\"email\":\"$TEST_USER_EMAIL\",\"password\":\"$TEST_USER_PASSWORD\",\"password_confirmation\":\"$TEST_USER_PASSWORD\"}")"
+            token="$(python -c 'import json,sys; data=json.loads(sys.stdin.read()); print(data.get("token",""))' <<<"$register_resp" 2>/dev/null || true)"
+        fi
+
+        if [[ -z "$token" ]]; then
+            # Fallback: register a unique test user to ensure credentials match.
+            local ts new_email
+            ts="$(date +%s)"
+            if [[ "$TEST_USER_EMAIL" == *"@"* ]]; then
+                new_email="${TEST_USER_EMAIL%@*}+${ts}@${TEST_USER_EMAIL#*@}"
             else
-                echo "APP_PASS=\\\"$APP_PASS\\\"" >> "$ENV_FILE"
+                new_email="${TEST_USER_EMAIL}+${ts}"
+            fi
+            register_resp="$(curl -s -X POST "$api_base/auth/register" \
+                -H "Content-Type: application/json" \
+                -H "Accept: application/json" \
+                -d "{\"name\":\"test\",\"email\":\"$new_email\",\"password\":\"$TEST_USER_PASSWORD\",\"password_confirmation\":\"$TEST_USER_PASSWORD\"}")"
+            token="$(python -c 'import json,sys; data=json.loads(sys.stdin.read()); print(data.get("token",""))' <<<"$register_resp" 2>/dev/null || true)"
+            if [[ -n "$token" ]]; then
+                TEST_USER_EMAIL="$new_email"
+                export TEST_USER_EMAIL
+                export USER="$TEST_USER_EMAIL"
+                echo -e "${YELLOW}Registered fallback test user: $TEST_USER_EMAIL${NC}"
+                if [[ -f "$ENV_FILE" ]]; then
+                    if rg -q '^TEST_USER_EMAIL=' "$ENV_FILE"; then
+                        perl -0pi -e "s/^TEST_USER_EMAIL=.*/TEST_USER_EMAIL=\\\"$TEST_USER_EMAIL\\\"/m" "$ENV_FILE"
+                    else
+                        echo "TEST_USER_EMAIL=\"$TEST_USER_EMAIL\"" >> "$ENV_FILE"
+                    fi
+                fi
             fi
         fi
-    else
-        echo -e "${YELLOW}⚠ Unable to generate app password (OPDS may fail)${NC}"
+
+        if [[ -n "$token" ]]; then
+            pass_resp="$(curl -s -X POST "$api_base/app-passwords" \
+                -H "Authorization: Bearer $token" \
+                -H "Content-Type: application/json" \
+                -H "Accept: application/json" \
+                -d '{"name":"tests-opds"}')"
+            APP_PASS="$(python -c 'import json,sys; data=json.loads(sys.stdin.read()); print(data.get("password",""))' <<<"$pass_resp" 2>/dev/null || true)"
+        fi
+
+        if [[ -n "${APP_PASS:-}" ]]; then
+            export APP_PASS
+            export OPDS_PASS="$APP_PASS"
+            echo -e "${YELLOW}Generated app password for OPDS tests${NC}"
+            if [[ -f "$ENV_FILE" ]]; then
+                if rg -q '^APP_PASS=' "$ENV_FILE"; then
+                    perl -0pi -e "s/^APP_PASS=.*/APP_PASS=\"$APP_PASS\"/m" "$ENV_FILE"
+                else
+                    echo "APP_PASS=\"$APP_PASS\"" >> "$ENV_FILE"
+                fi
+            fi
+        else
+            echo -e "${YELLOW}⚠ Unable to generate app password via API (OPDS may fail)${NC}"
+        fi
     fi
-    popd >/dev/null
 }
 
 echo -e "${CYAN}"

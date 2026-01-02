@@ -86,7 +86,7 @@ class ApiErrorResponsesTest extends TestCase
         $response = $this->getJson('/api/items/uuid/' . $book->uuid . '?calibre_library_uuid=' . $library->calibre_library_id);
 
         $response->assertStatus(404);
-        $this->assertSame('Book not found in your library', $response->json('error'));
+        $this->assertSame('Library not found or access denied', $response->json('error'));
     }
 
     public function test_sync_access_denied_for_other_user(): void
