@@ -27,7 +27,7 @@ class FileUploadTest extends TestCase
         ]);
 
         BookFile::factory()->create([
-            'book' => $userBook->id,
+            'book' => $userBook->uuid,
             'user_id' => $user->id,
             'library_id' => $library->id,
             'format' => 'EPUB',
@@ -53,7 +53,7 @@ class FileUploadTest extends TestCase
         $response->assertOk();
         $response->assertJsonFragment(['needs_file_upload' => false]);
 
-        $file = BookFile::where('book', $userBook->id)
+        $file = BookFile::where('book', $userBook->uuid)
             ->where('format', 'EPUB')
             ->firstOrFail();
 
@@ -76,7 +76,7 @@ class FileUploadTest extends TestCase
         ]);
 
         BookFile::factory()->create([
-            'book' => $userBook->id,
+            'book' => $userBook->uuid,
             'user_id' => $user->id,
             'library_id' => $library->id,
             'format' => 'EPUB',
@@ -119,7 +119,7 @@ class FileUploadTest extends TestCase
         ]);
 
         BookFile::factory()->create([
-            'book' => $userBook->id,
+            'book' => $userBook->uuid,
             'user_id' => $user->id,
             'library_id' => $library->id,
             'format' => 'EPUB',
@@ -144,7 +144,7 @@ class FileUploadTest extends TestCase
 
         $response->assertOk();
 
-        $file = BookFile::where('book', $userBook->id)
+        $file = BookFile::where('book', $userBook->uuid)
             ->where('format', 'EPUB')
             ->firstOrFail();
 
@@ -167,7 +167,7 @@ class FileUploadTest extends TestCase
         ]);
 
         BookFile::factory()->create([
-            'book' => $userBook->id,
+            'book' => $userBook->uuid,
             'user_id' => $user->id,
             'library_id' => $library->id,
             'format' => 'EPUB',
@@ -192,7 +192,7 @@ class FileUploadTest extends TestCase
 
         $response->assertOk();
 
-        $file = BookFile::where('book', $userBook->id)
+        $file = BookFile::where('book', $userBook->uuid)
             ->where('format', 'EPUB')
             ->firstOrFail();
 
@@ -211,7 +211,7 @@ class FileUploadTest extends TestCase
         ]);
 
         BookFile::factory()->create([
-            'book' => $userBook->id,
+            'book' => $userBook->uuid,
             'user_id' => $user->id,
             'library_id' => $library->id,
             'format' => 'EPUB',
@@ -233,7 +233,7 @@ class FileUploadTest extends TestCase
             'HTTP_X_FILE_NAME' => 'uploaded.epub',
         ], $content)->assertOk();
 
-        $first = BookFile::where('book', $userBook->id)->where('format', 'EPUB')->firstOrFail();
+        $first = BookFile::where('book', $userBook->uuid)->where('format', 'EPUB')->firstOrFail();
         $firstKey = $first->storage_key;
 
         $this->actingAs($user)->call('PUT', route('api.items.file.upload.uuid', ['uuid' => $userBook->uuid, 'format' => 'epub', 'calibre_library_uuid' => $library->calibre_library_id]), [], [], [], [
@@ -242,7 +242,7 @@ class FileUploadTest extends TestCase
             'HTTP_X_FILE_NAME' => 'uploaded.epub',
         ], $content)->assertOk();
 
-        $second = BookFile::where('book', $userBook->id)->where('format', 'EPUB')->firstOrFail();
+        $second = BookFile::where('book', $userBook->uuid)->where('format', 'EPUB')->firstOrFail();
         $this->assertSame($firstKey, $second->storage_key);
     }
 
@@ -269,5 +269,40 @@ class FileUploadTest extends TestCase
             ], $content);
 
         $response->assertStatus(404);
+    }
+
+    public function test_file_upload_creates_uuid_and_uses_book_uuid()
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $userBook = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+
+        $content = 'uuid insert payload';
+        $hash = hash('sha256', $content);
+
+        $response = $this->actingAs($user)
+            ->call('PUT', route('api.items.file.upload.uuid', [
+                'uuid' => $userBook->uuid,
+                'format' => 'epub',
+                'calibre_library_uuid' => $library->calibre_library_id,
+            ]), [], [], [], [
+                'CONTENT_TYPE' => 'application/octet-stream',
+                'HTTP_X_FILE_HASH' => 'sha256:' . $hash,
+                'HTTP_X_FILE_NAME' => 'uploaded.epub',
+            ], $content);
+
+        $response->assertOk();
+
+        $file = BookFile::where('book', $userBook->uuid)
+            ->where('format', 'EPUB')
+            ->firstOrFail();
+
+        $this->assertSame($userBook->uuid, $file->book);
+        $this->assertNotEmpty($file->uuid);
     }
 }
