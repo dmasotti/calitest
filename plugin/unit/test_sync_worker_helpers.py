@@ -113,6 +113,36 @@ def test_cache_book_uuid(monkeypatch):
     assert worker._uuid_to_book_id['uuid-42'] == 42
 
 
+def test_format_last_modified_normalizes_values():
+    worker = _make_worker()
+    assert worker._format_last_modified(datetime(2025, 1, 1, 12, 0)) == '2025-01-01T12:00:00Z'
+    assert worker._format_last_modified(123456) == '123456'
+    assert worker._format_last_modified(None) is None
+
+
+def test_update_file_cache_records_formats(monkeypatch):
+    snapshot = {'notes': {'existing': True}}
+    def fake_get(library_id, book_id, db=None):
+        return snapshot
+
+    captured = {}
+    def fake_update(library_id, book_id, updates, db=None):
+        captured.update(updates)
+
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_mapping_entry', fake_get)
+    monkeypatch.setattr(sync_worker.cfg, 'update_book_mapping', fake_update)
+
+    formats = {
+        'EPUB': {'hash': 'sha256:abc', 'mtime': 123, 'size': 999},
+        'PDF': {'hash': 'sha256:def', 'mtime': 999, 'size': 111}
+    }
+    sync_worker.cfg.update_file_cache('lib-123', 1, formats, 'ts-1', db=None)
+
+    assert 'notes' in captured
+    file_cache = captured['notes']['file_cache']
+    assert file_cache['last_modified'] == 'ts-1'
+    assert file_cache['formats']['EPUB']['hash'] == 'sha256:abc'
+
 def test_deterministic_uuid_uses_cached():
     worker = _make_worker()
     worker._get_cached_book_uuid = Mock(return_value='cached-uuid')
