@@ -223,6 +223,58 @@ def test_apply_update_skips_metadata_save_when_no_change(monkeypatch):
     test_db.set_metadata.assert_not_called()
 
 
+def test_item_matches_metadata_considers_last_modified():
+    worker = _make_worker()
+
+    metadata = SimpleNamespace(
+        title='Book Title',
+        sort='Book Title Sort',
+        author_sort='Author Lastname',
+        series=None,
+        publisher=None,
+        comments=None,
+        authors=[],
+        languages=[],
+        tags=[],
+        series_index=1.0,
+        rating=3.0,
+        last_modified=datetime(2024, 11, 14, tzinfo=timezone.utc),
+    )
+
+    item = {
+        'title': 'Book Title',
+        'title_sort': 'Book Title Sort',
+        'author_sort': 'Author Lastname',
+        'series': None,
+        'publisher': None,
+        'comments': None,
+        'authors': [],
+        'languages': [],
+        'tags': [],
+        'series_index': 1.0,
+        'rating': 3.0,
+        'last_modified': '2024-11-14T00:00:00Z',
+    }
+
+    metadata_dict = {
+        'title': 'Book Title',
+        'title_sort': 'Book Title Sort',
+        'author_sort': 'Author Lastname',
+        'authors': [],
+        'languages': [],
+        'tags': [],
+        'series_index': 1.0,
+        'rating': 3.0,
+        'last_modified': '2024-11-14T00:00:00Z',
+    }
+
+    assert worker._item_matches_metadata(metadata, item, metadata_dict=metadata_dict)
+
+    metadata_dict['last_modified'] = '2024-11-14T00:00:01Z'
+    item['last_modified'] = '2024-11-14T00:00:01Z'
+    assert not worker._item_matches_metadata(metadata, item, metadata_dict=metadata_dict)
+
+
 def test_write_custom_columns_skips_when_values_equal(monkeypatch):
     worker = _make_worker()
     worker.progress_percent_column = 'progress_pct'
