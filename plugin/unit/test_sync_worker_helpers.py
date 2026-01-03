@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import Mock
+from types import SimpleNamespace
 
 import pytest
 
@@ -120,7 +121,7 @@ def test_format_last_modified_normalizes_values():
     assert worker._format_last_modified(None) is None
 
 
-def test_update_file_cache_records_formats(monkeypatch):
+def test_update_book_cache_records_formats(monkeypatch):
     snapshot = {'notes': {'existing': True}}
     def fake_get(library_id, book_id, db=None):
         return snapshot
@@ -136,12 +137,110 @@ def test_update_file_cache_records_formats(monkeypatch):
         'EPUB': {'hash': 'sha256:abc', 'mtime': 123, 'size': 999},
         'PDF': {'hash': 'sha256:def', 'mtime': 999, 'size': 111}
     }
-    sync_worker.cfg.update_file_cache('lib-123', 1, formats, 'ts-1', db=None)
+    sync_worker.cfg.update_book_cache('lib-123', 1, formats, 'sha256:cover', 'ts-1', db=None)
 
     assert 'notes' in captured
-    file_cache = captured['notes']['file_cache']
-    assert file_cache['last_modified'] == 'ts-1'
-    assert file_cache['formats']['EPUB']['hash'] == 'sha256:abc'
+    book_cache = captured['notes']['book_cache']
+    assert book_cache['last_modified'] == 'ts-1'
+    assert book_cache['files']['EPUB']['hash'] == 'sha256:abc'
+
+
+def test_update_book_cache_records_cover_only(monkeypatch):
+    snapshot = {'notes': {}}
+    captured = {}
+
+    def fake_get(library_id, book_id, db=None):
+        return snapshot
+
+    def fake_update(library_id, book_id, updates, db=None):
+        captured.update(updates)
+
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_mapping_entry', fake_get)
+    monkeypatch.setattr(sync_worker.cfg, 'update_book_mapping', fake_update)
+
+    sync_worker.cfg.update_book_cache('lib-123', 1, {}, 'sha256:cover', 'ts-2', db=None)
+    assert captured['notes']['book_cache']['cover']['hash'] == 'sha256:cover'
+    assert captured['notes']['book_cache']['last_modified'] == 'ts-2'
+
+
+def test_apply_update_skips_metadata_save_when_no_change(monkeypatch):
+    worker = _make_worker()
+
+    worker.progress_percent_column = None
+    worker.favorite_column = None
+
+    class MetadataHolder(SimpleNamespace):
+        pass
+
+    now_ts = 1767442000
+    metadata = MetadataHolder(
+        title='Book Title',
+        sort='Book Title Sort',
+        author_sort='Author Lastname',
+        series='Series Name',
+        publisher='Publisher',
+        comments='Notes',
+        authors=['Author'],
+        languages=['eng'],
+        tags=['fiction'],
+        series_index=1.0,
+        rating=6.0,
+        last_modified=datetime.fromtimestamp(now_ts, tz=timezone.utc),
+    )
+
+    class TrackingDb:
+        def __init__(self, metadata_obj):
+            self.metadata_obj = metadata_obj
+            self.data = Mock()
+            self.data.has_id = lambda book_id: True
+            self.set_metadata = Mock()
+
+        def get_metadata(self, book_id, index_is_id=True):
+            return self.metadata_obj
+
+        def cover(self, book_id, index_is_id=True):
+            return None
+
+    test_db = TrackingDb(metadata)
+    worker.db = test_db
+    worker._resolve_local_book_id = lambda item: 42
+
+    item = {
+        'title': 'Book Title',
+        'title_sort': 'Book Title Sort',
+        'author_sort': 'Author Lastname',
+        'series': {'name': 'Series Name', 'series_index': 1.0},
+        'publisher': 'Publisher',
+        'comments': 'Notes',
+        'authors': [{'name': 'Author'}],
+        'languages': ['eng'],
+        'tags': ['fiction'],
+        'rating': 3,
+        'last_modified': now_ts,
+    }
+
+    worker._apply_update(item, skip_cover=True)
+    test_db.set_metadata.assert_not_called()
+
+
+def test_write_custom_columns_skips_when_values_equal(monkeypatch):
+    worker = _make_worker()
+    worker.progress_percent_column = 'progress_pct'
+    worker.favorite_column = 'favorite_flag'
+
+    class FieldMetadata:
+        def key_to_label(self, key):
+            return key
+
+    worker.db.field_metadata = FieldMetadata()
+    worker.db.get_custom = Mock(side_effect=lambda book_id, label, index_is_id=True: (
+        42.0 if label == 'progress_pct' else True if label == 'favorite_flag' else None
+    ))
+    worker.db.set_custom = Mock()
+
+    worker._write_custom_columns(1, {'progress_percent': 42, 'favorite': True})
+
+    worker.db.set_custom.assert_not_called()
 
 def test_deterministic_uuid_uses_cached():
     worker = _make_worker()
