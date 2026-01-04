@@ -167,7 +167,7 @@ if 'PyQt5' not in sys.modules:
                  'QInputDialog', 'QAbstractItemView', 'QToolButton', 'QSpacerItem',
                  'QModelIndex', 'QFileDialog', 'QTimer', 'QFrame', 'QScrollArea',
                  'QListWidget', 'QProgressBar', 'QApplication', 'QTextBrowser', 'QSize',
-                 'QFont', 'QDateTime', 'QStyledItemDelegate', 'QUrl']:
+                 'QFont', 'QDateTime', 'QStyledItemDelegate', 'QUrl', 'QSpinBox']:
         setattr(qt_module, attr, _stub_class(attr))
     # Some plugin modules import from PyQt5.Qt and expect these symbols explicitly.
     if not hasattr(qt_module, 'QMenu'):
