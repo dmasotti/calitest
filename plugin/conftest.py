@@ -96,6 +96,8 @@ if 'calibre' not in sys.modules:
     calibre.get_parsed_proxy = lambda *args, **kwargs: None
     calibre.browser = types.SimpleNamespace()
     calibre.gui2 = types.ModuleType('calibre.gui2')
+    # Treat as package so submodules like calibre.gui2.actions can be imported
+    calibre.gui2.__path__ = []
     calibre.gui2.error_dialog = lambda *args, **kwargs: None
     calibre.gui2.question_dialog = lambda *args, **kwargs: None
     calibre.gui2.info_dialog = lambda *args, **kwargs: None
@@ -114,6 +116,11 @@ if 'calibre' not in sys.modules:
     calibre.gui2.complete2 = types.ModuleType('calibre.gui2.complete2')
     calibre.gui2.complete2.EditWithComplete = type('EditWithComplete', (), {})
     sys.modules['calibre.gui2'] = calibre.gui2
+    # calibre.gui2.actions.InterfaceAction (needed for importing action.py in unit tests)
+    calibre.gui2.actions = types.ModuleType('calibre.gui2.actions')
+    calibre.gui2.actions.InterfaceAction = type('InterfaceAction', (), {})
+    calibre.gui2.actions.menu_action_unique_name = lambda *args, **kwargs: 'sync_calimob:test'
+    sys.modules['calibre.gui2.actions'] = calibre.gui2.actions
     sys.modules['calibre.gui2.complete2'] = calibre.gui2.complete2
 
     sys.modules['calibre'] = calibre
@@ -162,12 +169,35 @@ if 'PyQt5' not in sys.modules:
                  'QListWidget', 'QProgressBar', 'QApplication', 'QTextBrowser', 'QSize',
                  'QFont', 'QDateTime', 'QStyledItemDelegate', 'QUrl']:
         setattr(qt_module, attr, _stub_class(attr))
+    # Some plugin modules import from PyQt5.Qt and expect these symbols explicitly.
+    if not hasattr(qt_module, 'QMenu'):
+        qt_module.QMenu = _stub_class('QMenu')
     qt_module.QByteArray = type('QByteArray', (), {})
     pyqt5.Qt = qt_module
     pyqt5.QtCore = qt_module
+    pyqt5.QtWidgets = qt_module
     sys.modules['PyQt5'] = pyqt5
     sys.modules['PyQt5.Qt'] = qt_module
     sys.modules['PyQt5.QtCore'] = qt_module
+    sys.modules['PyQt5.QtWidgets'] = qt_module
+
+# Minimal qt.core shim (Calibre bundles qt.core on some installs).
+if 'qt' not in sys.modules:
+    qt_pkg = types.ModuleType('qt')
+    sys.modules['qt'] = qt_pkg
+if 'qt.core' not in sys.modules:
+    qt_core = types.ModuleType('qt.core')
+    # Reuse the PyQt5 stub module namespace for qt.core imports.
+    try:
+        qt_core_stub = sys.modules.get('PyQt5.Qt')
+    except Exception:
+        qt_core_stub = None
+    if qt_core_stub is not None:
+        for name in dir(qt_core_stub):
+            if name.startswith('_'):
+                continue
+            setattr(qt_core, name, getattr(qt_core_stub, name))
+    sys.modules['qt.core'] = qt_core
 
 # Provide minimal calibre_plugins stubs for patching config
 if 'calibre_plugins' not in sys.modules:
@@ -180,6 +210,8 @@ builtins._ = lambda x: x
 if 'calibre_plugins.sync_calimob' not in sys.modules:
     sync_pkg = types.ModuleType('calibre_plugins.sync_calimob')
     sync_pkg.__path__ = [str(plugin_root)]
+    # Minimal package-level exports used by action.py
+    sync_pkg.PLUGIN_VERSION = '0.0.0-test'
     sys.modules['calibre_plugins.sync_calimob'] = sync_pkg
     sys.modules['calibre_plugins'].sync_calimob = sync_pkg
 
