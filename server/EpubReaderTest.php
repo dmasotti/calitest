@@ -74,21 +74,25 @@ class EpubReaderTest extends TestCase
         // EPUB at 30%
         \App\Models\BookDeviceProgress::create([
             'user_id' => $this->user->id,
+            'library_id' => $this->library->id,
             'device_id' => $device->id,
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
-            'progress' => 30.0,
+            'progress_bp' => 3000,
             'last_position' => json_encode(['cfi' => 'epub_position']),
+            'client_ts' => now(),
         ]);
 
         // PDF at 70% (higher)
         \App\Models\BookDeviceProgress::create([
             'user_id' => $this->user->id,
+            'library_id' => $this->library->id,
             'device_id' => $device->id,
             'book_uuid' => $this->book->uuid,
             'format' => 'PDF',
-            'progress' => 70.0,
+            'progress_bp' => 7000,
             'last_position' => json_encode(['page' => 42]),
+            'client_ts' => now(),
         ]);
 
         $response = $this->actingAs($this->user)
