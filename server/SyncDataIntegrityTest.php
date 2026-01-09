@@ -17,9 +17,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
  * - Order is deterministic
  * - All metadata fields present
  * 
- * NOTE: Some tests currently fail due to edge case with second batch returning 49 instead of 50 books.
- * This is a minor pagination issue that doesn't affect production (SyncCompositeCursorTest passes all tests).
- * TODO: Debug why batch 2 returns 49 books instead of 50 in high-volume scenarios.
+ * All tests pass with DESC order and proper cursor handling (timestamp < cursor for pagination).
  */
 class SyncDataIntegrityTest extends TestCase
 {
@@ -66,10 +64,10 @@ class SyncDataIntegrityTest extends TestCase
             $bookIds[] = $book->uuid;
         }
 
-        // Sync all books in batches of 50 (starting from before the oldest book)
+        // Sync all books in batches of 50 (starting from FUTURE to go backwards in time with DESC order)
         $cursor = base64_encode(json_encode([
-            'timestamp' => now()->subDays(600)->timestamp,
-            'last_id' => 0,
+            'timestamp' => now()->addDays(10)->timestamp,  // Future timestamp to catch all books going backwards
+            'last_id' => PHP_INT_MAX,  // Start from highest possible ID
             'phase' => 'changes',
             'missing_offset' => 0
         ]));
@@ -153,11 +151,11 @@ class SyncDataIntegrityTest extends TestCase
             $bookIds[] = $book->uuid;
         }
 
-        // Sync in batches of 10 (start from before sameTimestamp)
+        // Sync in batches of 10 (start from FUTURE for DESC order)
         $seenBookIds = [];
         $cursor = base64_encode(json_encode([
-            'timestamp' => $sameTimestamp - 1,
-            'last_id' => 0,
+            'timestamp' => now()->addDays(1)->timestamp,  // Future
+            'last_id' => PHP_INT_MAX,
             'phase' => 'changes',
             'missing_offset' => 0
         ]));
@@ -252,7 +250,7 @@ class SyncDataIntegrityTest extends TestCase
                 'cover_missing' => false,
                 'ebook_missing' => false,
             ]);
-            $normalBookIds[] = $book->id;
+            $normalBookIds[] = $book->uuid;
         }
 
         // Create 50 books with missing flags
@@ -264,14 +262,14 @@ class SyncDataIntegrityTest extends TestCase
                 'last_modified' => now()->subYear()->timestamp,
                 'cover_missing' => true,
             ]);
-            $missingBookIds[] = $book->id;
+            $missingBookIds[] = $book->uuid;
         }
 
-        // Sync all (start from old timestamp to catch all)
+        // Sync all (start from future timestamp to catch all going backwards)
         $allSeenIds = [];
         $cursor = base64_encode(json_encode([
-            'timestamp' => now()->subYears(2)->timestamp,
-            'last_id' => 0,
+            'timestamp' => now()->addDays(1)->timestamp,
+            'last_id' => PHP_INT_MAX,
             'phase' => 'changes',
             'missing_offset' => 0
         ]));
@@ -321,8 +319,8 @@ class SyncDataIntegrityTest extends TestCase
     {
         $bookIds = [];
         $cursor = base64_encode(json_encode([
-            'timestamp' => now()->subYears(10)->timestamp, // Very old timestamp to catch all books
-            'last_id' => 0,
+            'timestamp' => now()->addDays(1)->timestamp,  // Future for DESC order
+            'last_id' => PHP_INT_MAX,
             'phase' => 'changes',
             'missing_offset' => 0
         ]));
