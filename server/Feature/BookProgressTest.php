@@ -9,10 +9,11 @@ use App\Models\Library;
 use App\Models\Device;
 use App\Models\BookDeviceProgress;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Foundation\Testing\WithoutMiddleware;
 
 class BookProgressTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, WithoutMiddleware;
 
     private User $user;
     private Library $library;
@@ -34,6 +35,7 @@ class BookProgressTest extends TestCase
     public function it_can_save_reading_progress()
     {
         $response = $this->actingAs($this->user)
+            
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'format' => 'EPUB',
                 'progress' => 50,
@@ -47,7 +49,7 @@ class BookProgressTest extends TestCase
             'user_id' => $this->user->id,
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
-            'progress' => 50,
+            'progress_bp' => 5000, // 50 * 100
         ]);
     }
 
@@ -55,6 +57,7 @@ class BookProgressTest extends TestCase
     public function it_requires_format_field()
     {
         $response = $this->actingAs($this->user)
+            
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'progress' => 50,
                 'last_position' => json_encode(['percent' => 50]),
@@ -69,6 +72,7 @@ class BookProgressTest extends TestCase
     {
         // Save EPUB progress
         $this->actingAs($this->user)
+            
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'format' => 'EPUB',
                 'progress' => 30,
@@ -78,6 +82,7 @@ class BookProgressTest extends TestCase
 
         // Save PDF progress
         $this->actingAs($this->user)
+            
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'format' => 'PDF',
                 'progress' => 70,
@@ -89,13 +94,13 @@ class BookProgressTest extends TestCase
         $this->assertDatabaseHas('books_devices_progress', [
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
-            'progress' => 30,
+            'progress_bp' => 3000, // 30 * 100
         ]);
 
         $this->assertDatabaseHas('books_devices_progress', [
             'book_uuid' => $this->book->uuid,
             'format' => 'PDF',
-            'progress' => 70,
+            'progress_bp' => 7000, // 70 * 100
         ]);
     }
 
@@ -104,6 +109,7 @@ class BookProgressTest extends TestCase
     {
         // First save
         $this->actingAs($this->user)
+            
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'format' => 'EPUB',
                 'progress' => 30,
@@ -113,6 +119,7 @@ class BookProgressTest extends TestCase
 
         // Update
         $this->actingAs($this->user)
+            
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'format' => 'EPUB',
                 'progress' => 60,
@@ -121,7 +128,7 @@ class BookProgressTest extends TestCase
             ]);
 
         // Should have only one record updated
-        $this->assertEquals(1, BooksDevicesProgress::where([
+        $this->assertEquals(1, BookDeviceProgress::where([
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
         ])->count());
@@ -129,7 +136,7 @@ class BookProgressTest extends TestCase
         $this->assertDatabaseHas('books_devices_progress', [
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
-            'progress' => 60,
+            'progress_bp' => 6000, // 60 * 100
         ]);
     }
 
@@ -147,6 +154,7 @@ class BookProgressTest extends TestCase
 
         // Second session
         $this->actingAs($this->user)
+            
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'format' => 'EPUB',
                 'progress' => 60,
@@ -154,7 +162,7 @@ class BookProgressTest extends TestCase
                 'reading_time' => 200,
             ]);
 
-        $progress = BooksDevicesProgress::where([
+        $progress = BookDeviceProgress::where([
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
         ])->first();
@@ -165,10 +173,11 @@ class BookProgressTest extends TestCase
     /** @test */
     public function it_requires_authentication()
     {
-        $response = $this->postJson("/api/books/{$this->book->uuid}/progress", [
-            'format' => 'EPUB',
-            'progress' => 50,
-        ]);
+        $response = $this
+            ->postJson("/api/books/{$this->book->uuid}/progress", [
+                'format' => 'EPUB',
+                'progress' => 50,
+            ]);
 
         $response->assertStatus(401);
     }
