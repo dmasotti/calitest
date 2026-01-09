@@ -13,7 +13,7 @@ use Illuminate\Foundation\Testing\WithoutMiddleware;
 
 class BookProgressTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, WithoutMiddleware;
 
     private User $user;
     private Library $library;
@@ -34,7 +34,7 @@ class BookProgressTest extends TestCase
     /** @test */
     public function it_can_save_reading_progress()
     {
-        $response = $this->actingAs($this->user)
+        $response = $this->actingAs($this->user, 'sanctum')
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'format' => 'EPUB',
                 'progress_percent' => 50,
@@ -45,6 +45,10 @@ class BookProgressTest extends TestCase
                 'reading_time' => 5, // minutes
             ]);
 
+        if ($response->status() !== 200) {
+            dump($response->json());
+        }
+        
         $response->assertStatus(200);
 
         $this->assertDatabaseHas('books_devices_progress', [
