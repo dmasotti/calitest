@@ -14,14 +14,19 @@ class PdfReaderTest extends TestCase
 
     protected User $user;
     protected UserBook $book;
+    protected \App\Models\Library $library;
 
     protected function setUp(): void
     {
         parent::setUp();
         
         $this->user = User::factory()->create();
+        $this->library = \App\Models\Library::factory()->create([
+            'user_id' => $this->user->id,
+        ]);
         $this->book = UserBook::factory()->create([
             'user_id' => $this->user->id,
+            'library_id' => $this->library->id,
             'title' => 'Test PDF Book',
         ]);
 

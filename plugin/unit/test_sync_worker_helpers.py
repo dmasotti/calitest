@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import Mock
@@ -223,7 +224,7 @@ def test_apply_update_skips_metadata_save_when_no_change(monkeypatch):
     test_db.set_metadata.assert_not_called()
 
 
-def test_item_matches_metadata_considers_last_modified():
+def test_item_matches_metadata_ignores_last_modified():
     worker = _make_worker()
 
     metadata = SimpleNamespace(
@@ -272,7 +273,42 @@ def test_item_matches_metadata_considers_last_modified():
 
     metadata_dict['last_modified'] = '2024-11-14T00:00:01Z'
     item['last_modified'] = '2024-11-14T00:00:01Z'
+    assert worker._item_matches_metadata(metadata, item, metadata_dict=metadata_dict)
+
+    metadata_dict['title'] = 'Different Title'
     assert not worker._item_matches_metadata(metadata, item, metadata_dict=metadata_dict)
+
+
+def test_metadata_signature_ignores_timestamp_and_extra_author_fields():
+    worker = _make_worker()
+    json_item = {
+        'title': 'Book Title',
+        'title_sort': 'Book Title Sort',
+        'comments': 'Notes',
+        'authors': [{'name': 'Author', 'role': 'author', 'position': 0}],
+        'series': {'name': 'Series Name', 'series_index': 1.0},
+        'identifiers': {'isbn': '123'},
+        'publisher': 'Pub',
+        'pubdate': 123,
+        'languages': ['eng'],
+        'tags': [],
+        'cover': {'cover_hash': 'sha256:abc', 'has_cover': 'Yes', 'cover_url': 'http://example.com/c.jpg'},
+        'source': {'client': 'calibre', 'client_library': 'lib-uuid'},
+        'progress_percent': None,
+        'favorite': False,
+    }
+    format_cache = {'CBR': {'hash': 'sha256:file', 'size': 42}}
+    base_hash = worker._compute_metadata_signature(json_item, format_cache, 'sha256:cover')
+
+    mutated = copy.deepcopy(json_item)
+    mutated['last_modified'] = 999
+    mutated['authors'][0]['id'] = -1
+    mutated['authors'][0]['client_ids'] = ['a']
+    mutated['authors'][0]['link'] = ''
+    mutated['series']['client_ids'] = ['1']
+    mutated['cover']['cover_url'] = 'https://example.org/c2.jpg'
+
+    assert worker._compute_metadata_signature(mutated, format_cache, 'sha256:cover') == base_hash
 
 
 def test_write_custom_columns_skips_when_values_equal(monkeypatch):

@@ -244,4 +244,42 @@ class SyncLimitsTest extends TestCase
                 'error' => 'Limite storage raggiunto',
             ]);
     }
+
+    public function test_sync_rejects_when_storage_limit_zero(): void
+    {
+        Config::set('subscription.tiers.free.max_storage_mb', 0);
+
+        $user = User::factory()->create(['subscription_tier' => 'free']);
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/sync', [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'create',
+                    'item' => [
+                        'id' => 900,
+                        'uuid' => (string) Str::uuid(),
+                        'title' => 'Zero Limit',
+                        'authors' => ['Test Author'],
+                        'files' => [
+                            [
+                                'format' => 'EPUB',
+                                'uncompressed_size' => 1,
+                            ],
+                        ],
+                    ],
+                    'idempotency_key' => 'test-key-6',
+                ],
+            ],
+            'client_cursor' => null,
+        ]);
+
+        $response->assertStatus(403)
+            ->assertJson([
+                'error' => 'Limite storage raggiunto',
+            ]);
+    }
 }

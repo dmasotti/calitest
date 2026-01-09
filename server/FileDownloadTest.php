@@ -96,6 +96,43 @@ class FileDownloadTest extends TestCase
         $response->assertHeader('content-disposition', 'attachment; filename=local-test.epub');
     }
 
+    public function test_streams_local_file_uses_derived_filename_when_name_missing()
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $userBook = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'title' => 'Derived Title',
+        ]);
+
+        $filePath = 'ebooks/derived-file.epub';
+        $fileContents = str_repeat('b', 512);
+        Storage::disk('local')->put($filePath, $fileContents);
+        $fileHash = hash('sha256', $fileContents);
+
+        BookFile::factory()->create([
+            'book' => $userBook->uuid,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'format' => 'EPUB',
+            'file_path' => $filePath,
+            'storage_key' => '',
+            'is_uploaded' => true,
+            'file_hash' => $fileHash,
+            'name' => '',
+            'uuid' => Str::uuid()->toString(),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->get(route('files.ebook.download', ['userBook' => $userBook->uuid]) . '?format=epub');
+
+        $response->assertOk();
+        $this->assertStringContainsString('Derived Title.epub', $response->headers->get('content-disposition'));
+    }
+
     public function test_download_missing_file_marks_missing_flag()
     {
         Storage::fake('local');

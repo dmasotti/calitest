@@ -11,10 +11,28 @@ set -euo pipefail
 
 # Auto-load local test env if present
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PRE_APP_PASS="${APP_PASS:-}"
+PRE_OPDS_PASS="${OPDS_PASS:-}"
+PRE_USER="${USER:-}"
+PRE_PASS="${PASS:-}"
 if [[ -f "$SCRIPT_DIR/../server/.env" ]]; then
   set -a
   source "$SCRIPT_DIR/../server/.env"
   set +a
+fi
+if [[ -n "$PRE_APP_PASS" ]]; then
+  APP_PASS="$PRE_APP_PASS"
+  export APP_PASS
+fi
+if [[ -n "$PRE_OPDS_PASS" ]]; then
+  OPDS_PASS="$PRE_OPDS_PASS"
+  export OPDS_PASS
+fi
+if [[ -n "$PRE_USER" ]]; then
+  USER="$PRE_USER"
+fi
+if [[ -n "$PRE_PASS" ]]; then
+  PASS="$PRE_PASS"
 fi
 
 # Configuration

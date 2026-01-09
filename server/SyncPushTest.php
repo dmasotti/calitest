@@ -199,6 +199,48 @@ class SyncPushTest extends TestCase
         $this->assertNull($book->status);
     }
 
+    public function test_sync_preserves_client_last_modified_on_update(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        Sanctum::actingAs($user);
+
+        $book = UserBook::create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'uuid' => (string) Str::uuid(),
+            'id' => 500,
+            'title' => 'Client Timestamp Book',
+            'last_modified' => now()->subDay(),
+        ]);
+
+        $clientTs = now()->subHours(2)->timestamp;
+
+        $payload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'update',
+                    'item' => [
+                        'id' => $book->id,
+                        'uuid' => $book->uuid,
+                        'title' => 'Client Timestamp Book',
+                        'authors' => [['name' => 'Tester', 'role' => 'author']],
+                        'last_modified' => $clientTs,
+                    ],
+                    'idempotency_key' => 'client-last-modified',
+                ],
+            ],
+        ];
+
+        $this->postJson('/api/sync', $payload)
+            ->assertStatus(200);
+
+        $book->refresh();
+        $this->assertSame($clientTs, $book->last_modified->timestamp);
+    }
+
     public function test_conflict_creates_record_and_api_lists_it(): void
     {
         $user = User::factory()->create();

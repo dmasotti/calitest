@@ -181,6 +181,14 @@ if 'PyQt5' not in sys.modules:
     sys.modules['PyQt5.QtCore'] = qt_module
     sys.modules['PyQt5.QtWidgets'] = qt_module
 
+# Ensure newer widgets exist even if PyQt5 stubs were created earlier (pytest re-entry).
+try:
+    qt_mod = sys.modules.get('PyQt5.Qt')
+    if qt_mod is not None and not hasattr(qt_mod, 'QSpinBox'):
+        qt_mod.QSpinBox = type('QSpinBox', (), {})
+except Exception:
+    pass
+
 # Minimal qt.core shim (Calibre bundles qt.core on some installs).
 if 'qt' not in sys.modules:
     qt_pkg = types.ModuleType('qt')
@@ -198,6 +206,15 @@ if 'qt.core' not in sys.modules:
                 continue
             setattr(qt_core, name, getattr(qt_core_stub, name))
     sys.modules['qt.core'] = qt_core
+else:
+    qt_core = sys.modules.get('qt.core')
+
+# Ensure qt.core also exposes QSpinBox
+try:
+    if qt_core is not None and not hasattr(qt_core, 'QSpinBox'):
+        qt_core.QSpinBox = getattr(sys.modules.get('PyQt5.Qt'), 'QSpinBox', type('QSpinBox', (), {}))
+except Exception:
+    pass
 
 # Provide minimal calibre_plugins stubs for patching config
 if 'calibre_plugins' not in sys.modules:

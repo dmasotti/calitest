@@ -49,6 +49,66 @@ class BookFileSyncTest extends TestCase
         ]);
     }
 
+    public function test_registers_files_when_name_matches_temp_path_uses_friendly_filename()
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $userBook = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'title' => 'Temp Path Book',
+        ]);
+
+        $handler = app(BookMetadataHandler::class);
+        $handler->applyBookMetadata($userBook, [
+            'files' => [
+                [
+                    'format' => 'epub',
+                    'name' => 'tmp12345.epub',
+                    'file_path' => '/tmp/calibre/tmp12345.epub',
+                    'file_hash' => 'sha256:abcdef1234567890',
+                    'storage_key' => 'ebooks/calibre/tmp12345.epub',
+                    'storage_provider' => 'r2',
+                ],
+            ],
+        ], $user, $library->id);
+
+        $file = BookFile::where('book', $userBook->uuid)
+            ->where('format', 'EPUB')
+            ->firstOrFail();
+
+        $this->assertSame('Temp Path Book.epub', $file->name);
+    }
+
+    public function test_registers_files_without_name_derives_friendly_filename()
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $userBook = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'title' => 'Derived Title',
+        ]);
+
+        $handler = app(BookMetadataHandler::class);
+        $handler->applyBookMetadata($userBook, [
+            'files' => [
+                [
+                    'format' => 'epub',
+                    'file_hash' => 'sha256:abcdef1234567890',
+                    'storage_key' => 'ebooks/derived-title.epub',
+                    'storage_provider' => 'r2',
+                ],
+            ],
+        ], $user, $library->id);
+
+        $file = BookFile::where('book', $userBook->uuid)
+            ->where('format', 'EPUB')
+            ->firstOrFail();
+
+        $this->assertSame('Derived Title.epub', $file->name);
+    }
+
     public function test_registers_files_without_storage_key_sets_provider_and_flags_missing()
     {
         $user = User::factory()->create();

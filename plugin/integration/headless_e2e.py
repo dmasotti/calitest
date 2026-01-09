@@ -190,13 +190,15 @@ def main():
             'calimobLibraryName': 'Headless E2E'
         }
         data['LibraryMappings'] = lm
-        store = data.get('Goodreads', {})
-        store['discoveryUrl'] = env['CALIMOB_DISCOVERY_URL']
-        store['restToken'] = token
-        store.pop('deviceToken', None)
-        store.pop('restEndpoint', None)
-        store.pop('discoveryCache', None)
-        data['Goodreads'] = store
+        for store_key in ('Caliweb', 'Goodreads'):
+            store = data.get(store_key, {})
+            store['discoveryUrl'] = env['CALIMOB_DISCOVERY_URL']
+            store['restToken'] = token
+            # Keep restEndpoint explicit so CLI can hit API without UI discovery
+            store['restEndpoint'] = api_url.rstrip('/')
+            store.pop('deviceToken', None)
+            store.pop('discoveryCache', None)
+            data[store_key] = store
         with open(cfg_path, 'w') as f:
             json.dump(data, f, indent=2, sort_keys=True)
         _install_plugin(tmp_cfg, env['ROOT'], env['CALIBRE_CUSTOMIZE'])
@@ -219,8 +221,12 @@ def main():
         out_inc = _run_cli(tmp_cfg, env, full_sync=False)
         summary_inc = _extract_json(out_inc)
         if summary_inc.get('pull', {}).get('errors'):
+            sys.stderr.write('incremental pull errors: %s\n' % json.dumps(summary_inc.get('pull')))
+            sys.stderr.write('incremental output tail:\n%s\n' % out_inc[-2000:])
             raise AssertionError('incremental: pull errors')
         if summary_inc.get('push', {}).get('errors'):
+            sys.stderr.write('incremental push errors: %s\n' % json.dumps(summary_inc.get('push')))
+            sys.stderr.write('incremental output tail:\n%s\n' % out_inc[-2000:])
             raise AssertionError('incremental: push errors')
         _require_inventory(summary_inc.get('pull', {}), 'inventory_hint')
 

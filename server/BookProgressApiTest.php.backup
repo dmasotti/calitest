@@ -1,0 +1,178 @@
+<?php
+
+namespace Tests\Server;
+
+use Tests\TestCase;
+use App\Models\User;
+use App\Models\UserBook;
+use App\Models\Device;
+use App\Models\BookDeviceProgress;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+
+class BookProgressApiTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected User $user;
+    protected UserBook $book;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        
+        $this->user = User::factory()->create();
+        $this->book = UserBook::factory()->create([
+            'user_id' => $this->user->id,
+        ]);
+    }
+
+    /** @test */
+    public function it_can_create_progress_for_new_device_and_format()
+    {
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/books/{$this->book->uuid}/progress", [
+                'format' => 'EPUB',
+                'progress' => 25.5,
+                'position' => ['cfi' => 'epubcfi(/6/4!/4/2/1:0)'],
+                'reading_time' => 120,
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'success',
+                'data' => [
+                    'progress',
+                    'position',
+                    'device_id',
+                ],
+            ]);
+
+        $this->assertDatabaseHas('books_devices_progress', [
+            'user_id' => $this->user->id,
+            'book_uuid' => $this->book->uuid,
+            'format' => 'EPUB',
+            'progress' => 25.5,
+        ]);
+
+        $this->assertDatabaseHas('devices', [
+            'user_id' => $this->user->id,
+            'device_name' => 'Web Browser',
+        ]);
+    }
+
+    /** @test */
+    public function it_can_update_existing_progress()
+    {
+        $device = Device::factory()->create([
+            'user_id' => $this->user->id,
+            'device_name' => 'Web Browser',
+        ]);
+
+        BookDeviceProgress::create([
+            'user_id' => $this->user->id,
+            'device_id' => $device->id,
+            'book_uuid' => $this->book->uuid,
+            'format' => 'EPUB',
+            'progress' => 10.0,
+            'last_position' => json_encode(['cfi' => 'old']),
+            'total_reading_time' => 60,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/books/{$this->book->uuid}/progress", [
+                'format' => 'EPUB',
+                'progress' => 30.0,
+                'position' => ['cfi' => 'epubcfi(/6/8!/4/2/1:0)'],
+                'reading_time' => 180,
+            ]);
+
+        $response->assertStatus(200);
+
+        $this->assertDatabaseHas('books_devices_progress', [
+            'user_id' => $this->user->id,
+            'book_uuid' => $this->book->uuid,
+            'format' => 'EPUB',
+            'progress' => 30.0,
+            'total_reading_time' => 240, // 60 + 180
+        ]);
+    }
+
+    /** @test */
+    public function it_tracks_different_formats_separately()
+    {
+        $device = Device::factory()->create([
+            'user_id' => $this->user->id,
+        ]);
+
+        // Create progress for EPUB
+        $this->actingAs($this->user)
+            ->postJson("/api/books/{$this->book->uuid}/progress", [
+                'format' => 'EPUB',
+                'progress' => 50.0,
+                'position' => ['cfi' => 'epub_position'],
+                'reading_time' => 100,
+            ]);
+
+        // Create progress for PDF
+        $this->actingAs($this->user)
+            ->postJson("/api/books/{$this->book->uuid}/progress", [
+                'format' => 'PDF',
+                'progress' => 70.0,
+                'position' => ['page' => 42],
+                'reading_time' => 150,
+            ]);
+
+        // Both should exist separately
+        $this->assertDatabaseHas('books_devices_progress', [
+            'book_uuid' => $this->book->uuid,
+            'format' => 'EPUB',
+            'progress' => 50.0,
+        ]);
+
+        $this->assertDatabaseHas('books_devices_progress', [
+            'book_uuid' => $this->book->uuid,
+            'format' => 'PDF',
+            'progress' => 70.0,
+        ]);
+    }
+
+    /** @test */
+    public function it_requires_authentication()
+    {
+        $this->withoutMiddleware(\App\Http\Middleware\VerifyCsrfToken::class);
+        
+        $response = $this->postJson("/api/books/{$this->book->uuid}/progress", [
+            'format' => 'EPUB',
+            'progress' => 25.5,
+        ]);
+
+        $response->assertStatus(401);
+    }
+
+    /** @test */
+    public function it_validates_required_fields()
+    {
+        $this->withoutMiddleware(\App\Http\Middleware\VerifyCsrfToken::class);
+        
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/books/{$this->book->uuid}/progress", []);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['format', 'progress']);
+    }
+
+    /** @test */
+    public function it_validates_progress_range()
+    {
+        $this->withoutMiddleware(\App\Http\Middleware\VerifyCsrfToken::class);
+        
+        $response = $this->actingAs($this->user)
+            ->postJson("/api/books/{$this->book->uuid}/progress", [
+                'format' => 'EPUB',
+                'progress' => 150, // Invalid: > 100
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['progress']);
+    }
+}

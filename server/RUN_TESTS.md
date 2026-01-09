@@ -8,7 +8,7 @@
 2. Factory create per: User, Library, UserBook, BookFile, Device (in `html/database/factories/`)
 3. Config `subscription.php` presente (in `html/config/`)
 4. `phpunit.xml` nella root del progetto che punta a `html/` per Laravel
-5. **Utenti test presenti nel DB** (vedi `tests/server/.env`)
+5. **Utenti test presenti nel DB** (default: `dmasotti+test1@gmail.com` / `firstsecret`)
 
 ## Struttura
 
@@ -116,6 +116,8 @@ php artisan user:create dmasotti+test1@gmail.com --password=firstsecret
 php artisan user:create dmasotti+test2@gmail.com --password=secondsecret
 ```
 
+Nota: questi utenti sono quelli usati nei test headless/E2E. Se non esistono, il login fallisce.
+
 ### Tutti i test server
 ```bash
 # Dalla root del progetto
@@ -208,7 +210,14 @@ set -a; source html/.env; set +a; ./html/vendor/bin/phpunit -c phpunit.xml --tes
 - Test upgrade subscription
 - Test flussi completi
 
-**Totale: ~69 test**
+### 14. BookProgressTrackingTest (10 test)
+- Test API progress tracking
+- Test device-specific progress
+- Test format-specific progress
+- Test max progress calculation
+- Test reading time tracking
+
+**Totale: ~79 test**
 
 ## Troubleshooting
 

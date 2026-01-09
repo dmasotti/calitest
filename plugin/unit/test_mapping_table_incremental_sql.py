@@ -122,3 +122,8 @@ def test_destructive_rebuild_drops_legacy_columns(tmp_path):
     assert 'last_modified_server' in cols
 
 
+
+
+
+
+

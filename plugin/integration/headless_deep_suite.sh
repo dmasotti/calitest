@@ -111,13 +111,14 @@ lm["$CALIMOB_LIBRARY_ID"] = {
     "calimobLibraryName": "Deep Suite",
 }
 data["LibraryMappings"] = lm
-store = data.get("Goodreads", {})
-store["discoveryUrl"] = "$CALIMOB_DISCOVERY_URL"
-store["restToken"] = "$TOKEN"
-store.pop("deviceToken", None)
-store.pop("restEndpoint", None)
-store.pop("discoveryCache", None)
-data["Goodreads"] = store
+for key in ("Caliweb", "Goodreads"):
+    store = data.get(key, {})
+    store["discoveryUrl"] = "$CALIMOB_DISCOVERY_URL"
+    store["restToken"] = "$TOKEN"
+    store["restEndpoint"] = "$API_URL"
+    store.pop("deviceToken", None)
+    store.pop("discoveryCache", None)
+    data[key] = store
 with open(cfg_path, "w") as f:
     json.dump(data, f, indent=2, sort_keys=True)
 PY

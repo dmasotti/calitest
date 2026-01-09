@@ -120,7 +120,7 @@ php artisan test --testsuite=Server --coverage-html=coverage
 - Database configurato in `html/.env` (non usare la connessione di default del sistema).
 - Factory per: User, Library, UserBook, BookFile, Device
 - Config `subscription.php` caricato
-- **Utenti test** già presenti nel database (vedi `tests/server/.env` per le credenziali).
+- **Utenti test** già presenti nel database (default: `dmasotti+test1@gmail.com` / `firstsecret`).
 
 ### Nota su .env
 Per allineare l’esecuzione locale al setup reale, carica `html/.env` prima di lanciare PHPUnit:
@@ -142,6 +142,8 @@ Se mancano, crearli con:
 php artisan user:create dmasotti+test1@gmail.com --password=firstsecret
 php artisan user:create dmasotti+test2@gmail.com --password=secondsecret
 ```
+
+Questi utenti sono quelli usati dagli script di test/headless: se non esistono, i test falliscono al login.
 
 ## Note
 

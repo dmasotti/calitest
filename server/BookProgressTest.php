@@ -4,10 +4,10 @@ namespace Tests\Server;
 
 use Tests\TestCase;
 use App\Models\User;
-use App\Models\Book;
+use App\Models\UserBook;
 use App\Models\Library;
 use App\Models\Device;
-use App\Models\BooksDevicesProgress;
+use App\Models\BookDeviceProgress;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class BookProgressTest extends TestCase
@@ -16,7 +16,7 @@ class BookProgressTest extends TestCase
 
     private User $user;
     private Library $library;
-    private Book $book;
+    private UserBook $book;
 
     protected function setUp(): void
     {
@@ -24,7 +24,7 @@ class BookProgressTest extends TestCase
 
         $this->user = User::factory()->create();
         $this->library = Library::factory()->create(['user_id' => $this->user->id]);
-        $this->book = Book::factory()->create([
+        $this->book = UserBook::factory()->create([
             'user_id' => $this->user->id,
             'library_id' => $this->library->id,
         ]);

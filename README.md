@@ -78,6 +78,8 @@ export TEST_USER_PASSWORD="your-password"
 ./tests/run_all_tests.sh
 ```
 
+> 📦 `tests/run_all_tests.sh` già include: creazione/verifica degli utenti, generazione dell’app-password OPDS, esecuzione dei test OPDS, delle suite server PHPUnit e delle suite plugin; è lo script “tutto-in-uno” consigliato per verificare l’intera piattaforma.
+
 **Nota:** `run_all_tests.sh` ora include anche la **suite PHPUnit Server**.
 
 ### Run Individual Test Suites
