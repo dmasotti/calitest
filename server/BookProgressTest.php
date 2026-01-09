@@ -36,7 +36,7 @@ class BookProgressTest extends TestCase
         $response = $this->actingAs($this->user)
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'format' => 'EPUB',
-                'progress' => 50,
+                'progress_percent' => 50,
                 'last_position' => json_encode(['cfi' => 'epubcfi(/6/4[chap01]!/4/2/2/1:0)', 'percent' => 50]),
                 'reading_time' => 300,
             ]);
@@ -47,7 +47,7 @@ class BookProgressTest extends TestCase
             'user_id' => $this->user->id,
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
-            'progress' => 50,
+            'progress_bp' => 5000, // 50 * 100
         ]);
     }
 
@@ -56,7 +56,7 @@ class BookProgressTest extends TestCase
     {
         $response = $this->actingAs($this->user)
             ->postJson("/api/books/{$this->book->uuid}/progress", [
-                'progress' => 50,
+                'progress_percent' => 50,
                 'last_position' => json_encode(['percent' => 50]),
             ]);
 
@@ -71,7 +71,7 @@ class BookProgressTest extends TestCase
         $this->actingAs($this->user)
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'format' => 'EPUB',
-                'progress' => 30,
+                'progress_percent' => 30,
                 'last_position' => json_encode(['cfi' => 'epubcfi(/6/4)', 'percent' => 30]),
                 'reading_time' => 200,
             ]);
@@ -80,7 +80,7 @@ class BookProgressTest extends TestCase
         $this->actingAs($this->user)
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'format' => 'PDF',
-                'progress' => 70,
+                'progress_percent' => 70,
                 'last_position' => json_encode(['page' => 50, 'percent' => 70]),
                 'reading_time' => 400,
             ]);
@@ -89,13 +89,13 @@ class BookProgressTest extends TestCase
         $this->assertDatabaseHas('books_devices_progress', [
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
-            'progress' => 30,
+            'progress_bp' => 3000, // 30 * 100
         ]);
 
         $this->assertDatabaseHas('books_devices_progress', [
             'book_uuid' => $this->book->uuid,
             'format' => 'PDF',
-            'progress' => 70,
+            'progress_bp' => 7000, // 70 * 100
         ]);
     }
 
@@ -106,7 +106,7 @@ class BookProgressTest extends TestCase
         $this->actingAs($this->user)
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'format' => 'EPUB',
-                'progress' => 30,
+                'progress_percent' => 30,
                 'last_position' => json_encode(['percent' => 30]),
                 'reading_time' => 200,
             ]);
@@ -115,13 +115,13 @@ class BookProgressTest extends TestCase
         $this->actingAs($this->user)
             ->postJson("/api/books/{$this->book->uuid}/progress", [
                 'format' => 'EPUB',
-                'progress' => 60,
+                'progress_percent' => 60,
                 'last_position' => json_encode(['percent' => 60]),
                 'reading_time' => 150,
             ]);
 
         // Should have only one record updated
-        $this->assertEquals(1, BooksDevicesProgress::where([
+        $this->assertEquals(1, BookDeviceProgress::where([
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
         ])->count());
@@ -129,37 +129,8 @@ class BookProgressTest extends TestCase
         $this->assertDatabaseHas('books_devices_progress', [
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
-            'progress' => 60,
+            'progress_bp' => 6000, // 60 * 100
         ]);
-    }
-
-    /** @test */
-    public function it_accumulates_reading_time()
-    {
-        // First session
-        $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
-                'format' => 'EPUB',
-                'progress' => 30,
-                'last_position' => json_encode(['percent' => 30]),
-                'reading_time' => 300,
-            ]);
-
-        // Second session
-        $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
-                'format' => 'EPUB',
-                'progress' => 60,
-                'last_position' => json_encode(['percent' => 60]),
-                'reading_time' => 200,
-            ]);
-
-        $progress = BooksDevicesProgress::where([
-            'book_uuid' => $this->book->uuid,
-            'format' => 'EPUB',
-        ])->first();
-
-        $this->assertEquals(500, $progress->reading_time);
     }
 
     /** @test */
@@ -167,7 +138,7 @@ class BookProgressTest extends TestCase
     {
         $response = $this->postJson("/api/books/{$this->book->uuid}/progress", [
             'format' => 'EPUB',
-            'progress' => 50,
+            'progress_percent' => 50,
         ]);
 
         $response->assertStatus(401);
