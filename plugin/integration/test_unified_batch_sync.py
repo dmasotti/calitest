@@ -302,6 +302,58 @@ class TestUnifiedBatchSync(unittest.TestCase):
         # Verify cursor saved after each batch
         cursor_calls = [call[0][0] for call in self.worker.save_cursor.call_args_list]
         self.assertEqual(cursor_calls, ['cursor-batch1', 'cursor-batch2', 'cursor-batch3'])
+
+    def test_checkpoint_cursor_after_apply(self):
+        """Test pull cursor is checkpointed immediately after APPLY."""
+        batch_response = {
+            'changes': [
+                {'op': 'update', 'item': {'id': 1, 'uuid': 'uuid-1', 'title': 'Book 1'}},
+            ],
+            'conflicts': [],
+            'new_cursor': 'cursor-after-apply',
+            'has_more': False,
+            'total_books': 100
+        }
+        self.mock_client.post_sync_pull.return_value = batch_response
+        self.worker.save_pull_cursor = Mock()
+        # Force push to fail so we only check the checkpoint side-effect
+        self.worker.push_sync = Mock(side_effect=Exception('Push failed'))
+
+        summary = self.worker.sync_unified_batches(batch_size=50)
+
+        self.worker.save_pull_cursor.assert_called_with('cursor-after-apply')
+        self.assertTrue(summary.get('errors'))
+
+    def test_no_repeat_download_when_cached(self):
+        """Test cover/file download is skipped when cached locally."""
+        batch_response = {
+            'changes': [
+                {
+                    'op': 'update',
+                    'item': {
+                        'id': 1,
+                        'uuid': 'uuid-1',
+                        'title': 'Book 1',
+                        'cover': {'has_cover': True},
+                        'files': [{'format': 'EPUB', 'file_hash': 'sha256:abc'}],
+                    }
+                },
+            ],
+            'conflicts': [],
+            'new_cursor': 'cursor-final',
+            'has_more': False,
+            'total_books': 100
+        }
+        self.mock_client.post_sync_pull_v4.return_value = batch_response
+        self.worker._should_download_cover = Mock(return_value=False)
+        self.worker._should_download_file = Mock(return_value=False)
+        self.worker._download_covers_parallel = Mock()
+        self.worker._download_ebooks_parallel = Mock()
+
+        self.worker.sync_unified_batches(batch_size=50, use_v4=True)
+
+        self.worker._download_covers_parallel.assert_not_called()
+        self.worker._download_ebooks_parallel.assert_not_called()
     
     def test_total_errors_in_summary(self):
         """Test total_errors is populated for UI error detection."""

@@ -47,6 +47,8 @@ def _get_env():
     env['CALIBRE_DEBUG'] = os.environ.get('CALIBRE_DEBUG', '/Applications/calibre.app/Contents/MacOS/calibre-debug')
     env['CALIBRE_CUSTOMIZE'] = os.environ.get('CALIBRE_CUSTOMIZE', '/Applications/calibre.app/Contents/MacOS/calibre-customize')
     env['CALIMOB_RUN_FULL'] = os.environ.get('CALIMOB_RUN_FULL', '')
+    env['CALIMOB_USE_V4'] = os.environ.get('CALIMOB_USE_V4', '')
+    env['CALIMOB_SIMULATE_CRASH_AFTER_APPLY'] = os.environ.get('CALIMOB_SIMULATE_CRASH_AFTER_APPLY', '')
     return env
 
 
@@ -142,13 +144,15 @@ def _run_cli(tmp_cfg, env, full_sync=False):
     ]
     if full_sync:
         cmd.append('--full-sync')
+    if env.get('CALIMOB_USE_V4'):
+        cmd.append('--v4')
+    if env.get('CALIMOB_SIMULATE_CRASH_AFTER_APPLY'):
+        cmd.append('--simulate-crash-after-apply')
 
     proc_env = os.environ.copy()
     proc_env['CALIBRE_CONFIG_DIRECTORY'] = tmp_cfg
     res = _run(cmd, env=proc_env)
-    if res.returncode != 0:
-        raise RuntimeError('calibre-debug exit=%d\n%s' % (res.returncode, res.stdout[:400]))
-    return res.stdout
+    return res
 
 
 def _require_inventory(block, label):
@@ -173,6 +177,8 @@ def main():
         _skip('calibre-customize not found at %s' % env['CALIBRE_CUSTOMIZE'])
 
     env['ROOT'] = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+    if env.get('CALIMOB_USE_V4'):
+        sys.stderr.write('INFO: CALIMOB_USE_V4=1 (running sync V4)\n')
     api_url = _discover_api_url(env['CALIMOB_DISCOVERY_URL'])
     token = _login(api_url, env['TEST_USER_EMAIL'], env['TEST_USER_PASSWORD'])
 
@@ -210,16 +216,24 @@ def main():
         prev_cursor = mapping.get('lastSyncCursor') or mapping.get('lastPullCursor')
 
         if env['CALIMOB_RUN_FULL']:
-            out_full = _run_cli(tmp_cfg, env, full_sync=True)
-            summary_full = _extract_json(out_full)
+            res_full = _run_cli(tmp_cfg, env, full_sync=True)
+            if res_full.returncode != 0:
+                raise RuntimeError('calibre-debug exit=%d\n%s' % (res_full.returncode, res_full.stdout[:400]))
+            summary_full = _extract_json(res_full.stdout)
+            if env.get('CALIMOB_USE_V4'):
+                assert_true(summary_full.get('sync_version') == 'v4', 'expected sync_version=v4 (full)')
             if summary_full.get('pull', {}).get('errors'):
                 raise AssertionError('full sync: pull errors')
             if summary_full.get('push', {}).get('errors'):
                 raise AssertionError('full sync: push errors')
             _require_inventory(summary_full.get('pull', {}), 'inventory')
 
-        out_inc = _run_cli(tmp_cfg, env, full_sync=False)
-        summary_inc = _extract_json(out_inc)
+        res_inc = _run_cli(tmp_cfg, env, full_sync=False)
+        if res_inc.returncode != 0:
+            raise RuntimeError('calibre-debug exit=%d\n%s' % (res_inc.returncode, res_inc.stdout[:400]))
+        summary_inc = _extract_json(res_inc.stdout)
+        if env.get('CALIMOB_USE_V4'):
+            assert_true(summary_inc.get('sync_version') == 'v4', 'expected sync_version=v4 (incremental)')
         if summary_inc.get('pull', {}).get('errors'):
             sys.stderr.write('incremental pull errors: %s\n' % json.dumps(summary_inc.get('pull')))
             sys.stderr.write('incremental output tail:\n%s\n' % out_inc[-2000:])
@@ -238,6 +252,30 @@ def main():
         new_ts = _decode_cursor(new_cursor)
         if prev_ts is not None and new_ts is not None and new_ts < prev_ts:
             raise AssertionError('cursor regressed: %s -> %s' % (prev_cursor, new_cursor))
+
+        # Optional crash/resume test for V4
+        if os.environ.get('CALIMOB_CRASH_RESUME_V4'):
+            crash_env = dict(env)
+            crash_env['CALIMOB_USE_V4'] = '1'
+            crash_env['CALIMOB_SIMULATE_CRASH_AFTER_APPLY'] = '1'
+            crash_res = _run_cli(tmp_cfg, crash_env, full_sync=False)
+            if crash_res.returncode == 0:
+                raise AssertionError('Expected simulated crash to return non-zero')
+
+            crashed = json.load(open(cfg_path, 'r'))
+            crashed_mapping = crashed.get('LibraryMappings', {}).get(env['CALIMOB_LIBRARY_ID'], {})
+            pull_cursor = crashed_mapping.get('lastPullCursor')
+            if not pull_cursor:
+                raise AssertionError('Expected lastPullCursor set after apply checkpoint')
+
+            # Resume without crash flag
+            resume_env = dict(env)
+            resume_env['CALIMOB_USE_V4'] = '1'
+            resume_env.pop('CALIMOB_SIMULATE_CRASH_AFTER_APPLY', None)
+            resume_res = _run_cli(tmp_cfg, resume_env, full_sync=False)
+            if resume_res.returncode != 0:
+                raise RuntimeError('resume exit=%d\n%s' % (resume_res.returncode, resume_res.stdout[:400]))
+            _extract_json(resume_res.stdout)
 
         print('PASS: headless E2E scenarios')
     finally:

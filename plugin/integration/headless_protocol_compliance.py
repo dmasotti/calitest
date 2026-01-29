@@ -97,6 +97,14 @@ def main():
     assert_true("new_cursor" in pull, "Pull response missing new_cursor")
     assert_true("inventory" in pull, "Pull response missing inventory")
 
+    # 1b) V4 pull with client_hashes should succeed (no strict assertions on content)
+    v4_pull = client.post_sync_pull_v4(
+        calibre_library_uuid=cal_lib_uuid,
+        include_inventory=True,
+        client_hashes={}
+    )
+    assert_true("new_cursor" in v4_pull, "V4 pull missing new_cursor")
+
     # 2) Create book (UUID-only)
     now = int(time.time())
     book_uuid = str(uuid.uuid4())
