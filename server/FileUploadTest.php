@@ -15,6 +15,12 @@ class FileUploadTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['filesystems.ebook_storage.enabled' => false]);
+    }
+
     public function test_file_upload_endpoint_marks_file_uploaded()
     {
         Storage::fake('local');
@@ -304,5 +310,98 @@ class FileUploadTest extends TestCase
 
         $this->assertSame($userBook->uuid, $file->book);
         $this->assertNotEmpty($file->uuid);
+    }
+
+    public function test_file_upload_with_invalid_utf8_filename_does_not_500()
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $userBook = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+
+        // Intentionally invalid UTF-8 bytes in header value (ISO-8859-1 bytes)
+        $badName = "Asesinato en el coraz\xF3n Jersusal\xE9n.epub";
+        $content = 'utf8 header robustness payload';
+        $hash = hash('sha256', $content);
+
+        $response = $this->actingAs($user)
+            ->call('PUT', route('api.items.file.upload.uuid', [
+                'uuid' => $userBook->uuid,
+                'format' => 'epub',
+                'calibre_library_uuid' => $library->calibre_library_id,
+            ]), [], [], [], [
+                'CONTENT_TYPE' => 'application/octet-stream',
+                'HTTP_X_FILE_HASH' => 'sha256:' . $hash,
+                'HTTP_X_FILE_NAME' => $badName,
+            ], $content);
+
+        // Server must not crash with "Malformed UTF-8" and should return JSON
+        $response->assertStatus(200);
+        $response->assertJsonStructure(['format', 'file_hash', 'storage_key']);
+    }
+
+    public function test_file_upload_preserves_client_last_modified()
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        
+        // Set a specific last_modified timestamp
+        $clientTimestamp = strtotime('2025-02-20 14:45:00');
+        $userBook = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'last_modified' => date('Y-m-d H:i:s', $clientTimestamp),
+        ]);
+
+        BookFile::factory()->create([
+            'book' => $userBook->uuid,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'format' => 'EPUB',
+            'storage_provider' => 'local',
+            'storage_key' => '',
+            'file_path' => '',
+            'file_hash' => '',
+            'is_uploaded' => false,
+            'needs_file_upload' => true,
+            'file_missing' => true,
+        ]);
+
+        $content = 'test file content';
+        $hash = hash('sha256', $content);
+
+        // Upload file with X-Last-Modified header
+        $response = $this->actingAs($user)
+            ->call('PUT', route('api.items.file.upload.uuid', [
+                'uuid' => $userBook->uuid,
+                'format' => 'epub',
+                'calibre_library_uuid' => $library->calibre_library_id,
+            ]), [], [], [], [
+                'CONTENT_TYPE' => 'application/octet-stream',
+                'HTTP_X_FILE_HASH' => 'sha256:' . $hash,
+                'HTTP_X_FILE_NAME' => 'test.epub',
+                'HTTP_X_LAST_MODIFIED' => (string) $clientTimestamp,
+            ], $content);
+
+        $response->assertOk();
+
+        // Verify last_modified was preserved (not updated to now())
+        $userBook->refresh();
+        $savedTimestamp = strtotime($userBook->last_modified);
+        
+        // Should match client timestamp (within 1 second tolerance)
+        $this->assertEqualsWithDelta($clientTimestamp, $savedTimestamp, 1, 
+            'Server should preserve client last_modified timestamp');
+        
+        // Should NOT be close to now()
+        $now = time();
+        $this->assertGreaterThan(10, abs($now - $savedTimestamp),
+            'Server should not update last_modified to now()');
     }
 }
