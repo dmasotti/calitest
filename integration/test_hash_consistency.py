@@ -213,6 +213,26 @@ TEST_CASES = [
         'cover_hash': None,
     },
     {
+        'name': 'book_with_rating_none',
+        'json_item': {
+            'uuid': '22e64593-ad21-492f-9534-26ede83bd4fc',
+            'title': 'Book with No Rating',
+            'authors': [
+                {'name': 'Test Author', 'role': 'author', 'position': 0},
+            ],
+            'series': None,
+            'identifiers': {},
+            'publisher': None,
+            'pubdate': 1722722400,
+            'languages': [],
+            'tags': [],
+            'rating': None,  # ← Critical: None should stay None, not become 0
+            'comments': None,
+        },
+        'format_cache': {},
+        'cover_hash': None,
+    },
+    {
         'name': 'book_with_identifiers',
         'json_item': {
             'uuid': 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
