@@ -99,11 +99,7 @@ def compute_python_hash(json_item, format_cache, cover_hash):
         # Remove ALL spaces
         normalized = normalized.replace(' ', '')
         
-        # Debug output for failed tests
-        if json_item.get('uuid') in ['b2c3d4e5-f6a7-8901-bcde-f12345678901', 'c3d4e5f6-a7b8-9012-cdef-123456789012']:
-            print(f"  Python normalized: {normalized[:200]}...")
-        
-        return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+        return normalized, hashlib.sha256(normalized.encode('utf-8')).hexdigest()
     except Exception as e:
         print(f"Python hash error: {e}")
         return None
@@ -119,12 +115,9 @@ require_once '{base_dir}/html/tests/Helpers/HashTestHelper.php';
 $input = json_decode(file_get_contents('php://stdin'), true);
 $hash = \\Tests\\Helpers\\HashTestHelper::computeSyncHashFromItem($input);
 
-// Debug output for specific UUIDs
-if (in_array($input['uuid'] ?? '', ['b2c3d4e5-f6a7-8901-bcde-f12345678901', 'c3d4e5f6-a7b8-9012-cdef-123456789012'])) {{
-    file_put_contents('php://stderr', "  PHP normalized: " . substr(json_encode($input), 0, 200) . "...\\n");
-}}
-
-echo $hash;
+// Also output normalized JSON for comparison
+$normalized = \\Tests\\Helpers\\HashTestHelper::getNormalizedJson($input);
+echo json_encode(['hash' => $hash, 'normalized' => $normalized]);
 """
     
     php_file = Path('/tmp/test_hash_server.php')
@@ -143,7 +136,8 @@ echo $hash;
     if result.stderr:
         print(result.stderr, end='')
     
-    return result.stdout.strip()
+    response = json.loads(result.stdout)
+    return response['normalized'], response['hash']
 
 
 # Test cases with different metadata scenarios
@@ -285,23 +279,47 @@ def test_hash_consistency():
         print(f"{'='*60}")
         
         # Compute Python hash
-        python_hash = compute_python_hash(json_item, format_cache, cover_hash)
+        python_normalized, python_hash = compute_python_hash(json_item, format_cache, cover_hash)
         print(f"Python hash: {python_hash}")
         
         # Compute PHP hash
-        php_hash = compute_php_hash(json_item)
+        php_normalized, php_hash = compute_php_hash(json_item)
         print(f"PHP hash:    {php_hash}")
         
-        # Compare
-        match = python_hash == php_hash
-        status = "✅ PASS" if match else "❌ FAIL"
+        # Compare hashes
+        hash_match = python_hash == php_hash
+        
+        # Compare normalized JSON
+        json_match = python_normalized == php_normalized
+        
+        status = "✅ PASS" if hash_match else "❌ FAIL"
         print(f"Result: {status}")
+        
+        # Show diff if failed
+        if not hash_match:
+            print(f"\n  JSON match: {'✅' if json_match else '❌'}")
+            if not json_match:
+                print(f"  Python JSON: {python_normalized[:150]}...")
+                print(f"  PHP JSON:    {php_normalized[:150]}...")
+                
+                # Find first difference
+                for i, (p, h) in enumerate(zip(python_normalized, php_normalized)):
+                    if p != h:
+                        start = max(0, i - 20)
+                        end = min(len(python_normalized), i + 20)
+                        print(f"  First diff at position {i}:")
+                        print(f"    Python: ...{python_normalized[start:end]}...")
+                        print(f"    PHP:    ...{php_normalized[start:end]}...")
+                        break
         
         results.append({
             'name': name,
             'python_hash': python_hash,
             'php_hash': php_hash,
-            'match': match,
+            'python_json': python_normalized,
+            'php_json': php_normalized,
+            'hash_match': hash_match,
+            'json_match': json_match,
         })
     
     # Summary
@@ -309,23 +327,25 @@ def test_hash_consistency():
     print("SUMMARY")
     print(f"{'='*60}")
     
-    passed = sum(1 for r in results if r['match'])
+    passed = sum(1 for r in results if r['hash_match'])
     total = len(results)
     
     for result in results:
-        status = "✅" if result['match'] else "❌"
+        status = "✅" if result['hash_match'] else "❌"
         print(f"{status} {result['name']}")
     
     print(f"\nPassed: {passed}/{total}")
     
     # Assert all passed
-    failed = [r for r in results if not r['match']]
+    failed = [r for r in results if not r['hash_match']]
     if failed:
         print("\n❌ FAILED TESTS:")
         for r in failed:
             print(f"  - {r['name']}")
-            print(f"    Python: {r['python_hash']}")
-            print(f"    PHP:    {r['php_hash']}")
+            print(f"    Python hash: {r['python_hash']}")
+            print(f"    PHP hash:    {r['php_hash']}")
+            if not r['json_match']:
+                print(f"    JSON mismatch detected")
         raise AssertionError(f"{len(failed)} test(s) failed")
     
     print("\n✅ All tests passed!")
