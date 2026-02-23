@@ -156,18 +156,19 @@ def compute_python_hash_OLD(json_item, format_cache, cover_hash):
 
 
 def compute_php_hash(metadata_item):
-    """Call PHP script to compute hash using server logic."""
+    """Call PHP script to compute hash using PRODUCTION MetadataHasher (no duplication)."""
     base_dir = Path(__file__).parent.parent.parent
     php_script = f"""<?php
 require_once '{base_dir}/html/vendor/autoload.php';
-require_once '{base_dir}/html/tests/Helpers/HashTestHelper.php';
+
+use App\\Services\\Sync\\MetadataHasher;
 
 $input = json_decode(file_get_contents('php://stdin'), true);
-$hash = \\Tests\\Helpers\\HashTestHelper::computeSyncHashFromItem($input);
 
-// Also output normalized JSON for comparison
-$normalized = \\Tests\\Helpers\\HashTestHelper::getNormalizedJson($input);
-echo json_encode(['hash' => $hash, 'normalized' => $normalized]);
+// Use PRODUCTION code directly (standalone, no dependencies)
+$hash = MetadataHasher::computeHash($input);
+
+echo json_encode(['hash' => $hash, 'normalized' => '']);
 """
     
     php_file = Path('/tmp/test_hash_server.php')
