@@ -1,0 +1,46 @@
+[
+  {
+    "uuid": "12e64593-ad21-492f-9534-26ede83bd4fb",
+    "json_item": {
+      "id": 18835,
+      "uuid": "12e64593-ad21-492f-9534-26ede83bd4fb",
+      "title": "Minimal Book",
+      "title_sort": "Minimal Book",
+      "author_sort": "Simmons, Dan & McCleery, Matthew & Corey, James S. A.",
+      "authors": [
+        {"name": "Dan Simmons", "role": "author", "position": 0},
+        {"name": "Matthew McCleery", "role": "author", "position": 1},
+        {"name": "Corey, James S. A.", "role": "author", "position": 2}
+      ],
+      "series": null,
+      "identifiers": {},
+      "publisher": null,
+      "pubdate": 1722722400,
+      "languages": [],
+      "tags": [],
+      "status": null,
+      "rating": 0,
+      "comments": null,
+      "edition": null,
+      "content_language": null,
+      "files": [
+        {"format": "EPUB", "file_hash": "c16f6dc6224c968bc50d5f7b75188dd6af1d6d669480c56420070045402335bb"}
+      ],
+      "cover": {"has_cover": "", "cover_hash": null, "cover_url": null},
+      "timestamps": {"created_at": 1771585403, "deleted_at": null},
+      "last_modified": 1771592936,
+      "source": {"client": "calibre", "client_library": "1685fd4f-054e-4451-9df8-119c27fc1289"},
+      "extra": [],
+      "progress_percent": null,
+      "favorite": false
+    },
+    "format_cache": {
+      "EPUB": {
+        "hash": "sha256:c16f6dc6224c968bc50d5f7b75188dd6af1d6d669480c56420070045402335bb",
+        "size": 3944286
+      }
+    },
+    "cover_hash": null,
+    "expected_hash": "60e18a744c77ce825e6730e65458c131594b147a62645ce2f13f57600234ca74"
+  }
+]
