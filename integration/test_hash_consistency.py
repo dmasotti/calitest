@@ -1,21 +1,71 @@
 """
 Integration test: Verify that PHP server and Python client compute identical metadata hashes.
 
-This test calls both the PHP server endpoint and the Python client method with the same
-metadata payload and verifies the hashes match.
+This test uses:
+- PHP: Real SyncService::computeSyncHashFromItem() via reflection
+- Python: sync_utils.compute_metadata_hash() (shared with sync_worker.py)
 """
 import json
 import subprocess
-import hashlib
-import copy
+import sys
 from pathlib import Path
+
+# Add sync_calimob to path
+sync_calimob_path = Path(__file__).parent.parent.parent / 'sync_calimob'
+sys.path.insert(0, str(sync_calimob_path))
+
+# Import sync_utils (no Calibre dependencies)
+import sync_utils
 
 
 def compute_python_hash(json_item, format_cache, cover_hash):
+    """Compute hash using REAL sync_utils code (same as sync_worker uses)."""
+    import copy
+    
+    hash_value = sync_utils.compute_metadata_hash(json_item, format_cache, cover_hash)
+    
+    # Get normalized JSON for comparison
+    metadata_snapshot = copy.deepcopy(json_item)
+    
+    for key in ('id', 'last_modified', 'version', 'last_modified_server', 'calibre_book_id'):
+        metadata_snapshot.pop(key, None)
+    metadata_snapshot.pop('files', None)
+    metadata_snapshot.pop('timestamps', None)
+    metadata_snapshot.pop('payload', None)
+    
+    for key in ('author_sort', 'title_sort', 'content_language', 'edition', 'extra',
+               'favorite', 'progress_percent', 'status', 'source'):
+        metadata_snapshot.pop(key, None)
+    
+    metadata_snapshot.pop('cover', None)
+    
+    metadata_snapshot['authors'] = sync_utils.sanitize_person_list(metadata_snapshot.get('authors'))
+    
+    series = metadata_snapshot.get('series')
+    if series:
+        metadata_snapshot['series'] = sync_utils.sanitize_series(series)
+    elif series is None:
+        metadata_snapshot.pop('series_index', None)
+    
+    metadata_snapshot['tags'] = sync_utils.sanitize_tags(metadata_snapshot.get('tags', []))
+    metadata_snapshot['identifiers'] = sync_utils.sanitize_identifiers(metadata_snapshot.get('identifiers'))
+    metadata_snapshot['languages'] = sync_utils.normalize_string_list(metadata_snapshot.get('languages', []))
+    
+    payload = {'metadata': metadata_snapshot}
+    normalized = json.dumps(payload, sort_keys=True, separators=(',', ':'), default=str)
+    normalized = normalized.replace(' ', '')
+    
+    return normalized, hash_value
+
+
+def compute_python_hash_OLD(json_item, format_cache, cover_hash):
     """
+    OLD standalone version - kept for reference.
     Compute metadata hash using Python client logic (standalone version).
     Extracted from sync_worker.py to avoid Calibre dependencies.
     """
+    import hashlib
+    import copy
     try:
         metadata_snapshot = copy.deepcopy(json_item)
         
