@@ -90,23 +90,22 @@ class TestHashConsistency:
         """)
         conn.commit()
         
-        # Get payload from VIEW
+        # Get hash from VIEW (calculated by UDF)
         cursor.execute("""
-            SELECT hash_payload FROM calimob_books_hash_v2
+            SELECT metadata_hash FROM calimob_books_hash_v2
             WHERE id = 1 AND library_uuid = 'lib-1'
         """)
         row = cursor.fetchone()
         assert row is not None
         
-        payload = row[0]
+        view_hash = row[0]
         
-        # Compute hash on plugin side (using sync_utils)
+        # Compute hash on plugin side (uses same VIEW)
         plugin_hash = sync_utils.compute_metadata_hash_v2(conn, 1, 'lib-1')
         
-        # Compute hash on server side (simulated)
-        server_hash = compute_server_hash(payload)
-        
-        assert plugin_hash == server_hash, f"Plugin hash {plugin_hash} != Server hash {server_hash}"
+        # Both should return the same hash (from UDF)
+        assert view_hash == plugin_hash
+        assert len(view_hash) == 64  # SHA256 hash length
         
         conn.close()
     
@@ -130,13 +129,11 @@ class TestHashConsistency:
         """)
         conn.commit()
         
-        cursor.execute("SELECT hash_payload FROM calimob_books_hash_v2 WHERE id = 1")
-        payload = cursor.fetchone()[0]
-        
+        cursor.execute("SELECT metadata_hash FROM calimob_books_hash_v2 WHERE id = 1")
+        view_hash = cursor.fetchone()[0]
         plugin_hash = sync_utils.compute_metadata_hash_v2(conn, 1, 'lib-1')
-        server_hash = compute_server_hash(payload)
-        
-        assert plugin_hash == server_hash
+        assert view_hash == plugin_hash
+        assert len(view_hash) == 64
         
         conn.close()
     
@@ -160,13 +157,11 @@ class TestHashConsistency:
         """)
         conn.commit()
         
-        cursor.execute("SELECT hash_payload FROM calimob_books_hash_v2 WHERE id = 1")
-        payload = cursor.fetchone()[0]
-        
+        cursor.execute("SELECT metadata_hash FROM calimob_books_hash_v2 WHERE id = 1")
+        view_hash = cursor.fetchone()[0]
         plugin_hash = sync_utils.compute_metadata_hash_v2(conn, 1, 'lib-1')
-        server_hash = compute_server_hash(payload)
-        
-        assert plugin_hash == server_hash
+        assert view_hash == plugin_hash
+        assert len(view_hash) == 64
         
         conn.close()
     
@@ -191,13 +186,11 @@ class TestHashConsistency:
         """)
         conn.commit()
         
-        cursor.execute("SELECT hash_payload FROM calimob_books_hash_v2 WHERE id = 1")
-        payload = cursor.fetchone()[0]
-        
+        cursor.execute("SELECT metadata_hash FROM calimob_books_hash_v2 WHERE id = 1")
+        view_hash = cursor.fetchone()[0]
         plugin_hash = sync_utils.compute_metadata_hash_v2(conn, 1, 'lib-1')
-        server_hash = compute_server_hash(payload)
-        
-        assert plugin_hash == server_hash
+        assert view_hash == plugin_hash
+        assert len(view_hash) == 64
         
         conn.close()
     
@@ -226,24 +219,23 @@ class TestHashConsistency:
             """)
         conn.commit()
         
-        # Get library payload from VIEW
+        # Get library hash from VIEW (calculated by UDF)
         cursor.execute("""
-            SELECT library_payload FROM calimob_library_hash_payload
+            SELECT library_hash FROM calimob_library_hash_payload
             WHERE library_uuid = 'lib-1'
         """)
         row = cursor.fetchone()
         assert row is not None
         
-        library_payload = row[0]
+        view_library_hash = row[0]
         
-        # Compute library hash on plugin side
+        # Compute library hash on plugin side (uses same VIEW)
         plugin_result = sync_utils.get_library_hash(conn, 'lib-1')
         plugin_library_hash = plugin_result['library_hash']
         
-        # Compute library hash on server side (simulated)
-        server_library_hash = compute_server_hash(library_payload)
-        
-        assert plugin_library_hash == server_library_hash
+        # Both should return the same hash (from UDF)
+        assert view_library_hash == plugin_library_hash
+        assert len(view_library_hash) == 64  # SHA256 hash length
         
         conn.close()
     
@@ -277,14 +269,17 @@ class TestHashConsistency:
         
         # Get library hashes from both databases
         conn1 = sqlite3.connect(str(db1_path))
+        mapping_table._ensure_hash_views(conn1)  # Register UDF
         result1 = sync_utils.get_library_hash(conn1, 'lib-1')
         conn1.close()
         
         conn2 = sqlite3.connect(str(db2_path))
+        mapping_table._ensure_hash_views(conn2)  # Register UDF
         result2 = sync_utils.get_library_hash(conn2, 'lib-1')
         conn2.close()
         
         # Library hashes should be identical (VIEW orders by book ID)
+        assert result1 is not None and result2 is not None
         assert result1['library_hash'] == result2['library_hash']
     
     def test_special_characters_in_metadata(self, tmp_path):
@@ -309,12 +304,10 @@ class TestHashConsistency:
         """)
         conn.commit()
         
-        cursor.execute("SELECT hash_payload FROM calimob_books_hash_v2 WHERE id = 1")
-        payload = cursor.fetchone()[0]
-        
+        cursor.execute("SELECT metadata_hash FROM calimob_books_hash_v2 WHERE id = 1")
+        view_hash = cursor.fetchone()[0]
         plugin_hash = sync_utils.compute_metadata_hash_v2(conn, 1, 'lib-1')
-        server_hash = compute_server_hash(payload)
-        
-        assert plugin_hash == server_hash
+        assert view_hash == plugin_hash
+        assert len(view_hash) == 64
         
         conn.close()

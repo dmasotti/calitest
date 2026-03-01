@@ -65,7 +65,7 @@ def main():
 
     cfg_path = os.path.join(plugins_dir, 'sync_calimob.json')
     data = {
-        'Goodreads': {
+        'Caliweb': {
             'restEndpoint': 'http://127.0.0.1:%d/api' % port,
             'discoveryUrl': '',
         },

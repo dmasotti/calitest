@@ -14,6 +14,11 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# Canonical test documentation
+echo -e "${CYAN}Test guide: tests/README.md${NC}"
+echo -e "${CYAN}Quick start: DISCOVERY_URL=... TEST_USER_EMAIL=... TEST_USER_PASSWORD=... ./tests/run_all_tests.sh${NC}"
+echo ""
+
 # Load env if exists
 ENV_FILE="$(dirname "$0")/server/.env"
 if [[ -f "$ENV_FILE" ]]; then
@@ -30,7 +35,7 @@ if [[ -f "$ROOT_ENV_FILE" ]]; then
 fi
 
 # Configuration
-DISCOVERY_URL=${DISCOVERY_URL:-}
+DISCOVERY_URL=${DISCOVERY_URL:-http://caliserver.test}
 TEST_USER_EMAIL=${TEST_USER_EMAIL:-}
 TEST_USER_PASSWORD=${TEST_USER_PASSWORD:-}
 
@@ -81,14 +86,14 @@ ensure_test_users() {
             -H "Content-Type: application/json" \
             -H "Accept: application/json" \
             -d "{\"email\":\"$TEST_USER_EMAIL\",\"password\":\"$TEST_USER_PASSWORD\"}")"
-        token="$(python -c 'import json,sys; data=json.loads(sys.stdin.read()); print(data.get("token",""))' <<<"$login_resp" 2>/dev/null || true)"
+        token="$(python3 -c 'import json,sys; data=json.loads(sys.stdin.read()); print(data.get("token",""))' <<<"$login_resp" 2>/dev/null || true)"
 
         if [[ -z "$token" ]]; then
             register_resp="$(curl -s -X POST "$api_base/auth/register" \
                 -H "Content-Type: application/json" \
                 -H "Accept: application/json" \
                 -d "{\"name\":\"test\",\"email\":\"$TEST_USER_EMAIL\",\"password\":\"$TEST_USER_PASSWORD\",\"password_confirmation\":\"$TEST_USER_PASSWORD\"}")"
-            token="$(python -c 'import json,sys; data=json.loads(sys.stdin.read()); print(data.get("token",""))' <<<"$register_resp" 2>/dev/null || true)"
+            token="$(python3 -c 'import json,sys; data=json.loads(sys.stdin.read()); print(data.get("token",""))' <<<"$register_resp" 2>/dev/null || true)"
         fi
 
         if [[ -z "$token" ]]; then
@@ -104,7 +109,7 @@ ensure_test_users() {
                 -H "Content-Type: application/json" \
                 -H "Accept: application/json" \
                 -d "{\"name\":\"test\",\"email\":\"$new_email\",\"password\":\"$TEST_USER_PASSWORD\",\"password_confirmation\":\"$TEST_USER_PASSWORD\"}")"
-            token="$(python -c 'import json,sys; data=json.loads(sys.stdin.read()); print(data.get("token",""))' <<<"$register_resp" 2>/dev/null || true)"
+            token="$(python3 -c 'import json,sys; data=json.loads(sys.stdin.read()); print(data.get("token",""))' <<<"$register_resp" 2>/dev/null || true)"
             if [[ -n "$token" ]]; then
                 TEST_USER_EMAIL="$new_email"
                 export TEST_USER_EMAIL
@@ -126,7 +131,7 @@ ensure_test_users() {
                 -H "Content-Type: application/json" \
                 -H "Accept: application/json" \
                 -d '{"name":"tests-opds"}')"
-            APP_PASS="$(python -c 'import json,sys; data=json.loads(sys.stdin.read()); print(data.get("password",""))' <<<"$pass_resp" 2>/dev/null || true)"
+            APP_PASS="$(python3 -c 'import json,sys; data=json.loads(sys.stdin.read()); print(data.get("password",""))' <<<"$pass_resp" 2>/dev/null || true)"
         fi
 
         if [[ -n "${APP_PASS:-}" ]]; then
@@ -229,7 +234,42 @@ echo -e "${BLUE}Running: PHPUnit Server Suite${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 if [[ -x "$SCRIPT_DIR/../html/vendor/bin/phpunit" ]]; then
-    if ( set -a; source "$ROOT_ENV_FILE"; set +a; "$SCRIPT_DIR/../html/vendor/bin/phpunit" -c "$SCRIPT_DIR/../phpunit.xml" --testsuite=Server ); then
+    PHPUNIT_DB_CONNECTION="${PHPUNIT_DB_CONNECTION:-mysql}"
+    PHPUNIT_DB_DATABASE="${PHPUNIT_DB_DATABASE:-${DB_DATABASE:-caliweb}_phpunit}"
+    PHPUNIT_DB_HOST="${PHPUNIT_DB_HOST:-${DB_HOST:-127.0.0.1}}"
+    PHPUNIT_DB_PORT="${PHPUNIT_DB_PORT:-${DB_PORT:-3306}}"
+    PHPUNIT_DB_USERNAME="${PHPUNIT_DB_USERNAME:-${DB_USERNAME:-root}}"
+    PHPUNIT_DB_PASSWORD="${PHPUNIT_DB_PASSWORD:-${DB_PASSWORD:-}}"
+
+    # Ensure isolated phpunit database exists.
+    if [[ "$PHPUNIT_DB_CONNECTION" == "mysql" ]]; then
+        php -r '
+            $host = getenv("PHPUNIT_DB_HOST") ?: "127.0.0.1";
+            $port = getenv("PHPUNIT_DB_PORT") ?: "3306";
+            $user = getenv("PHPUNIT_DB_USERNAME") ?: "root";
+            $pass = getenv("PHPUNIT_DB_PASSWORD") ?: "";
+            $db   = getenv("PHPUNIT_DB_DATABASE") ?: "caliweb_phpunit";
+            $pdo = new PDO("mysql:host={$host};port={$port};charset=utf8mb4", $user, $pass, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            ]);
+            $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$db}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        ' || {
+            echo -e "${RED}✗ Unable to create PHPUnit DB: $PHPUNIT_DB_DATABASE${NC}"
+            FAILED_SUITES+=("PHPUnit Server Suite")
+            echo ""
+            goto_after_phpunit=1
+        }
+    fi
+
+    if [[ "${goto_after_phpunit:-0}" -ne 1 ]] && ( \
+        DB_CONNECTION="$PHPUNIT_DB_CONNECTION" \
+        DB_HOST="$PHPUNIT_DB_HOST" \
+        DB_PORT="$PHPUNIT_DB_PORT" \
+        DB_DATABASE="$PHPUNIT_DB_DATABASE" \
+        DB_USERNAME="$PHPUNIT_DB_USERNAME" \
+        DB_PASSWORD="$PHPUNIT_DB_PASSWORD" \
+        "$SCRIPT_DIR/../html/vendor/bin/phpunit" -c "$SCRIPT_DIR/../phpunit.xml" --testsuite=Server \
+    ); then
         echo ""
         echo -e "${GREEN}✓ PHPUnit Server Suite PASSED${NC}"
     else
@@ -243,12 +283,28 @@ else
 fi
 
 echo ""
+
+# 7. Plugin tests (unit + integration + V5)
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}Running: Plugin Tests${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+if bash "$SCRIPT_DIR/run_plugin_tests.sh"; then
+    echo ""
+    echo -e "${GREEN}✓ Plugin Tests PASSED${NC}"
+else
+    echo ""
+    echo -e "${RED}✗ Plugin Tests FAILED${NC}"
+    FAILED_SUITES+=("Plugin Tests")
+fi
+
+echo ""
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${CYAN}           Test Execution Summary         ${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-TOTAL_SUITES=6
+TOTAL_SUITES=7
 PASSED_SUITES=$((TOTAL_SUITES - ${#FAILED_SUITES[@]}))
 
 echo "Total test suites: $TOTAL_SUITES"

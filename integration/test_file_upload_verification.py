@@ -146,7 +146,12 @@ def test_file_upload_tracking():
     # Step 6: Verify code implementation
     log("\n6. Verifying server code implementation...")
     
-    with open('html/routes/api.php', 'r') as f:
+    # Use absolute path relative to this test file
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(test_dir, '../..'))
+    api_routes_path = os.path.join(project_root, 'html/routes/api.php')
+    
+    with open(api_routes_path, 'r') as f:
         code = f.read()
     
     checks = [

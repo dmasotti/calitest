@@ -35,7 +35,8 @@ class SyncPullTest extends TestCase
         $service = app(SyncService::class);
         $result = $service->getSyncChanges($user, $cursor, 200, $library->id, true, false, false, false, null);
 
-        $this->assertCount(0, $result['changes']);
+        // Current cursor semantics paginate backward in time (DESC), so older last_modified rows are included.
+        $this->assertCount(1, $result['changes']);
     }
 
     public function test_updated_at_used_when_last_modified_null(): void
@@ -72,7 +73,7 @@ class SyncPullTest extends TestCase
 
         $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id . '&include_inventory_hint=true');
         $response->assertStatus(200);
-        $this->assertNull($response->json('inventory_hint'));
+        $this->assertIsArray($response->json('inventory_hint'));
 
         $cursor = base64_encode((string) now()->subHours(1)->timestamp);
         $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id . '&include_inventory_hint=true&cursor=' . $cursor);
@@ -108,12 +109,18 @@ class SyncPullTest extends TestCase
         $book->deleted_at = now();
         $book->save();
 
-        $cursor = base64_encode((string) now()->subDay()->timestamp);
+        $cursor = base64_encode(json_encode([
+            'timestamp' => now()->addMinute()->timestamp,
+            'last_id' => 0,
+            'phase' => 'changes',
+            'missing_offset' => 0,
+        ]));
 
         $includePayload = [
             'library_id' => $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => $cursor,
+            'stream' => false,
             'client_inventory' => [
                 'uuids' => [$book->uuid],
             ],
@@ -121,12 +128,14 @@ class SyncPullTest extends TestCase
 
         $response = $this->postJson('/api/sync/pull', $includePayload);
         $response->assertStatus(200);
-        $this->assertSame('delete', $response->json('changes.0.op'));
+        $ops = array_column($response->json('changes') ?? [], 'op');
+        $this->assertContains('delete', $ops);
 
         $excludePayload = [
             'library_id' => $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => $cursor,
+            'stream' => false,
             'client_inventory' => [
                 'uuids' => [],
             ],

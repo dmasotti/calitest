@@ -574,4 +574,55 @@ class SyncPushTest extends TestCase
             'library_id' => $library->id,
         ]);
     }
+
+    public function test_sync_detects_uuid_collision_conflict(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        Sanctum::actingAs($user);
+
+        $existingUuid = (string) Str::uuid();
+        $createPayload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'create',
+                    'item' => [
+                        'id' => 500,
+                        'uuid' => $existingUuid,
+                        'title' => 'Original',
+                        'authors' => [['name' => 'Tester', 'role' => 'author']],
+                        'last_modified' => now()->timestamp,
+                    ],
+                    'idempotency_key' => 'collision-1',
+                ],
+            ],
+        ];
+
+        $this->postJson('/api/sync', $createPayload)->assertStatus(200);
+
+        $collisionPayload = [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'changes' => [
+                [
+                    'op' => 'update',
+                    'item' => [
+                        'id' => 500,
+                        'uuid' => (string) Str::uuid(),
+                        'title' => 'Collision',
+                        'authors' => [['name' => 'Tester', 'role' => 'author']],
+                        'last_modified' => now()->timestamp,
+                    ],
+                    'idempotency_key' => 'collision-2',
+                ],
+            ],
+        ];
+
+        $response = $this->postJson('/api/sync', $collisionPayload);
+        $response->assertStatus(200);
+        $this->assertSame('error', $response->json('results.0.status'));
+        $this->assertNotNull($response->json('results.0.error'));
+    }
 }

@@ -83,7 +83,6 @@ class PdfReaderTest extends TestCase
             'book_uuid' => $this->book->uuid,
             'format' => 'PDF',
             'progress_bp' => 4000,
-            'last_position' => json_encode(['page' => 20]),
             'client_ts' => now(),
         ]);
 
@@ -95,7 +94,6 @@ class PdfReaderTest extends TestCase
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
             'progress_bp' => 8000,
-            'last_position' => json_encode(['cfi' => 'epub_pos']),
             'client_ts' => now(),
         ]);
 
@@ -103,8 +101,8 @@ class PdfReaderTest extends TestCase
             ->get("/pdf/{$this->book->uuid}");
 
         $response->assertStatus(200)
-            ->assertViewHas('maxProgress', function ($progress) {
-                return $progress->progress == 80.0;
+            ->assertViewHas('initialProgress', function ($progress) {
+                return $progress == 80.0;
             });
     }
 }

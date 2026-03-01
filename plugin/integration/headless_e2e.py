@@ -196,15 +196,14 @@ def main():
             'calimobLibraryName': 'Headless E2E'
         }
         data['LibraryMappings'] = lm
-        for store_key in ('Caliweb', 'Goodreads'):
-            store = data.get(store_key, {})
-            store['discoveryUrl'] = env['CALIMOB_DISCOVERY_URL']
-            store['restToken'] = token
-            # Keep restEndpoint explicit so CLI can hit API without UI discovery
-            store['restEndpoint'] = api_url.rstrip('/')
-            store.pop('deviceToken', None)
-            store.pop('discoveryCache', None)
-            data[store_key] = store
+        store = data.get('Caliweb', {})
+        store['discoveryUrl'] = env['CALIMOB_DISCOVERY_URL']
+        store['restToken'] = token
+        # Keep restEndpoint explicit so CLI can hit API without UI discovery
+        store['restEndpoint'] = api_url.rstrip('/')
+        store.pop('deviceToken', None)
+        store.pop('discoveryCache', None)
+        data['Caliweb'] = store
         with open(cfg_path, 'w') as f:
             json.dump(data, f, indent=2, sort_keys=True)
         _install_plugin(tmp_cfg, env['ROOT'], env['CALIBRE_CUSTOMIZE'])

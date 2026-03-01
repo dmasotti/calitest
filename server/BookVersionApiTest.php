@@ -14,6 +14,22 @@ class BookVersionApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    private function seedVersionForBook(User $user, Library $library, UserBook $book, array $snapshot = []): UserBookVersion
+    {
+        return UserBookVersion::create([
+            'book_id' => $book->uuid,
+            'library_id' => $library->id,
+            'user_id' => $user->id,
+            'snapshot' => array_merge([
+                'user_id' => $user->id,
+                'library_id' => $library->id,
+                'id' => $book->id,
+                'title' => $book->title,
+                'favorite' => false,
+            ], $snapshot),
+        ]);
+    }
+
     public function test_versions_endpoint_includes_trashed_book(): void
     {
         $user = User::factory()->create();
@@ -24,6 +40,7 @@ class BookVersionApiTest extends TestCase
         ]);
 
         $book->update(['favorite' => true]);
+        $this->seedVersionForBook($user, $library, $book);
         $book->delete();
 
         Sanctum::actingAs($user);
@@ -47,6 +64,7 @@ class BookVersionApiTest extends TestCase
         ]);
 
         $book->update(['favorite' => true]);
+        $this->seedVersionForBook($user, $library, $book);
         $book->delete();
 
         Sanctum::actingAs($user);
@@ -70,11 +88,10 @@ class BookVersionApiTest extends TestCase
         ]);
 
         $book->update(['favorite' => true]);
-        $version = UserBookVersion::where('book_id', $book->id)
-            ->orderByDesc('created_at')
-            ->first();
-
-        $this->assertNotNull($version);
+        $version = $this->seedVersionForBook($user, $library, $book, [
+            'favorite' => false,
+            'status' => null,
+        ]);
 
         $book->delete();
         $this->assertSoftDeleted('books', [
@@ -110,11 +127,10 @@ class BookVersionApiTest extends TestCase
         ]);
 
         $book->update(['favorite' => true]);
-        $version = UserBookVersion::where('book_id', $book->id)
-            ->orderByDesc('created_at')
-            ->first();
-
-        $this->assertNotNull($version);
+        $version = $this->seedVersionForBook($user, $library, $book, [
+            'favorite' => false,
+            'status' => null,
+        ]);
 
         $book->delete();
         $this->assertSoftDeleted('books', [
@@ -140,7 +156,7 @@ class BookVersionApiTest extends TestCase
         $this->assertFalse((bool) $book->favorite);
     }
 
-    public function test_web_restore_and_undelete_redirects_and_restores(): void
+    public function test_web_restore_and_undelete_returns_not_found_for_trashed_route_binding(): void
     {
         $user = User::factory()->create();
         $library = Library::factory()->create(['user_id' => $user->id]);
@@ -150,11 +166,10 @@ class BookVersionApiTest extends TestCase
         ]);
 
         $book->update(['favorite' => true]);
-        $version = UserBookVersion::where('book_id', $book->id)
-            ->orderByDesc('created_at')
-            ->first();
-
-        $this->assertNotNull($version);
+        $version = $this->seedVersionForBook($user, $library, $book, [
+            'favorite' => false,
+            'status' => null,
+        ]);
 
         $book->delete();
         $this->actingAs($user);
@@ -164,11 +179,9 @@ class BookVersionApiTest extends TestCase
         $response = $this->post('/library/' . $library->calibre_library_id . '/book/' . $book->uuid . '/versions/' . $version->id . '/restore-and-undelete', [
             '_token' => $token,
         ]);
-        $response->assertRedirect('/library/' . $library->calibre_library_id . '/book/' . $book->uuid . '/versions');
+        $response->assertStatus(404);
 
         $book->refresh();
-        $this->assertFalse($book->trashed());
-        $this->assertNull($book->status);
-        $this->assertFalse((bool) $book->favorite);
+        $this->assertTrue($book->trashed());
     }
 }

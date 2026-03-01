@@ -59,29 +59,7 @@ class EbookStorageServiceTest extends TestCase
 
         $service = new EbookStorageService();
         $mockClient = \Mockery::mock(S3Client::class);
-        $mockCommand = new class implements \ArrayAccess {
-            private array $data = [];
-
-            public function offsetExists($offset): bool
-            {
-                return isset($this->data[$offset]);
-            }
-
-            public function offsetGet($offset): mixed
-            {
-                return $this->data[$offset] ?? null;
-            }
-
-            public function offsetSet($offset, $value): void
-            {
-                $this->data[$offset] = $value;
-            }
-
-            public function offsetUnset($offset): void
-            {
-                unset($this->data[$offset]);
-            }
-        };
+        $mockCommand = \Mockery::mock(\Aws\CommandInterface::class);
         $mockRequest = \Mockery::mock();
         $mockUri = \Mockery::mock();
         $mockUri->shouldReceive('__toString')->andReturn('https://signed.example/book.epub');
@@ -94,7 +72,7 @@ class EbookStorageServiceTest extends TestCase
         $reflection->setAccessible(true);
         $reflection->setValue($service, $mockClient);
 
-        $url = $service->getSignedUrl('ebooks/book.epub', 600, 'book.epub');
+        $url = $service->getSignedUrl('ebooks/book.epub', 600, null);
         $this->assertEquals('https://signed.example/book.epub', $url);
     }
 }

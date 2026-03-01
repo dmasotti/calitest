@@ -66,18 +66,21 @@ ensure_json_response() {
   fi
 }
 
-# Resolve API URL via discovery
-DISCOVERY_ENDPOINT="$DISCOVERY_URL/discovery.php"
-DISCOVERY_RESPONSE=$(curl -s "$DISCOVERY_ENDPOINT")
+# Resolve API URL via discovery (prefer /api/discovery for local consistency)
+DISCOVERY_RESPONSE=$(curl -s "$DISCOVERY_URL/api/discovery")
 ensure_json_response "discovery_response" "$DISCOVERY_RESPONSE"
 API_URL=$(echo "$DISCOVERY_RESPONSE" | jq -r '.api_url // empty' 2>/dev/null || true)
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
-  DISCOVERY_RESPONSE=$(curl -s "$DISCOVERY_URL/api/discovery")
+  DISCOVERY_ENDPOINT="$DISCOVERY_URL/discovery.php"
+  DISCOVERY_RESPONSE=$(curl -s "$DISCOVERY_ENDPOINT")
   ensure_json_response "discovery_fallback" "$DISCOVERY_RESPONSE"
   API_URL=$(echo "$DISCOVERY_RESPONSE" | jq -r '.api_url // empty' 2>/dev/null || true)
 fi
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
-  API_URL="$DISCOVERY_URL/api"
+  API_URL="${DISCOVERY_URL%/}/api"
+fi
+if [[ "$API_URL" != ${DISCOVERY_URL%/}/* ]]; then
+  API_URL="${DISCOVERY_URL%/}/api"
 fi
 
 log "API URL: $API_URL"

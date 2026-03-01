@@ -472,11 +472,11 @@ def patch_plugin_prefs(mock_plugin_config):
     """Auto-patch plugin preferences for all tests."""
     with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mock_prefs:
         mock_prefs.__getitem__ = Mock(side_effect=lambda key: {
-            'Goodreads': mock_plugin_config['plugin'],
+            'Caliweb': mock_plugin_config['plugin'],
             'LibraryMappings': mock_plugin_config['library_mappings'],
         }.get(key, {}))
         mock_prefs.get = Mock(side_effect=lambda key, default=None: {
-            'Goodreads': mock_plugin_config['plugin'],
+            'Caliweb': mock_plugin_config['plugin'],
             'LibraryMappings': mock_plugin_config['library_mappings'],
         }.get(key, default))
         yield mock_prefs

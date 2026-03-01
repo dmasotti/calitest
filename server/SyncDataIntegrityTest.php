@@ -84,6 +84,7 @@ class SyncDataIntegrityTest extends TestCase
                 'limit' => 50,
                 'library_id' => $this->library->id,
                 'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
             ]);
 
             $response->assertStatus(200);
@@ -169,6 +170,7 @@ class SyncDataIntegrityTest extends TestCase
                 'limit' => 10,
                 'library_id' => $this->library->id,
                 'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
             ]);
 
             $response->assertStatus(200);
@@ -214,6 +216,7 @@ class SyncDataIntegrityTest extends TestCase
             'limit' => 10,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response->assertStatus(200);
@@ -260,7 +263,7 @@ class SyncDataIntegrityTest extends TestCase
                 'user_id' => $this->user->id,
                 'library_id' => $this->library->id,
                 'last_modified' => now()->subYear()->timestamp,
-                'cover_missing' => true,
+                'metadata_incomplete' => true,
             ]);
             $missingBookIds[] = $book->uuid;
         }
@@ -285,6 +288,7 @@ class SyncDataIntegrityTest extends TestCase
                 'limit' => 30,
                 'library_id' => $this->library->id,
                 'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
             ]);
 
             $response->assertStatus(200);
@@ -335,11 +339,10 @@ class SyncDataIntegrityTest extends TestCase
                 'limit' => 50,
                 'library_id' => $this->library->id,
                 'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
             ]);
 
-            if ($response->status() !== 200) {
-                break;
-            }
+            $response->assertStatus(200);
 
             $changes = $response->json('changes');
             foreach ($changes as $change) {

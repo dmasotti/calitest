@@ -1,0 +1,15 @@
+{
+  "disabled_plugins": {
+    "__class__": "set",
+    "__value__": []
+  },
+  "enabled_plugins": {
+    "__class__": "set",
+    "__value__": []
+  },
+  "filetype_mapping": {},
+  "plugin_customization": {},
+  "plugins": {
+    "sync_calimob": "/Users/macbookpro/Coding/calibre-plg/tests/plugin/.calibre-config/plugins/sync_calimob.zip"
+  }
+}

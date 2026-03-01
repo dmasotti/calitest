@@ -36,10 +36,12 @@ if [[ -n "$PRE_PASS" ]]; then
 fi
 
 # Configuration
-HOST=${HOST:-http://127.0.0.1:8000}
+HOST=${HOST:-http://caliserver.test}
 USER=${OPDS_USER:-${TEST_USER_EMAIL:-}}
 PASS=${OPDS_PASS:-${TEST_USER_PASSWORD:-}}
 APP_PASS=${APP_PASS:-}
+PRIMARY_CRED="$USER:${APP_PASS:-$PASS}"
+FALLBACK_CRED="$USER:$PASS"
 TMPDIR=$(mktemp -d)
 VERBOSE=${VERBOSE:-0}
 
@@ -66,9 +68,8 @@ if [[ -z "$USER" || -z "$PASS" ]]; then
   exit 2
 fi
 
-CRED="$USER:$PASS"
+CRED="$PRIMARY_CRED"
 if [[ -n "$APP_PASS" ]]; then
-  CRED="$USER:$APP_PASS"
   echo -e "${YELLOW}Note: testing with app-password${NC}"
 fi
 
@@ -97,6 +98,11 @@ test_endpoint() {
     
     HTTP_CODE=$(curl -s -u "$CRED" -H "Accept: $accept_header" \
         "$HOST$endpoint" -o "$output_file" -w "%{http_code}")
+
+    if [[ "$HTTP_CODE" == "401" && -n "$APP_PASS" ]]; then
+        HTTP_CODE=$(curl -s -u "$FALLBACK_CRED" -H "Accept: $accept_header" \
+            "$HOST$endpoint" -o "$output_file" -w "%{http_code}")
+    fi
     
     if [[ "$HTTP_CODE" == "$expected_code" ]]; then
         PASSED_TESTS=$((PASSED_TESTS + 1))

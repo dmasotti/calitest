@@ -35,7 +35,7 @@ fi
 if [[ -n "$PRE_PASS" ]]; then
   PASS="$PRE_PASS"
 fi
-HOST=${HOST:-http://127.0.0.1:8000}
+HOST=${HOST:-http://caliserver.test}
 USER=${OPDS_USER:-${TEST_USER_EMAIL:-}}
 PASS=${OPDS_PASS:-${TEST_USER_PASSWORD:-}}
 APP_PASS=${APP_PASS:-}

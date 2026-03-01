@@ -48,7 +48,8 @@ class TestUnifiedBatchSync(unittest.TestCase):
         )
         
         # Mock methods
-        self.worker.get_last_cursor = Mock(return_value=None)
+        self.worker.get_pull_cursor = Mock(return_value=None)
+        self.worker.save_pull_cursor = Mock()
         self.worker.save_cursor = Mock()
         self.worker._apply_create = Mock(return_value=1)
         self.worker._apply_update = Mock(return_value=(1, False))
@@ -398,7 +399,8 @@ class TestCancellationCheckpoints(unittest.TestCase):
             calimob_library_id='1'
         )
         
-        self.worker.get_last_cursor = Mock(return_value=None)
+        self.worker.get_pull_cursor = Mock(return_value=None)
+        self.worker.save_pull_cursor = Mock()
         self.worker.save_cursor = Mock()
         self.worker._download_cover = Mock()
         self.worker.push_sync = Mock(return_value={'pushed': 0, 'errors': []})
@@ -482,15 +484,19 @@ class TestCancellationCheckpoints(unittest.TestCase):
         
         self.mock_client.post_sync_pull.return_value = batch_response
         self.worker._apply_update = Mock(return_value=(1, False))
+        self.worker._should_download_cover = Mock(return_value=(True, 'test'))
         
         # Cancel after 3 cover downloads
         download_count = [0]
-        def download_with_cancel(*args, **kwargs):
-            download_count[0] += 1
-            if download_count[0] == 3:
-                self.worker._cancelled = True
+        def download_with_cancel(items, progress_callback=None, max_workers=1):
+            for _ in items:
+                download_count[0] += 1
+                if download_count[0] == 3:
+                    self.worker._cancelled = True
+                self.worker._check_cancelled()
+            return download_count[0]
         
-        self.worker._download_cover = Mock(side_effect=download_with_cancel)
+        self.worker._download_covers_parallel = Mock(side_effect=download_with_cancel)
         
         # Execute sync (should raise after 3 downloads)
         with self.assertRaises(Exception) as ctx:

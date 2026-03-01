@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Script per preparare l'ambiente headless plugin:
-# 1. determina l'UUID della libreria Calibre locale (fallback a tests/plugin/CalibreTest)
+# 1. determina l'UUID della libreria Calibre locale (fallback a tests/plugin/fixtures/CalibreTestLocal)
 # 2. elimina eventuali librerie esistenti per l'utente (per liberare lo slot libero)
 # 3. ricrea la libreria via `headless_setup_library.sh`
 # 4. genera un `sync_calimob.json` temporaneo con discovery/rest token e mapping della libreria
@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_ROOT=$(cd "$SCRIPT_DIR/../../.." && pwd)
 HTML_DIR="$PROJECT_ROOT/html"
-DEFAULT_LIBRARY_PATH="$PROJECT_ROOT/tests/plugin/CalibreTest"
+DEFAULT_LIBRARY_PATH="$PROJECT_ROOT/tests/plugin/fixtures/CalibreTestLocal"
 DEFAULT_CONFIG_PATH="$PROJECT_ROOT/tests/plugin/integration/generated_sync_calimob.json"
 
 REQUIRED_ENV=(
@@ -160,12 +160,6 @@ cat <<EOF >"$CONFIG_PATH"
     "debugApiLogs": true,
     "uploadTimeout": 120,
     "httpTimeout": 30
-  },
-  "Goodreads": {
-    "discoveryUrl": "$DISCOVERY_URL",
-    "restEndpoint": "$API_URL",
-    "restToken": "$REST_TOKEN",
-    "discoveryCache": {}
   },
   "LibraryMappings": {
     "$CALIBRE_ID": {

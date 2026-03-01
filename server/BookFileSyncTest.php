@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\UserBook;
 use App\Services\Sync\BookMetadataHandler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class BookFileSyncTest extends TestCase
@@ -202,6 +203,54 @@ class BookFileSyncTest extends TestCase
             'user_id' => $user->id,
             'library_id' => $library->id,
             'format' => 'AZW3',
+        ]);
+    }
+
+    public function test_updates_existing_file_without_storage_key_preserves_existing_upload_state(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $userBook = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+
+        BookFile::create([
+            'book' => $userBook->uuid,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'format' => 'EPUB',
+            'name' => 'Existing.epub',
+            'uncompressed_size' => 1234,
+            'file_path' => 'ebooks/existing.epub',
+            'file_hash' => 'sha256:existinghash',
+            'storage_key' => 'ebooks/existing.epub',
+            'storage_provider' => 'r2',
+            'uuid' => (string) Str::uuid(),
+            'is_uploaded' => true,
+            'needs_file_upload' => false,
+            'file_missing' => false,
+        ]);
+
+        $handler = app(BookMetadataHandler::class);
+        $handler->applyBookMetadata($userBook, [
+            'files' => [
+                [
+                    'format' => 'epub',
+                    'name' => 'Existing.epub',
+                    // Missing storage_key on update should not downgrade an already uploaded file.
+                ],
+            ],
+        ], $user, $library->id);
+
+        $this->assertDatabaseHas('books_files', [
+            'book' => $userBook->uuid,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'format' => 'EPUB',
+            'is_uploaded' => true,
+            'needs_file_upload' => false,
+            'file_missing' => false,
         ]);
     }
 }

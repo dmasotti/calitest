@@ -4,6 +4,7 @@ namespace Tests\Server;
 
 use App\Models\Library;
 use App\Models\User;
+use App\Models\UserBook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
@@ -53,6 +54,7 @@ class ProtocolPullTest extends TestCase
             'calibre_library_uuid' => $calibreUuid,
             'cursor' => null,
             'limit' => 200,
+            'stream' => false,
         ]);
 
         $pull->assertStatus(200);
@@ -63,51 +65,33 @@ class ProtocolPullTest extends TestCase
 
     public function test_client_inventory_filters_tombstones(): void
     {
-        [, $library, $calibreUuid] = $this->setupUserAndLibrary();
+        [$user, $library, $calibreUuid] = $this->setupUserAndLibrary();
 
-        $uuid = (string) Str::uuid();
-        $createPayload = [
+        $book = UserBook::factory()->create([
+            'user_id' => $user->id,
             'library_id' => $library->id,
-            'calibre_library_uuid' => $calibreUuid,
-            'changes' => [
-                [
-                    'op' => 'create',
-                    'item' => [
-                        'id' => 202,
-                        'uuid' => $uuid,
-                        'title' => 'To Delete',
-                        'authors' => [['name' => 'Tester', 'role' => 'author']],
-                        'last_modified' => now()->timestamp,
-                    ],
-                    'idempotency_key' => 'idem-pull-2',
-                ],
-            ],
-        ];
-        $this->postJson('/api/sync', $createPayload)->assertStatus(200);
+            'title' => 'To Delete',
+            'uuid' => (string) Str::uuid(),
+            'last_modified' => now()->subMinute()->timestamp,
+        ]);
+        $book->delete();
+        $uuid = $book->uuid;
 
-        $deletePayload = [
-            'library_id' => $library->id,
-            'calibre_library_uuid' => $calibreUuid,
-            'changes' => [
-                [
-                    'op' => 'delete',
-                    'item' => [
-                        'id' => 202,
-                        'uuid' => $uuid,
-                    ],
-                    'idempotency_key' => 'idem-pull-3',
-                ],
-            ],
-        ];
-        $this->postJson('/api/sync', $deletePayload)->assertStatus(200);
+        $cursor = base64_encode(json_encode([
+            'timestamp' => now()->addMinute()->timestamp,
+            'last_id' => 0,
+            'phase' => 'changes',
+            'missing_offset' => 0,
+        ]));
 
         $pullFiltered = $this->postJson('/api/sync/pull', [
             'library_id' => $library->id,
             'calibre_library_uuid' => $calibreUuid,
-            'cursor' => null,
+            'cursor' => $cursor,
             'client_inventory' => [
                 'uuids' => [],
             ],
+            'stream' => false,
         ]);
         $pullFiltered->assertStatus(200);
         $this->assertEmpty($pullFiltered->json('changes'));
@@ -115,10 +99,11 @@ class ProtocolPullTest extends TestCase
         $pullIncluded = $this->postJson('/api/sync/pull', [
             'library_id' => $library->id,
             'calibre_library_uuid' => $calibreUuid,
-            'cursor' => null,
+            'cursor' => $cursor,
             'client_inventory' => [
                 'uuids' => [$uuid],
             ],
+            'stream' => false,
         ]);
         $pullIncluded->assertStatus(200);
         $this->assertNotEmpty($pullIncluded->json('changes'));

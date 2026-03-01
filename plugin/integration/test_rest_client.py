@@ -34,12 +34,12 @@ def rest_client_instance(mock_gui, mock_plugin_config):
     """Create RestApiClient instance with mocked config."""
     with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mock_prefs:
         mock_prefs.__getitem__ = Mock(side_effect=lambda key: {
-            'Goodreads': mock_plugin_config['plugin'],
+            'Caliweb': mock_plugin_config['plugin'],
             'LibraryMappings': mock_plugin_config['library_mappings'],
         }.get(key, {}))
         
         client = rest_client.RestApiClient(mock_gui)
-        client.endpoint = 'https://api.example.com/api'
+        client._raw_discovery_endpoint = 'https://api.example.com/api'
         client.token = 'test-token-123'
         return client
 
@@ -51,12 +51,12 @@ class TestRestApiClientInit:
         """Test initialization with configuration."""
         with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mock_prefs:
             mock_prefs.__getitem__ = Mock(side_effect=lambda key: {
-                'Goodreads': mock_plugin_config['plugin'],
+                'Caliweb': mock_plugin_config['plugin'],
             }.get(key, {}))
             
             client = rest_client.RestApiClient(mock_gui)
             
-            assert client.endpoint == 'https://api.example.com/api'
+            assert client._raw_discovery_endpoint == 'https://api.example.com/api'
             assert client.token == 'test-token-123'
     
     def test_normalize_endpoint(self, mock_gui):
@@ -68,8 +68,9 @@ class TestRestApiClientInit:
             
             client = rest_client.RestApiClient(mock_gui)
             
-            assert client.endpoint.startswith('https://')
-            assert '/api' in client.endpoint
+            normalized = client.get_api_base()
+            assert normalized.startswith('https://')
+            assert '/api' in normalized
 
 
 class TestRestApiClientHeaders:
@@ -168,6 +169,26 @@ class TestRestApiClientRequests:
         
         assert response is not None
         assert response['id'] == '123'
+
+    def test_sync_v5_sends_client_batch_fields(self, rest_client_instance):
+        """sync_v5 should include client cursor batching fields when provided."""
+        with patch.object(rest_client_instance, 'post', return_value={'ok': True}) as mock_post:
+            rest_client_instance.sync_v5(
+                library_id=8,
+                calibre_library_uuid='1685fd4f-054e-4451-9df8-119c27fc1289',
+                cursor='123:4',
+                batch_size=100,
+                client_books={'b': {'u1': {'m': 'h1'}}, 'd': []},
+                client_cursor=500,
+                client_batch_size=250,
+            )
+
+            assert mock_post.called
+            _, kwargs = mock_post.call_args
+            body = kwargs['body']
+            assert body['client_cursor'] == 500
+            assert body['client_batch_size'] == 250
+            assert body['library_id'] == '8'
     
     @responses.activate
     def test_retry_on_500_error(self, rest_client_instance):
@@ -199,30 +220,55 @@ class TestRestApiClientRequests:
         # Should have made 3 requests (2 failures + 1 success)
         assert len(responses.calls) == 3
 
+    @responses.activate
+    def test_retry_on_429_respects_retry_after(self, rest_client_instance, monkeypatch):
+        """Test retry logic on 429 honors Retry-After header."""
+        sleeps = []
+
+        def _fake_sleep(delay):
+            sleeps.append(delay)
+
+        monkeypatch.setattr(rest_client.time, "sleep", _fake_sleep)
+
+        responses.add(
+            responses.GET,
+            'https://api.example.com/api/test',
+            json={'error': 'rate limit'},
+            status=429,
+            headers={'Retry-After': '2'}
+        )
+        responses.add(
+            responses.GET,
+            'https://api.example.com/api/test',
+            json={'status': 'ok'},
+            status=200
+        )
+
+        response = rest_client_instance._request('GET', '/test')
+
+        assert response is not None
+        assert response['status'] == 'ok'
+        assert len(responses.calls) == 2
+        assert sleeps, "Expected a backoff sleep on 429"
+        assert max(sleeps) >= 2
+
 
 class TestRestApiClientMethods:
     """Test specific API methods."""
     
-    @responses.activate
     def test_get_libraries(self, rest_client_instance):
         """Test get_libraries() method."""
-        responses.add(
-            responses.GET,
-            'https://api.example.com/api/libraries',
-            json={
-                'libraries': [
-                    {'id': '1', 'name': 'Library 1'},
-                    {'id': '2', 'name': 'Library 2'}
-                ]
-            },
-            status=200
-        )
+        with patch.object(rest_client_instance, 'get', return_value={
+            'libraries': [
+                {'id': '1', 'name': 'Library 1'},
+                {'id': '2', 'name': 'Library 2'}
+            ]
+        }):
+            result = rest_client_instance.get_libraries()
         
-        result = rest_client_instance.get_libraries()
-        
-        assert 'libraries' in result
-        assert len(result['libraries']) == 2
-        assert result['libraries'][0]['id'] == '1'
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert result[0]['id'] == '1'
     
     @responses.activate
     def test_create_library(self, rest_client_instance):
@@ -316,6 +362,7 @@ class TestRestApiClientMethods:
             calibre_book_id=123,
             library_id=None,
             cover_data=cover_data,
+            idempotency_key='idem-cover-123',
             cover_hash='abc123',
             item_uuid='123',
             calibre_library_uuid='lib-uuid'
@@ -325,6 +372,8 @@ class TestRestApiClientMethods:
         # Verify cover data was sent
         assert len(responses.calls) == 1
         assert responses.calls[0].request.body == cover_data
+        assert responses.calls[0].request.headers.get('X-Cover-Hash') == 'abc123'
+        assert responses.calls[0].request.headers.get('X-Idempotency-Key') == 'idem-cover-123'
 
     @responses.activate
     def test_upload_file(self, rest_client_instance):

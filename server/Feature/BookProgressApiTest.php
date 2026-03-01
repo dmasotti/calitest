@@ -2,13 +2,12 @@
 
 namespace Tests\Feature;
 
-use Tests\TestCase;
+use App\Models\BookDeviceProgress;
+use App\Models\Library;
 use App\Models\User;
 use App\Models\UserBook;
-use App\Models\Library;
-use App\Models\Device;
-use App\Models\BooksDevicesProgress;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
 
 class BookProgressApiTest extends TestCase
 {
@@ -30,130 +29,108 @@ class BookProgressApiTest extends TestCase
         ]);
     }
 
-    public function test_can_update_reading_progress_for_epub()
+    public function test_can_update_reading_progress_for_epub(): void
     {
-        $response = $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
-                'progress' => 50,
-                'last_position' => json_encode(['cfi' => 'epubcfi(/6/4[chap01ref]!/4[body01]/10[para05]/1:0)']),
-                'reading_time_seconds' => 120,
-                'format' => 'EPUB',
-            ]);
+        $response = $this->actingAs($this->user)->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+            'library_id' => $this->library->id,
+            'device_uuid' => 'test-device-epub',
+            'format' => 'EPUB',
+            'progress_bp' => 5000,
+        ]);
 
         $response->assertStatus(200);
-        
         $this->assertDatabaseHas('books_devices_progress', [
             'user_id' => $this->user->id,
+            'library_id' => $this->library->id,
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
-            'progress' => 50,
+            'progress_bp' => 5000,
         ]);
     }
 
-    public function test_can_update_reading_progress_for_pdf()
+    public function test_progress_is_tracked_per_format(): void
     {
-        $response = $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
-                'progress' => 75,
-                'last_position' => json_encode(['page' => 150]),
-                'reading_time_seconds' => 300,
-                'format' => 'PDF',
-            ]);
+        $this->actingAs($this->user)->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+            'library_id' => $this->library->id,
+            'device_uuid' => 'test-device-progress',
+            'format' => 'EPUB',
+            'progress_bp' => 3000,
+        ])->assertStatus(200);
 
-        $response->assertStatus(200);
-        
-        $this->assertDatabaseHas('books_devices_progress', [
-            'user_id' => $this->user->id,
-            'book_uuid' => $this->book->uuid,
+        $this->actingAs($this->user)->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+            'library_id' => $this->library->id,
+            'device_uuid' => 'test-device-progress',
             'format' => 'PDF',
-            'progress' => 75,
-        ]);
-    }
+            'progress_bp' => 6000,
+        ])->assertStatus(200);
 
-    public function test_progress_is_tracked_per_format()
-    {
-        // Update EPUB progress
-        $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
-                'progress' => 30,
-                'format' => 'EPUB',
-            ]);
-
-        // Update PDF progress  
-        $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
-                'progress' => 60,
-                'format' => 'PDF',
-            ]);
-
-        // Both should exist separately
         $this->assertDatabaseHas('books_devices_progress', [
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
-            'progress' => 30,
+            'progress_bp' => 3000,
         ]);
-
         $this->assertDatabaseHas('books_devices_progress', [
             'book_uuid' => $this->book->uuid,
             'format' => 'PDF',
-            'progress' => 60,
+            'progress_bp' => 6000,
         ]);
     }
 
-    public function test_requires_authentication()
+    public function test_requires_authentication(): void
     {
-        $response = $this->postJson("/api/books/{$this->book->uuid}/progress", [
-            'progress' => 50,
+        $this->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+            'library_id' => $this->library->id,
+            'device_uuid' => 'test-device-unauth',
             'format' => 'EPUB',
-        ]);
-
-        $response->assertStatus(401);
+            'progress_bp' => 5000,
+        ])->assertStatus(401);
     }
 
-    public function test_validates_required_fields()
-    {
-        $response = $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", []);
-
-        $response->assertStatus(422);
-    }
-
-    public function test_creates_web_device_automatically()
+    public function test_validates_required_fields(): void
     {
         $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
-                'progress' => 25,
-                'format' => 'EPUB',
-            ]);
+            ->postJson("/api/books/{$this->book->uuid}/reading-progress", [])
+            ->assertStatus(422);
+    }
+
+    public function test_creates_device_automatically_from_device_uuid(): void
+    {
+        $this->actingAs($this->user)->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+            'library_id' => $this->library->id,
+            'device_uuid' => 'web-browser-test',
+            'format' => 'EPUB',
+            'progress_bp' => 2500,
+        ])->assertStatus(200);
 
         $this->assertDatabaseHas('devices', [
             'user_id' => $this->user->id,
-            'device_name' => 'Web Browser',
+            'device_uuid' => 'web-browser-test',
         ]);
     }
 
-    public function test_accumulates_reading_time()
+    public function test_updates_progress_across_multiple_calls(): void
     {
-        // First update
-        $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
-                'progress' => 25,
-                'reading_time_seconds' => 100,
-                'format' => 'EPUB',
-            ]);
+        $this->actingAs($this->user)->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+            'library_id' => $this->library->id,
+            'device_uuid' => 'test-device-repeat',
+            'format' => 'EPUB',
+            'progress_bp' => 2500,
+        ])->assertStatus(200);
 
-        // Second update
-        $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
-                'progress' => 50,
-                'reading_time_seconds' => 150,
-                'format' => 'EPUB',
-            ]);
+        $this->actingAs($this->user)->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+            'library_id' => $this->library->id,
+            'device_uuid' => 'test-device-repeat',
+            'format' => 'EPUB',
+            'progress_bp' => 5000,
+        ])->assertStatus(200);
 
-        $progress = BooksDevicesProgress::where('book_uuid', $this->book->uuid)
+        $progress = BookDeviceProgress::where('book_uuid', $this->book->uuid)
             ->where('format', 'EPUB')
+            ->where('library_id', $this->library->id)
             ->first();
 
-        $this->assertEquals(250, $progress->reading_time_seconds);
+        $this->assertNotNull($progress);
+        $this->assertEquals(5000, $progress->progress_bp);
     }
 }
+

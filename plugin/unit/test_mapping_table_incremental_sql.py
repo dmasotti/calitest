@@ -80,7 +80,7 @@ def test_get_deleted_book_entries(tmp_path):
     assert deleted == [(10, 'u10')]
 
 
-def test_destructive_rebuild_drops_legacy_columns(tmp_path):
+def test_force_rebuild_drops_legacy_columns(tmp_path):
     library_root = tmp_path / 'library'
     library_root.mkdir()
     db_path = library_root / 'metadata.db'
@@ -107,8 +107,8 @@ def test_destructive_rebuild_drops_legacy_columns(tmp_path):
     finally:
         conn.close()
 
-    # Trigger ensure_table via upsert_entry, which should DROP+recreate (user chose no legacy preservation)
-    mapping_table.upsert_entry(str(library_root), 'lib-uuid', 1, {'uuid': 'u1'})
+    # Trigger explicit destructive rebuild and verify legacy columns are gone.
+    assert mapping_table.force_rebuild_table(str(library_root)) is True
 
     conn = sqlite3.connect(str(db_path))
     try:
@@ -120,7 +120,6 @@ def test_destructive_rebuild_drops_legacy_columns(tmp_path):
     assert 'title_sort' not in cols
     assert 'last_modified' in cols
     assert 'last_modified_server' in cols
-
 
 
 

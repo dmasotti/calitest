@@ -65,6 +65,7 @@ class SyncCompositeCursorTest extends TestCase
             'limit' => 200,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response->assertStatus(200);
@@ -91,6 +92,7 @@ class SyncCompositeCursorTest extends TestCase
             'limit' => 200,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response->assertStatus(200);
@@ -100,11 +102,18 @@ class SyncCompositeCursorTest extends TestCase
     /** @test */
     public function it_returns_composite_cursor_on_first_sync()
     {
-        // Create a book with recent last_modified
+        // Create two books so first page always returns a cursor with limit=1
         UserBook::factory()->create([
             'user_id' => $this->user->id,
             'library_id' => $this->library->id,
             'last_modified' => now()->timestamp,
+            'cover_missing' => false,
+            'ebook_missing' => false,
+        ]);
+        UserBook::factory()->create([
+            'user_id' => $this->user->id,
+            'library_id' => $this->library->id,
+            'last_modified' => now()->subSecond()->timestamp,
             'cover_missing' => false,
             'ebook_missing' => false,
         ]);
@@ -114,9 +123,10 @@ class SyncCompositeCursorTest extends TestCase
             'Accept' => 'application/json',
         ])->postJson('/api/sync/pull', [
             'cursor' => null,
-            'limit' => 200,
+            'limit' => 1,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response->assertStatus(200);
@@ -164,6 +174,7 @@ class SyncCompositeCursorTest extends TestCase
             'limit' => 200,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response->assertStatus(200);
@@ -189,7 +200,7 @@ class SyncCompositeCursorTest extends TestCase
             'user_id' => $this->user->id,
             'library_id' => $this->library->id,
             'last_modified' => now()->subYear()->timestamp,
-            'cover_missing' => true,
+            'metadata_incomplete' => true,
         ]);
 
         // Request #1: Changes phase (limit high enough to get all changes)
@@ -201,6 +212,7 @@ class SyncCompositeCursorTest extends TestCase
             'limit' => 200,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response1->assertStatus(200);
@@ -219,14 +231,15 @@ class SyncCompositeCursorTest extends TestCase
             'limit' => 200,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response2->assertStatus(200);
         $changes2 = $response2->json('changes');
         
-        // Should return the book with missing flag
+        // Should return the book flagged as incomplete metadata
         $this->assertGreaterThan(0, count($changes2));
-        $this->assertTrue($changes2[0]['cover_missing']);
+        $this->assertTrue($changes2[0]['metadata_incomplete']);
     }
 
     /** @test */
@@ -257,6 +270,7 @@ class SyncCompositeCursorTest extends TestCase
                 'limit' => 50,
                 'library_id' => $this->library->id,
                 'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
             ]);
 
             $response->assertStatus(200);
@@ -295,6 +309,7 @@ class SyncCompositeCursorTest extends TestCase
             'limit' => 200,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response->assertStatus(200);
@@ -339,6 +354,7 @@ class SyncCompositeCursorTest extends TestCase
             'limit' => 1,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response1->assertStatus(200);
@@ -361,6 +377,7 @@ class SyncCompositeCursorTest extends TestCase
             'limit' => 1,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response2->assertStatus(200);

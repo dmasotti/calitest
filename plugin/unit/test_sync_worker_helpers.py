@@ -689,21 +689,29 @@ def test_sync_v5_sends_client_inventory_in_chunks(monkeypatch):
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
     monkeypatch.setattr(
         worker,
-        '_v5_build_client_books_payload',
+        '_v5_collect_client_books_candidates',
         lambda **kwargs: (
-            {
-                'b': {
-                    'u1': {'m': 'h1', 'lm': 10},
-                    'u2': {'m': 'h2', 'lm': 20},
-                    'u3': {'m': 'h3', 'lm': 30},
-                },
-                'd': ['d1'],
-            },
+            ['d1'],
             {'u1': 1, 'u2': 2, 'u3': 3},
-            [],
+            [
+                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
+                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
+                {'id': 3, 'uuid': 'u3', 'last_modified': 30},
+            ],
         ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
     )
     monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
     monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
@@ -723,6 +731,227 @@ def test_sync_v5_sends_client_inventory_in_chunks(monkeypatch):
     assert calls[1]['client_batch_size'] == 2
     assert set(calls[1]['client_books']['b'].keys()) == {'u3'}
     assert calls[1]['client_books']['d'] == []
+
+
+def test_sync_v5_accumulates_skipped_hash_count_from_server(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = 0
+
+        def sync_v5(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    'updates_for_client': [],
+                    'missing_from_server': [],
+                    'deleted_on_server': [],
+                    'cursor': '100:1',
+                    'has_more': True,
+                    'client_cursor_next': 1,
+                    'client_done': False,
+                    'skipped_hash': 3,
+                }
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:2',
+                'has_more': False,
+                'client_cursor_next': 2,
+                'client_done': True,
+                'skipped_hash': 2,
+            }
+
+    worker.client = FakeClient()
+
+    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '1')
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            [],
+            {'u1': 1, 'u2': 2},
+            [
+                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
+                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+
+    summary = worker.sync_v5()
+    assert summary['books_skipped_hash'] == 5
+
+
+def test_sync_v5_streaming_hash_build_is_chunked(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+    worker.client = Mock()
+    worker.client.sync_v5 = Mock(side_effect=[
+        {
+            'updates_for_client': [],
+            'missing_from_server': [],
+            'deleted_on_server': [],
+            'cursor': '100:1',
+            'has_more': False,
+            'client_cursor_next': 2,
+            'client_done': False,
+            'skipped_hash': 0,
+        },
+        {
+            'updates_for_client': [],
+            'missing_from_server': [],
+            'deleted_on_server': [],
+            'cursor': '100:1',
+            'has_more': False,
+            'client_cursor_next': 3,
+            'client_done': True,
+            'skipped_hash': 0,
+        },
+    ])
+
+    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            [],
+            {'u1': 1, 'u2': 2, 'u3': 3},
+            [
+                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
+                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
+                {'id': 3, 'uuid': 'u3', 'last_modified': 30},
+            ],
+        ),
+    )
+
+    chunk_calls = []
+    def fake_build_chunk(books_chunk, **kwargs):
+        chunk_calls.append([b['uuid'] for b in books_chunk])
+        return {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        }
+    monkeypatch.setattr(worker, '_v5_build_client_books_chunk', fake_build_chunk)
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+
+    worker.sync_v5()
+
+    assert chunk_calls == [['u1', 'u2'], ['u3']]
+    assert worker.client.sync_v5.call_count == 2
+
+
+def test_sync_v5_resume_state_restores_client_cursor(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': 3,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+    worker.client = FakeClient()
+
+    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            [],
+            {'u1': 1, 'u2': 2, 'u3': 3},
+            [
+                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
+                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
+                {'id': 3, 'uuid': 'u3', 'last_modified': 30},
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+
+    saved_resume = []
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: saved_resume.append(dict(state)))
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: {
+        'resume_sig': worker._v5_build_resume_signature(
+            [('u1', {'id': 1}, 10), ('u2', {'id': 2}, 20), ('u3', {'id': 3}, 30)],
+            None,
+            False
+        ),
+        'client_cursor': 2,
+        'client_total': 3,
+        'server_cursor': '100:1',
+    })
+
+    worker.sync_v5()
+
+    assert calls[0]['client_cursor'] == 2
+    assert set(calls[0]['client_books']['b'].keys()) == {'u3'}
+    assert saved_resume, "resume state should be persisted during run"
 
 
 def test_v5_push_missing_items_uploads_cover_on_mismatch(monkeypatch):
@@ -1014,7 +1243,7 @@ def test_v5_apply_updates_batch_skips_download_for_server_missing_files(monkeypa
     assert had_errors is False
     assert summary['books_updated'] == 1
     assert summary['books_synced'] == 1
-    worker._should_download_file.assert_called_once_with(42, 'MOBI', 'sha256:c')
+    worker._should_download_file.assert_called_once_with(42, 'MOBI', 'sha256:c', item=updates[0])
     assert files_to_download == [(42, 'u-1', 'MOBI', 'sha256:c', 'hash_mismatch')]
 
 
@@ -1073,9 +1302,213 @@ def test_v5_push_missing_items_skips_file_upload_when_local_payload_unavailable(
     )
 
     assert had_errors is False
+    worker.client.post_sync.assert_called_once()
     worker._upload_file.assert_not_called()
-    assert any(err.get('phase') == 'push_missing_files_build' for err in summary['errors'])
+    assert not any(err.get('phase') == 'push_missing_files_build' for err in summary['errors'])
     assert not any(err.get('phase') == 'push_missing_file_upload' for err in summary['errors'])
+    assert summary.get('books_skipped_unavailable_files')
+    assert summary['books_synced'] == 1
+
+
+def test_v5_push_missing_items_forwards_no_cache_to_post_sync():
+    worker = _make_worker()
+    worker.gui = object()
+    worker.status_tag_mappings = {}
+    worker.client = Mock()
+    worker.client.post_sync = Mock(return_value={
+        'results': [{
+            'status': 'applied',
+            'server_item': {'files': []},
+            'file_uploads': [],
+        }]
+    })
+    worker._build_files_array_for_book = Mock(return_value=([{
+        'format': 'PDF',
+        'file_hash': 'a' * 64,
+        'size': 123,
+    }], {'status': 'ok', 'declared_formats': ['PDF']}))
+    worker._compute_metadata_signature = Mock(return_value=None)
+
+    worker.db.data.has_id = lambda _bid: True
+    worker.db.get_metadata = Mock(return_value=SimpleNamespace(
+        title='Book',
+        has_cover=False,
+        last_modified=datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+    ))
+    worker.db.formats = Mock(return_value=['PDF'])
+
+    sm = Mock()
+    sm.calibre_to_json_item = Mock(return_value={'uuid': 'u-1', 'title': 'Book'})
+
+    summary = {
+        'books_created': 0,
+        'books_updated': 0,
+        'books_synced': 0,
+        'files_deleted_local': 0,
+        'files_unavailable_runtime': 0,
+        'files_missing_real': 0,
+        'files_read_errors': 0,
+        'errors': [],
+    }
+
+    had_errors = worker._v5_push_missing_items(
+        to_upload=[{'uuid': 'u-1', 'needs_metadata': True, 'needs_cover': False, 'needs_files': False}],
+        missing_id_map={'u-1': 1},
+        uuids_deleted_locally=set(),
+        sync_library_path='/tmp/unused',
+        sm=sm,
+        updates_by_uuid={},
+        summary=summary,
+        no_cache=True,
+    )
+
+    assert had_errors is False
+    worker.client.post_sync.assert_called_once()
+    assert worker.client.post_sync.call_args.kwargs.get('no_cache') is True
+
+
+def test_v5_push_missing_items_batches_metadata_only_upserts(monkeypatch):
+    worker = _make_worker()
+    worker.gui = object()
+    worker.status_tag_mappings = {}
+    monkeypatch.setenv('CALIMOB_V5_MISSING_METADATA_BATCH_SIZE', '500')
+
+    captured_changes = []
+
+    def _fake_post_sync(**kwargs):
+        changes = kwargs.get('changes') or []
+        captured_changes.append(changes)
+        return {
+            'results': [
+                {'status': 'applied', 'client_change_id': ch.get('client_change_id')}
+                for ch in changes
+            ]
+        }
+
+    worker.client = Mock()
+    worker.client.post_sync = Mock(side_effect=_fake_post_sync)
+
+    worker.db.data.has_id = lambda _bid: True
+    worker.db.get_metadata = Mock(return_value=SimpleNamespace(
+        title='Book',
+        has_cover=False,
+        last_modified=datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+    ))
+    worker.db.formats = Mock(return_value=[])
+    worker._build_files_array_for_book = Mock(return_value=([], {'status': 'ok', 'declared_formats': []}))
+    worker._compute_metadata_signature = Mock(return_value='meta-hash')
+
+    sm = Mock()
+    sm.calibre_to_json_item = Mock(side_effect=[
+        {'uuid': 'u-1', 'title': 'Book 1'},
+        {'uuid': 'u-2', 'title': 'Book 2'},
+    ])
+
+    summary = {
+        'books_created': 0,
+        'books_updated': 0,
+        'books_synced': 0,
+        'files_deleted_local': 0,
+        'files_unavailable_runtime': 0,
+        'files_missing_real': 0,
+        'files_read_errors': 0,
+        'errors': [],
+    }
+
+    had_errors = worker._v5_push_missing_items(
+        to_upload=[
+            {'uuid': 'u-1', 'needs_metadata': True, 'needs_cover': False, 'needs_files': False},
+            {'uuid': 'u-2', 'needs_metadata': True, 'needs_cover': False, 'needs_files': False},
+        ],
+        missing_id_map={'u-1': 1, 'u-2': 2},
+        uuids_deleted_locally=set(),
+        sync_library_path='/tmp/unused',
+        sm=sm,
+        updates_by_uuid={},
+        summary=summary,
+    )
+
+    assert had_errors is False
+    worker.client.post_sync.assert_called_once()
+    assert len(captured_changes) == 1
+    assert len(captured_changes[0]) == 2
+    assert summary['books_synced'] == 2
+
+
+def test_v5_push_missing_items_batches_upserts_with_file_upload_targets(monkeypatch):
+    worker = _make_worker()
+    worker.status_tag_mappings = {}
+    worker.library_id = 'lib-123'
+    worker.calimob_library_id = 9
+    monkeypatch.setenv('CALIMOB_V5_MISSING_METADATA_BATCH_SIZE', '500')
+
+    class DbForUpload:
+        def __init__(self):
+            self.data = Mock()
+            self.data.has_id = lambda _: True
+            self.remove_format = Mock()
+
+        def get_metadata(self, book_id, index_is_id=True):
+            return SimpleNamespace(
+                title='Book %s' % book_id,
+                has_cover=False,
+                last_modified=datetime(2026, 2, 22, 18, 0, tzinfo=timezone.utc),
+            )
+
+        def formats(self, book_id, index_is_id=True):
+            return 'PDF'
+
+    worker.db = DbForUpload()
+    worker._build_files_array_for_book = lambda _book_id: [{'format': 'PDF', 'file_hash': 'abc'}]
+
+    uploaded = []
+    worker._upload_file = lambda file_info, _cache: uploaded.append(file_info) or {'success': True}
+
+    def _fake_post_sync(**kwargs):
+        changes = kwargs.get('changes') or []
+        out = []
+        for ch in changes:
+            cid = ch.get('client_change_id')
+            out.append({
+                'client_change_id': cid,
+                'status': 'applied',
+                'file_uploads': [{'format': 'PDF', 'upload_url': 'https://example.test/upload/%s' % cid}],
+                'server_item': {'uuid': ch.get('item', {}).get('uuid'), 'files': []},
+            })
+        return {'results': out}
+
+    worker.client = SimpleNamespace(post_sync=_fake_post_sync)
+
+    def _json_item_for_book(book_id, *_args, **_kwargs):
+        uuid_map = {1: 'u1', 2: 'u2'}
+        return {'uuid': uuid_map.get(book_id), 'title': 'Book %s' % book_id}
+
+    sm = SimpleNamespace(
+        calibre_to_json_item=_json_item_for_book,
+        calculate_cover_hash=lambda *_: None,
+    )
+
+    summary = {'errors': [], 'books_created': 0, 'books_synced': 0}
+    err = worker._v5_push_missing_items(
+        to_upload=[
+            {'uuid': 'u1', 'needs_files': True, 'needs_metadata': False, 'needs_cover': False},
+            {'uuid': 'u2', 'needs_files': True, 'needs_metadata': False, 'needs_cover': False},
+        ],
+        missing_id_map={'u1': 1, 'u2': 2},
+        uuids_deleted_locally=set(),
+        sync_library_path='/tmp',
+        sm=sm,
+        summary=summary,
+        updates_by_uuid={
+            'u1': {'last_modified': int(datetime(2026, 2, 20, tzinfo=timezone.utc).timestamp())},
+            'u2': {'last_modified': int(datetime(2026, 2, 20, tzinfo=timezone.utc).timestamp())},
+        },
+    )
+
+    assert err is False
+    assert len(uploaded) == 2
+    assert summary.get('files_uploaded', 0) == 2
+    assert summary.get('books_synced', 0) == 2
 
 
 def test_should_download_cover_does_not_force_download_on_local_check_error(monkeypatch):
@@ -1092,6 +1525,281 @@ def test_should_download_cover_does_not_force_download_on_local_check_error(monk
 
     assert should_download is False
     assert reason == 'error_local_cover_check'
+
+
+def test_should_download_file_defers_when_local_bytes_unavailable(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-123'
+
+    class UnavailableDb:
+        def __init__(self):
+            self.data = Mock()
+            self.data.has_id = lambda _book_id: True
+
+        def format(self, *args, **kwargs):
+            return None
+
+        def format_abspath(self, *args, **kwargs):
+            return None
+
+        def get_metadata(self, *args, **kwargs):
+            return SimpleNamespace(last_modified=datetime(2026, 2, 27, 10, 0, tzinfo=timezone.utc))
+
+    worker.db = UnavailableDb()
+    monkeypatch.setattr(sync_worker.time, 'sleep', lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_mapping_entry', lambda *args, **kwargs: {'notes': {}})
+
+    should_download, reason = worker._should_download_file(
+        1,
+        'PDF',
+        'sha256:abc',
+        item={'last_modified': int(datetime(2026, 2, 27, 11, 0, tzinfo=timezone.utc).timestamp())},
+    )
+
+    assert should_download is False
+    assert reason == 'local_bytes_unavailable_defer'
+
+
+def test_should_download_cover_uses_effective_timestamp_arbitration(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-123'
+
+    class CoverDb:
+        def __init__(self):
+            self.data = Mock()
+            self.data.has_id = lambda _book_id: True
+
+        def cover(self, *args, **kwargs):
+            return b'local-cover-bytes'
+
+    worker.db = CoverDb()
+
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_mapping_entry', lambda *args, **kwargs: {
+        'notes': {
+            'book_cache': {
+                'last_modified': '100',
+                'last_modified_server': '250',
+            },
+            'cover': {},
+        }
+    })
+
+    should_download, reason = worker._should_download_cover(
+        1,
+        {
+            'last_modified': 200,
+            'cover': {
+                'has_cover': True,
+                'cover_hash': 'sha256:server',
+            },
+        },
+        bulk_entry={'last_modified': 100},
+    )
+
+    assert should_download is False
+    assert reason == 'local_effective_newer_or_equal'
+
+
+def test_should_download_file_uses_effective_timestamp_arbitration_when_available(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-123'
+
+    class FileDb:
+        def __init__(self):
+            self.data = Mock()
+            self.data.has_id = lambda _book_id: True
+
+        def format(self, *args, **kwargs):
+            return b'local-file-content'
+
+        def format_abspath(self, *args, **kwargs):
+            return '/tmp/local.epub'
+
+    worker.db = FileDb()
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_mapping_entry', lambda *args, **kwargs: {
+        'notes': {
+            'book_cache': {
+                'last_modified': '100',
+                'last_modified_server': '250',
+            }
+        }
+    })
+
+    should_download, reason = worker._should_download_file(
+        1,
+        'EPUB',
+        'sha256:server-hash',
+        item={'last_modified': 200},
+        bulk_entry={'last_modified': 100, 'formats': {'EPUB'}},
+    )
+
+    assert should_download is False
+    assert reason == 'local_effective_newer_or_equal'
+
+
+def test_should_download_file_downloads_when_server_effective_is_newer(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-123'
+
+    class FileDb:
+        def __init__(self):
+            self.data = Mock()
+            self.data.has_id = lambda _book_id: True
+
+        def format(self, *args, **kwargs):
+            return b'local-file-content'
+
+        def format_abspath(self, *args, **kwargs):
+            return '/tmp/local.epub'
+
+    worker.db = FileDb()
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_mapping_entry', lambda *args, **kwargs: {
+        'notes': {
+            'book_cache': {
+                'last_modified': '100',
+                'last_modified_server': '250',
+                'files': {},
+            }
+        }
+    })
+    monkeypatch.setattr(sync_worker.cfg, 'update_book_cache', lambda *args, **kwargs: None)
+
+    should_download, reason = worker._should_download_file(
+        1,
+        'EPUB',
+        'sha256:server-hash',
+        item={'last_modified': 300},
+        bulk_entry={'last_modified': 100, 'formats': {'EPUB'}},
+    )
+
+    assert should_download is True
+    assert reason == 'hash_mismatch'
+
+
+def test_should_download_cover_downloads_when_server_effective_is_newer(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-123'
+
+    class CoverDb:
+        def __init__(self):
+            self.data = Mock()
+            self.data.has_id = lambda _book_id: True
+
+        def cover(self, *args, **kwargs):
+            return b'local-cover-bytes'
+
+    worker.db = CoverDb()
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_mapping_entry', lambda *args, **kwargs: {
+        'notes': {
+            'book_cache': {
+                'last_modified': '100',
+                'last_modified_server': '250',
+            },
+            'cover': {},
+        }
+    })
+    monkeypatch.setattr(sync_worker.cfg, 'update_book_cache', lambda *args, **kwargs: None)
+
+    should_download, reason = worker._should_download_cover(
+        1,
+        {
+            'last_modified': 300,
+            'cover': {
+                'has_cover': True,
+                'cover_hash': 'sha256:server',
+            },
+        },
+        bulk_entry={'last_modified': 100},
+    )
+
+    assert should_download is True
+    assert reason == 'hash_mismatch_or_missing'
+
+
+def test_apply_update_skips_cover_download_when_cover_unavailable(monkeypatch):
+    worker = _make_worker()
+    worker.progress_percent_column = None
+    worker.favorite_column = None
+    worker.status_tag_mappings = {}
+    worker._cache_book_uuid = lambda *args, **kwargs: None
+    worker._write_custom_columns = lambda *args, **kwargs: None
+    worker._download_cover = Mock()
+    worker._resolve_local_book_id = lambda item: 10
+    worker._should_download_cover = Mock(return_value=(False, 'error_local_cover_check'))
+
+    metadata = SimpleNamespace(
+        title='Book',
+        sort='Book',
+        author_sort='Author',
+        series=None,
+        publisher=None,
+        comments=None,
+        authors=[],
+        languages=[],
+        tags=[],
+        series_index=1.0,
+        rating=0.0,
+        last_modified=datetime(2026, 2, 22, 18, 0, tzinfo=timezone.utc),
+    )
+
+    class CoverDb:
+        def __init__(self, md):
+            self.data = Mock()
+            self.data.has_id = lambda _book_id: True
+            self._md = md
+
+        def get_metadata(self, book_id, index_is_id=True):
+            return self._md
+
+        def set_metadata(self, book_id, md):
+            return None
+
+    worker.db = CoverDb(metadata)
+
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_mapping_entry', lambda *args, **kwargs: {'notes': {}})
+    monkeypatch.setattr(sync_worker.cfg, 'update_book_cache', lambda *args, **kwargs: None)
+    monkeypatch.setattr(sync_worker.sync_mapper, 'json_item_to_calibre', lambda *args, **kwargs: {
+        'title': 'Book',
+        'title_sort': 'Book',
+        'author_sort': 'Author',
+        'authors': [],
+        'languages': [],
+        'tags': [],
+        'series_index': 1.0,
+        'rating': 0.0,
+        'last_modified': '2026-02-22T18:00:00Z',
+    })
+    monkeypatch.setattr(sync_worker.sync_mapper, 'calibre_to_json_item', lambda *args, **kwargs: {
+        'uuid': 'u-10',
+        'title': 'Book',
+        'cover': {},
+        'files': [],
+    })
+
+    item = {
+        'uuid': 'u-10',
+        'title': 'Book',
+        'title_sort': 'Book',
+        'author_sort': 'Author',
+        'authors': [],
+        'languages': [],
+        'tags': [],
+        'series': None,
+        'publisher': None,
+        'comments': None,
+        'series_index': 1.0,
+        'rating': 0.0,
+        'metadata_hash': 'sha256:server-hash',
+        'last_modified': int(datetime(2026, 2, 22, 18, 0, tzinfo=timezone.utc).timestamp()),
+        'cover': {
+            'has_cover': True,
+            'cover_hash': 'sha256:server-cover',
+        },
+    }
+
+    worker._apply_update(item, skip_cover=False)
+    worker._should_download_cover.assert_called_once()
+    worker._download_cover.assert_not_called()
 
 
 def test_build_files_array_for_book_uses_lowercase_format_bytes_fallback():
@@ -1211,3 +1919,262 @@ def test_read_cover_bytes_byte_only_reports_unavailable_for_non_bytes():
     assert data is None
     assert method == 'db.cover.index_is_id'
     assert status == 'unavailable'
+
+
+def test_sync_v5_resume_incompatible_signature_starts_from_zero(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = 'lib-123'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': 2,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+    worker.client = FakeClient()
+
+    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: {
+        'resume_sig': 'different-signature',
+        'client_cursor': 2,
+        'client_total': 3,
+        'server_cursor': '100:1',
+    })
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            ['d1'],
+            {'u1': 1, 'u2': 2, 'u3': 3},
+            [
+                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
+                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
+                {'id': 3, 'uuid': 'u3', 'last_modified': 30},
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+
+    worker.sync_v5()
+
+    assert calls[0]['client_cursor'] == 0
+    assert calls[0]['client_books']['d'] == ['d1']
+
+
+def test_sync_v5_resume_sends_deleted_only_first_batch_even_after_restore(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = 'lib-123'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': 3,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+    worker.client = FakeClient()
+
+    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            ['d1'],
+            {'u1': 1, 'u2': 2, 'u3': 3},
+            [
+                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
+                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
+                {'id': 3, 'uuid': 'u3', 'last_modified': 30},
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    resume_sig = worker._v5_build_resume_signature(
+        [('u1', {'id': 1}, 10), ('u2', {'id': 2}, 20), ('u3', {'id': 3}, 30)],
+        None,
+        False
+    )
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: {
+        'resume_sig': resume_sig,
+        'client_cursor': 2,
+        'client_total': 3,
+        'server_cursor': '100:1',
+    })
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+
+    worker.sync_v5()
+
+    assert calls[0]['client_cursor'] == 2
+    assert calls[0]['client_books']['d'] == []
+
+
+def test_sync_v5_resume_state_saved_each_successful_batch_and_cleared_on_success(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = 'lib-123'
+    worker.status_tag_mappings = {}
+    worker.client = Mock()
+    worker.client.sync_v5 = Mock(side_effect=[
+        {
+            'updates_for_client': [],
+            'missing_from_server': [],
+            'deleted_on_server': [],
+            'cursor': '100:1',
+            'has_more': False,
+            'client_cursor_next': 2,
+            'client_done': False,
+            'skipped_hash': 0,
+        },
+        {
+            'updates_for_client': [],
+            'missing_from_server': [],
+            'deleted_on_server': [],
+            'cursor': '100:1',
+            'has_more': False,
+            'client_cursor_next': 3,
+            'client_done': True,
+            'skipped_hash': 0,
+        },
+    ])
+
+    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            ['d1'],
+            {'u1': 1, 'u2': 2, 'u3': 3},
+            [
+                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
+                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
+                {'id': 3, 'uuid': 'u3', 'last_modified': 30},
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+
+    saved_resume = []
+    cleared = {'count': 0}
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: saved_resume.append(dict(state)))
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: cleared.__setitem__('count', cleared['count'] + 1))
+
+    worker.sync_v5()
+
+    assert len(saved_resume) >= 3
+    assert cleared['count'] == 1
+
+
+def test_sync_v5_resume_state_not_cleared_on_fatal_error(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = 'lib-123'
+    worker.status_tag_mappings = {}
+
+    class FailingClient:
+        def sync_v5(self, **kwargs):
+            raise RuntimeError('boom')
+    worker.client = FailingClient()
+
+    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            ['d1'],
+            {'u1': 1},
+            [{'id': 1, 'uuid': 'u1', 'last_modified': 10}],
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+
+    saved_resume = []
+    cleared = {'count': 0}
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: saved_resume.append(dict(state)))
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: cleared.__setitem__('count', cleared['count'] + 1))
+
+    summary = worker.sync_v5()
+
+    assert saved_resume
+    assert cleared['count'] == 0
+    assert summary['errors'], "fatal path should record errors"

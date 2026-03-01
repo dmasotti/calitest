@@ -84,6 +84,9 @@ class StorageFileServiceTest extends TestCase
         Storage::fake('local');
 
         $ebookStorage = Mockery::mock(EbookStorageService::class);
+        $ebookStorage->shouldReceive('buildStorageKey')
+            ->once()
+            ->andReturn('ebooks/aa/hash.cbr');
         $service = new StorageFileService($ebookStorage);
 
         $userBook = new UserBook([
@@ -98,8 +101,8 @@ class StorageFileServiceTest extends TestCase
 
         $meta = $service->storeFile($userBook, $bookFile, 'content-bytes', 'test.cbr');
 
-        $this->assertStringStartsWith('sha256:', $meta['file_hash']);
-        $this->assertTrue(Str::startsWith($meta['file_hash'], 'sha256:'));
+        $this->assertSame(hash('sha256', 'content-bytes'), $meta['file_hash']);
+        $this->assertFalse(Str::startsWith($meta['file_hash'], 'sha256:'));
     }
 
     public function test_store_file_returns_prefixed_hash_for_remote_upload()
@@ -108,10 +111,13 @@ class StorageFileServiceTest extends TestCase
         Config::set('filesystems.ebook_storage.provider', 'r2');
 
         $ebookStorage = Mockery::mock(EbookStorageService::class);
+        $ebookStorage->shouldReceive('buildStorageKey')
+            ->once()
+            ->andReturn('ebooks/aa/remotehash.cbr');
         $ebookStorage->shouldReceive('uploadEbook')
             ->once()
             ->andReturn([
-                'storage_key' => 'ebooks/1/2/uuid/hash.cbr',
+                'storage_key' => 'ebooks/aa/remotehash.cbr',
                 'file_hash' => 'sha256:remotehash',
             ]);
         $ebookStorage->shouldReceive('getProvider')->andReturn('r2');
@@ -133,7 +139,7 @@ class StorageFileServiceTest extends TestCase
 
         $meta = $service->storeFile($userBook, $bookFile, 'content', 'test.cbr');
 
-        $this->assertSame('sha256:remotehash', $meta['file_hash']);
+        $this->assertSame(hash('sha256', 'content'), $meta['file_hash']);
     }
 
     private function invokeEnsure(StorageFileService $service, string $key, bool $remote, string $provider): void

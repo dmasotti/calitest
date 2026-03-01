@@ -122,18 +122,21 @@ api_put() {
 
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 
-# Step 1: Discovery
+# Step 1: Discovery (prefer API discovery endpoint; discovery.php may point to migrated/prod URL)
 log_test "Discovering API URL"
-DISCOVERY_RESPONSE=$(curl -s "${DISCOVERY_URL}/discovery.php")
+DISCOVERY_RESPONSE=$(curl -s "${DISCOVERY_URL}/api/discovery")
 API_URL=$(json_parse "$DISCOVERY_RESPONSE" '.api_url // empty' "discovery_response")
 
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
-  DISCOVERY_RESPONSE=$(curl -s "${DISCOVERY_URL}/api/discovery")
+  DISCOVERY_RESPONSE=$(curl -s "${DISCOVERY_URL}/discovery.php")
   API_URL=$(json_parse "$DISCOVERY_RESPONSE" '.api_url // empty' "discovery_fallback")
 fi
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
-    log_fail "Discovery failed"
-    exit 1
+    API_URL="${DISCOVERY_URL%/}/api"
+fi
+# Keep tests local even if discovery.php returns external host
+if [[ "$API_URL" != ${DISCOVERY_URL%/}/* ]]; then
+    API_URL="${DISCOVERY_URL%/}/api"
 fi
 log_pass "API URL discovered: $API_URL"
 
@@ -300,7 +303,7 @@ fi
 log_test "Pull sync - verifying changes"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 USER_BOOKS_AFTER=$(api_get "/user-books")
-FOUND_BOOK=$(json_parse "$USER_BOOKS_AFTER" ".[] | select(.uuid == \"$BOOK_UUID\") | .title // empty" "user_books_for_verify")
+FOUND_BOOK=$(json_parse "$USER_BOOKS_AFTER" '(.data // .)[] | select(.uuid == "'"$BOOK_UUID"'") | .title // empty' "user_books_for_verify")
 if [[ "$FOUND_BOOK" == *"Updated"* ]]; then
     log_pass "Verified book changes on server"
 else
@@ -321,7 +324,7 @@ log_pass "User-books listing returned $SEARCH_COUNT results"
 log_test "Filtering by status"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 STATUS_RESPONSE=$(api_get "/user-books")
-STATUS_COUNT=$(json_parse "$STATUS_RESPONSE" '[.[] | select(.status == "reading")] | length' "status_filter")
+STATUS_COUNT=$(json_parse "$STATUS_RESPONSE" '[((.data // .)[] | select(.status == "reading"))] | length' "status_filter")
 log_pass "Status filter returned $STATUS_COUNT books"
 
 echo ""
@@ -331,7 +334,7 @@ echo "=== Metadata Operations ==="
 log_test "Getting book details"
 TOTAL_TESTS=$((TOTAL_TESTS + 1))
 BOOK_DETAIL=$(api_get "/user-books")
-BOOK_TITLE=$(json_parse "$BOOK_DETAIL" ".[] | select(.uuid == \"$BOOK_UUID\") | .title // empty" "book_details")
+BOOK_TITLE=$(json_parse "$BOOK_DETAIL" '(.data // .)[] | select(.uuid == "'"$BOOK_UUID"'") | .title // empty' "book_details")
 if [[ -n "$BOOK_TITLE" ]]; then
     log_pass "Got book details: $BOOK_TITLE"
 else

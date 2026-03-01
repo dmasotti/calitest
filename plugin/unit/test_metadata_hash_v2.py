@@ -140,7 +140,7 @@ class TestViewCreation:
         """Test VIEW query returns data."""
         cursor = test_db.cursor()
         
-        cursor.execute("SELECT id, uuid, hash_payload FROM calimob_books_hash_v2 WHERE id = 1")
+        cursor.execute("SELECT id, uuid, metadata_hash FROM calimob_books_hash_v2 WHERE id = 1")
         row = cursor.fetchone()
         
         assert row is not None, "VIEW query returned no results"

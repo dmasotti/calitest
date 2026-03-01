@@ -12,6 +12,10 @@ abstract class TestCase extends BaseTestCase
     protected function setUp(): void
     {
         parent::setUp();
+        
+        // Disable CSRF for all tests
+        $this->withoutMiddleware(\App\Http\Middleware\VerifyCsrfToken::class);
+        
         // Ensure the test suite does not depend on a database-backed cache table.
         // Some environments (.env) default to CACHE_STORE=database, but the Server suite
         // may run against existing schemas or schema dumps without the cache table.

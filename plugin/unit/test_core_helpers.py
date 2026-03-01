@@ -69,8 +69,8 @@ class ConfigHelpersTest(unittest.TestCase):
     def tearDown(self):
         cfg.plugin_prefs[cfg.STORE_PLUGIN] = self.orig_store
 
-    def test_show_goodreads_features_default_false(self):
-        assert not cfg.show_goodreads_features()
+    def test_remote_feature_toggle_removed(self):
+        assert not hasattr(cfg, 'show_remote_features')
 
     def test_update_isbn_never(self):
         book = {'calibre_isbn': '111'}

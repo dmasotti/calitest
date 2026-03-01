@@ -84,7 +84,6 @@ class EpubReaderTest extends TestCase
             'book_uuid' => $this->book->uuid,
             'format' => 'EPUB',
             'progress_bp' => 3000,
-            'last_position' => json_encode(['cfi' => 'epub_position']),
             'client_ts' => now(),
         ]);
 
@@ -96,7 +95,6 @@ class EpubReaderTest extends TestCase
             'book_uuid' => $this->book->uuid,
             'format' => 'PDF',
             'progress_bp' => 7000,
-            'last_position' => json_encode(['page' => 42]),
             'client_ts' => now(),
         ]);
 
@@ -104,8 +102,8 @@ class EpubReaderTest extends TestCase
             ->get("/epub/{$this->book->uuid}");
 
         $response->assertStatus(200)
-            ->assertViewHas('maxProgress', function ($progress) {
-                return $progress->progress == 70.0;
+            ->assertViewHas('initialProgress', function ($progress) {
+                return $progress == 70.0;
             });
     }
 }

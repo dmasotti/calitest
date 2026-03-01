@@ -93,7 +93,7 @@ class FileDownloadTest extends TestCase
             ->get(route('files.ebook.download', ['userBook' => $userBook->uuid]) . '?format=epub');
 
         $response->assertOk();
-        $response->assertHeader('content-disposition', 'attachment; filename=local-test.epub');
+        $this->assertStringContainsString('attachment; filename="local-test.epub"', $response->headers->get('content-disposition'));
     }
 
     public function test_streams_local_file_uses_derived_filename_when_name_missing()

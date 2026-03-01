@@ -8,6 +8,7 @@ This test uses:
 import json
 import subprocess
 import sys
+import re
 from pathlib import Path
 
 # Add sync_calimob to path
@@ -187,7 +188,14 @@ echo json_encode(['hash' => $hash, 'normalized' => '']);
     if result.stderr:
         print(result.stderr, end='')
     
-    response = json.loads(result.stdout)
+    # PHP startup warnings (e.g. missing xdebug) can be printed before JSON.
+    # Parse the last JSON object found in stdout.
+    stdout = result.stdout or ''
+    matches = re.findall(r'\{.*\}', stdout, flags=re.DOTALL)
+    if not matches:
+        raise RuntimeError(f"PHP output did not contain JSON. stdout={stdout!r} stderr={result.stderr!r}")
+
+    response = json.loads(matches[-1])
     return response['normalized'], response['hash']
 
 
@@ -315,6 +323,172 @@ TEST_CASES = [
         'cover_hash': None,
     },
     {
+        'name': 'dirty_input_unsorted_arrays_and_client_only_fields',
+        'json_item': {
+            'uuid': 'f6a7b8c9-d0e1-2345-f123-456789012345',
+            'title': 'Dirty Input',
+            'title_sort': 'Dirty Input Sorted',
+            'author_sort': 'Zeta, Alice & Alpha, Bob',
+            'authors': [
+                {'name': 'Zeta, Alice', 'role': 'editor', 'position': 2, 'id': 999, 'client_ids': ['x']},
+                {'name': 'Alpha, Bob', 'role': 'author', 'position': 0, 'link': 'ignored'},
+            ],
+            'series': None,
+            'identifiers': {'ISBN': '9780000000001', 'GoodReads': 'abc123'},
+            'publisher': 'Dirty Publisher',
+            'pubdate': 1700000000,
+            'languages': ['ita', 'eng', 'deu'],
+            'tags': [
+                {'name': 'z-tag', 'id': 10},
+                {'name': 'a-tag', 'link': 'ignored'},
+            ],
+            'rating': 1,
+            'comments': 'dirty comments',
+            'favorite': True,
+            'status': 'reading',
+            'source': 'client',
+            'progress_percent': 42.5,
+            'edition': 'first',
+            'content_language': 'it',
+            'extra': {'foo': 'bar'},
+            'cover': '/tmp/path.jpg',
+            'files': [{'format': 'EPUB', 'hash': 'sha256:deadbeef'}],
+        },
+        'format_cache': {},
+        'cover_hash': None,
+    },
+    {
+        'name': 'dirty_input_mixed_authors_tags_and_unsorted_languages',
+        'json_item': {
+            'uuid': '07b8c9d0-e1f2-3456-0123-567890123456',
+            'title': 'Dirty Mixed Arrays',
+            'authors': [
+                {'name': 'Gamma'},
+                {'name': 'Beta', 'position': 5},
+                {'name': 'Alpha', 'role': 'author'},
+            ],
+            'series': {'name': 'S', 'index': 3},
+            'identifiers': {'z-id': 'z', 'a-id': 'a', '': 'ignored', 'nullish': ''},
+            'publisher': None,
+            'pubdate': None,
+            'languages': ['zzz', 'aaa', 'mmm', None],
+            'tags': [
+                {'name': 'z'},
+                {'name': 'a'},
+                {'name': 'm'},
+            ],
+            'rating': None,
+            'comments': None,
+        },
+        'format_cache': {},
+        'cover_hash': None,
+    },
+    {
+        'name': 'log_case_deep_learning_rich_metadata',
+        'json_item': {
+            'uuid': 'db8dccdf-e56b-4bec-88a8-0fbc086e492b',
+            'title': 'Deep Learning',
+            'title_sort': 'Deep Learning',
+            'author_sort': 'Goodfellow, Ian & Bengio, Yoshua & Courville, Aaron',
+            'authors': [
+                {'name': 'Dave Louapre', 'role': 'author', 'position': 0},
+                {'name': 'Ian Goodfellow', 'role': 'author', 'position': 6},
+                {'name': 'Yoshua Bengio', 'role': 'author', 'position': 7},
+                {'name': 'Aaron Courville', 'role': 'author', 'position': 8},
+            ],
+            'series': {'name': 'serie1', 'series_index': 1.0},
+            'identifiers': {
+                'e2e_local_id': 'E2E-LOCAL-1771794679',
+                'e2e_server_id': 'E2E-SERVER-1771794478',
+                'goodreads': '30422361',
+                'google': 'Np9SDQAAQBAJ',
+                'isbn': '9780262035613',
+                'testid': 'IT-E2E-1771791622',
+            },
+            'publisher': 'Scholastic Press',
+            'pubdate': 1420066800,
+            'languages': ['eng', 'por', 'ara'],
+            'tags': [
+                {'name': 'alien invasion'},
+                {'name': 'dystopian'},
+                {'name': 'Artificial Intelligence'},
+            ],
+            'rating': None,
+            'comments': '<div><p>from log sample</p></div>',
+        },
+        'format_cache': {},
+        'cover_hash': None,
+    },
+    {
+        'name': 'log_case_string_theory_unicode_tags',
+        'json_item': {
+            'uuid': '66fb9f9f-3d09-4a56-b800-1ea4068e93a0',
+            'title': 'String Theory',
+            'title_sort': 'String Theory',
+            'author_sort': 'Polchinski, Joseph',
+            'authors': [
+                {'name': 'Disney', 'role': 'author', 'position': 0},
+                {'name': 'Joseph Polchinski', 'role': 'author', 'position': 3},
+            ],
+            'series': None,
+            'identifiers': {'isbn': '9780521633031', 'amazon': '0521633125', 'google': '54DGYyNAjacC'},
+            'publisher': 'Cambridge University Press',
+            'pubdate': 909518400,
+            'languages': ['eng'],
+            'tags': [
+                {'name': 'Fiction'},
+                {'name': 'Juvenile Fiction'},
+                {'name': 'Fiction teeee'},
+                {'name': 'ma esiste un lungo elenco di coloro che hanno sedotto spiegando quello che si stava per mangiare"... Manuel Vázquez Montalbán'},
+            ],
+            'rating': None,
+            'comments': None,
+        },
+        'format_cache': {},
+        'cover_hash': None,
+    },
+    {
+        'name': 'identifiers_as_list_entries',
+        'json_item': {
+            'uuid': '11111111-2222-3333-4444-555555555555',
+            'title': 'Identifier List Form',
+            'authors': [{'name': 'Author One', 'role': 'author', 'position': 0}],
+            'series': None,
+            'identifiers': [
+                {'type': 'ISBN', 'value': '9780000000003'},
+                {'scheme': 'goodreads', 'val': '999'},
+            ],
+            'publisher': None,
+            'pubdate': None,
+            'languages': ['eng'],
+            'tags': [{'name': 't1'}],
+            'rating': None,
+            'comments': None,
+        },
+        'format_cache': {},
+        'cover_hash': None,
+    },
+    {
+        'name': 'identifiers_empty_list_vs_empty_map_shape',
+        'json_item': {
+            'uuid': '22222222-3333-4444-5555-666666666666',
+            'title': 'Identifier Empty List',
+            'title_sort': 'Identifier Empty List',
+            'author_sort': 'One, Author',
+            'authors': [{'name': 'Author One', 'role': 'editor', 'position': 9}],
+            'series': None,
+            'identifiers': [],
+            'publisher': None,
+            'pubdate': None,
+            'languages': [],
+            'tags': [],
+            'rating': None,
+            'comments': None,
+        },
+        'format_cache': {},
+        'cover_hash': None,
+    },
+    {
         'name': 'book_with_empty_arrays',
         'json_item': {
             'uuid': 'e5f6a7b8-c9d0-1234-ef12-345678901234',
@@ -332,6 +506,91 @@ TEST_CASES = [
         'format_cache': {},
         'cover_hash': None,
     },
+]
+
+EQUIVALENT_CASES = [
+    {
+        'name': 'equivalent_authors_tags_order_and_client_fields_ignored',
+        'canonical': {
+            'uuid': '77777777-7777-7777-7777-777777777777',
+            'title': 'Equivalent Book',
+            'authors': [
+                {'name': 'A Author', 'role': 'author', 'position': 0},
+                {'name': 'B Author', 'role': 'author', 'position': 1},
+            ],
+            'series': None,
+            'identifiers': {'isbn': '9780000000002'},
+            'publisher': 'Publisher',
+            'pubdate': 1710000000,
+            'languages': ['eng', 'ita'],
+            'tags': [{'name': 'alpha'}, {'name': 'beta'}],
+            'rating': 4,
+            'comments': 'Same semantic content',
+        },
+        'dirty': {
+            'uuid': '77777777-7777-7777-7777-777777777777',
+            'title': 'Equivalent Book',
+            'title_sort': 'Equivalent Book',
+            'author_sort': 'B Author & A Author',
+            'authors': [
+                {'name': 'B Author', 'role': 'author', 'position': 1, 'id': 2, 'link': 'x'},
+                {'name': 'A Author', 'role': 'author', 'position': 0, 'client_ids': ['y']},
+            ],
+            'series': None,
+            'identifiers': {'ISBN': '9780000000002'},
+            'publisher': 'Publisher',
+            'pubdate': 1710000000,
+            'languages': ['ita', 'eng'],
+            'tags': [{'name': 'beta', 'id': 2}, {'name': 'alpha', 'link': 'x'}],
+            'rating': 4,
+            'comments': 'Same semantic content',
+            'favorite': True,
+            'status': 'reading',
+            'source': 'client',
+            'cover': '/tmp/ignored.jpg',
+            'files': [{'format': 'EPUB', 'hash': 'sha256:ignored'}],
+        },
+    }
+    ,
+    {
+        'name': 'equivalent_role_position_title_sort_author_sort_ignored',
+        'canonical': {
+            'uuid': '88888888-8888-8888-8888-888888888888',
+            'title': 'Role Ignore',
+            'authors': [
+                {'name': 'A'},
+                {'name': 'B'},
+            ],
+            'series': None,
+            'identifiers': {'isbn': '9780000000004'},
+            'publisher': None,
+            'pubdate': None,
+            'languages': ['eng', 'ita'],
+            'tags': [{'name': 'x'}, {'name': 'y'}],
+            'rating': None,
+            'comments': None,
+        },
+        'dirty': {
+            'uuid': '88888888-8888-8888-8888-888888888888',
+            'title': 'Role Ignore',
+            'title_sort': 'Role Ignore, The',
+            'author_sort': 'B & A',
+            'authors': [
+                {'name': 'B', 'role': 'translator', 'position': 99, 'id': -1},
+                {'name': 'A', 'role': 'author', 'position': 0, 'client_ids': [1, 2]},
+            ],
+            'series': None,
+            'identifiers': {'ISBN': '9780000000004'},
+            'publisher': None,
+            'pubdate': None,
+            'languages': ['ita', 'eng'],
+            'tags': [{'name': 'y', 'id': -2}, {'name': 'x', 'link': 'ignored'}],
+            'rating': 0,
+            'comments': None,
+            'status': 'done',
+            'favorite': False,
+        },
+    }
 ]
 
 
@@ -421,6 +680,37 @@ def test_hash_consistency():
     
     print("\n✅ All tests passed!")
 
+def test_hash_equivalence_for_dirty_variants():
+    """Semantically equivalent dirty payloads must produce the same hash."""
+    for case in EQUIVALENT_CASES:
+        canonical = case['canonical']
+        dirty = case['dirty']
+
+        _, py_hash_canonical = compute_python_hash(canonical, {}, None)
+        _, py_hash_dirty = compute_python_hash(dirty, {}, None)
+        if py_hash_canonical != py_hash_dirty:
+            raise AssertionError(
+                f"Python equivalence failed for {case['name']}: "
+                f"{py_hash_canonical} != {py_hash_dirty}"
+            )
+
+        _, php_hash_canonical = compute_php_hash(canonical)
+        _, php_hash_dirty = compute_php_hash(dirty)
+        if php_hash_canonical != php_hash_dirty:
+            raise AssertionError(
+                f"PHP equivalence failed for {case['name']}: "
+                f"{php_hash_canonical} != {php_hash_dirty}"
+            )
+
+        if py_hash_canonical != php_hash_canonical:
+            raise AssertionError(
+                f"Cross-language mismatch for {case['name']}: "
+                f"python={py_hash_canonical} php={php_hash_canonical}"
+            )
+
+    print("\nAll dirty-variant equivalence checks passed.")
+
 
 if __name__ == '__main__':
     test_hash_consistency()
+    test_hash_equivalence_for_dirty_variants()

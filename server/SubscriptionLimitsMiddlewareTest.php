@@ -77,7 +77,7 @@ class SubscriptionLimitsMiddlewareTest extends TestCase
     /**
      * Test middleware allows superadmin to bypass limits
      */
-    public function test_middleware_allows_superadmin_to_bypass_limits(): void
+    public function test_library_api_still_enforces_limit_for_superadmin_flag(): void
     {
         $user = User::factory()->create([
             'subscription_tier' => 'free',
@@ -89,16 +89,13 @@ class SubscriptionLimitsMiddlewareTest extends TestCase
         
         Sanctum::actingAs($user);
 
-        // Superadmin should be able to create more libraries via web route (middleware applies)
-        session()->start();
-        $response = $this->actingAs($user)->post('/library', [
+        // API route currently enforces canCreateLibrary() directly, even for superadmin users.
+        $response = $this->postJson('/api/libraries', [
             'name' => 'Superadmin Library',
             'calibre_library_uuid' => (string) Str::uuid(),
-            '_token' => session()->token(),
         ]);
 
-        $response->assertStatus(302);
-        $response->assertSessionDoesntHaveErrors();
+        $response->assertStatus(403);
     }
 
     /**

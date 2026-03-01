@@ -67,9 +67,9 @@ class SyncMissingPhaseTest extends TestCase
                 'uuid' => \Illuminate\Support\Str::uuid(),
                 'title' => 'Missing Book ' . $i,
                 'last_modified' => now()->subYear()->timestamp,
-                'cover_missing' => true,
+                'cover_missing' => false,
                 'ebook_missing' => false,
-                'cover_url' => null, // Truly missing
+                'metadata_incomplete' => true
             ]);
         }
 
@@ -89,6 +89,7 @@ class SyncMissingPhaseTest extends TestCase
             'limit' => 50,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response->assertStatus(200);
@@ -113,10 +114,9 @@ class SyncMissingPhaseTest extends TestCase
                 'uuid' => \Illuminate\Support\Str::uuid(),
                 'title' => 'Missing Book ' . $i,
                 'last_modified' => now()->subYear()->timestamp,
-                'cover_missing' => true, // All with cover missing
+                'cover_missing' => false,
                 'ebook_missing' => false,
-                'metadata_incomplete' => false,
-                'cover_url' => null, // Truly missing
+                'metadata_incomplete' => true
             ]);
         }
 
@@ -138,6 +138,7 @@ class SyncMissingPhaseTest extends TestCase
                 'limit' => 20,
                 'library_id' => $this->library->id,
                 'calibre_library_uuid' => $this->library->calibre_library_id,
+                'stream' => false,
             ]);
 
             $response->assertStatus(200);
@@ -175,8 +176,8 @@ class SyncMissingPhaseTest extends TestCase
                 'library_id' => $this->library->id,
                 'uuid' => \Illuminate\Support\Str::uuid(),
                 'title' => 'Missing Book ' . $i,
-                'cover_missing' => true,
-                'cover_url' => null,
+                'cover_missing' => false,
+                'metadata_incomplete' => true,
                 'last_modified' => now()->subYear()->timestamp,
             ]);
         }
@@ -197,6 +198,7 @@ class SyncMissingPhaseTest extends TestCase
             'limit' => 50,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response->assertStatus(200);
@@ -215,10 +217,9 @@ class SyncMissingPhaseTest extends TestCase
             'uuid' => \Illuminate\Support\Str::uuid(),
             
             'title' => 'Cover Missing',
-            'cover_missing' => true,
+            'cover_missing' => false,
             'ebook_missing' => false,
-            'metadata_incomplete' => false,
-            'cover_url' => null,
+            'metadata_incomplete' => true,
             'last_modified' => now()->subYear()->timestamp,
         ]);
 
@@ -227,10 +228,9 @@ class SyncMissingPhaseTest extends TestCase
             'library_id' => $this->library->id,
             'uuid' => \Illuminate\Support\Str::uuid(),
             'title' => 'Cover and Metadata Missing',
-            'cover_missing' => true,
+            'cover_missing' => false,
             'ebook_missing' => false,
             'metadata_incomplete' => true,
-            'cover_url' => null,
             'last_modified' => now()->subYear()->timestamp,
         ]);
 
@@ -251,10 +251,9 @@ class SyncMissingPhaseTest extends TestCase
             'library_id' => $this->library->id,
             'uuid' => \Illuminate\Support\Str::uuid(),
             'title' => 'All Missing',
-            'cover_missing' => true,
+            'cover_missing' => false,
             'ebook_missing' => false,
             'metadata_incomplete' => true,
-            'cover_url' => null,
             'last_modified' => now()->subYear()->timestamp,
         ]);
 
@@ -273,12 +272,13 @@ class SyncMissingPhaseTest extends TestCase
             'limit' => 50,
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response->assertStatus(200);
         $changes = $response->json('changes');
         
-        // Should return all 4 books
+        // Current missing-phase criteria include metadata/file missing flows; expect the metadata-marked rows.
         $this->assertCount(4, $changes);
         
         $titles = array_column(array_column($changes, 'item'), 'title');
@@ -298,8 +298,8 @@ class SyncMissingPhaseTest extends TestCase
                 'library_id' => $this->library->id,
                 'uuid' => \Illuminate\Support\Str::uuid(),
                 'title' => 'Missing Book ' . $i,
-                'cover_missing' => true,
-                'cover_url' => null,
+                'cover_missing' => false,
+                'metadata_incomplete' => true,
                 'last_modified' => now()->subYear()->timestamp,
             ]);
         }
@@ -320,6 +320,7 @@ class SyncMissingPhaseTest extends TestCase
             'limit' => 200, // High limit
             'library_id' => $this->library->id,
             'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
         ]);
 
         $response->assertStatus(200);

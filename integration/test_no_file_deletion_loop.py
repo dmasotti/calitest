@@ -114,7 +114,12 @@ def test_server_code():
     """Verify server code reads X-Last-Modified header"""
     log("\n5. Verifying server implementation...")
     
-    with open('html/routes/api.php', 'r') as f:
+    # Use absolute path relative to this test file
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(test_dir, '../..'))
+    api_routes_path = os.path.join(project_root, 'html/routes/api.php')
+    
+    with open(api_routes_path, 'r') as f:
         code = f.read()
     
     checks = [

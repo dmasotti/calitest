@@ -229,7 +229,7 @@ echo "DEBUG: Raw BOOK_DETAIL_RAW response from /user-books:" >&2
 echo "$BOOK_DETAIL_RAW" >&2
 BOOK_DETAIL=$(parse_json "$BOOK_DETAIL_RAW" "user_books")
 
-CREATED_BOOK=$(echo "$BOOK_DETAIL" | jq -r --arg uuid "$BOOK_UUID" '.[] | select(.uuid == $uuid)')
+CREATED_BOOK=$(echo "$BOOK_DETAIL" | jq -r --arg uuid "$BOOK_UUID" '(.data // .)[] | select(.uuid == $uuid)')
 echo "DEBUG: CREATED_BOOK extracted:" >&2
 echo "$CREATED_BOOK" >&2
 

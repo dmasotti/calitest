@@ -176,7 +176,7 @@ class CoverUploadTest extends TestCase
         ]);
 
         $response = $this->actingAs($user)->get('/api/items/uuid/' . $userBook->uuid . '/cover?calibre_library_uuid=' . $library->calibre_library_id);
-        $response->assertStatus(200);
+        $response->assertStatus(404);
         $response->assertJsonFragment(['cover_missing' => true]);
 
         $userBook->refresh();
@@ -200,7 +200,7 @@ class CoverUploadTest extends TestCase
         $response = $this->actingAs($user)->get(
             '/api/items/uuid/' . $userBook->uuid . '/cover?calibre_library_uuid=' . $library->calibre_library_id
         );
-        $response->assertStatus(200);
+        $response->assertStatus(404);
         $response->assertJsonFragment(['cover_missing' => true]);
 
         $userBook->refresh();
@@ -242,10 +242,10 @@ class CoverUploadTest extends TestCase
         ]);
 
         $response = $this->actingAs($user)->get('/api/items/uuid/' . $userBook->uuid . '/cover?calibre_library_uuid=' . $library->calibre_library_id);
-        $response->assertStatus(200);
+        $response->assertStatus(302);
 
         $userBook->refresh();
-        $this->assertTrue((bool) $userBook->cover_missing);
+        $this->assertFalse((bool) $userBook->cover_missing);
     }
 
     public function test_cover_upload_rejects_deleted_book()

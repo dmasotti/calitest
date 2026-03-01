@@ -6,7 +6,6 @@ use Tests\TestCase;
 use App\Models\User;
 use App\Models\UserBook;
 use App\Models\Library;
-use App\Models\Device;
 use App\Models\BookDeviceProgress;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -34,11 +33,11 @@ class BookProgressTest extends TestCase
     public function it_can_save_reading_progress()
     {
         $response = $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
+            ->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+                'library_id' => $this->library->id,
+                'device_uuid' => 'test-device-progress-1',
                 'format' => 'EPUB',
-                'progress_percent' => 50,
-                'last_position' => json_encode(['cfi' => 'epubcfi(/6/4[chap01]!/4/2/2/1:0)', 'percent' => 50]),
-                'reading_time' => 300,
+                'progress_bp' => 5000,
             ]);
 
         $response->assertStatus(200);
@@ -52,16 +51,17 @@ class BookProgressTest extends TestCase
     }
 
     /** @test */
-    public function it_requires_format_field()
+    public function it_requires_progress_bp_field()
     {
         $response = $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
-                'progress_percent' => 50,
-                'last_position' => json_encode(['percent' => 50]),
+            ->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+                'library_id' => $this->library->id,
+                'device_uuid' => 'test-device-progress-2',
+                'format' => 'EPUB',
             ]);
 
         $response->assertStatus(422);
-        $response->assertJsonValidationErrors(['format']);
+        $response->assertJsonValidationErrors(['progress_bp']);
     }
 
     /** @test */
@@ -69,20 +69,20 @@ class BookProgressTest extends TestCase
     {
         // Save EPUB progress
         $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
+            ->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+                'library_id' => $this->library->id,
+                'device_uuid' => 'test-device-progress-3',
                 'format' => 'EPUB',
-                'progress_percent' => 30,
-                'last_position' => json_encode(['cfi' => 'epubcfi(/6/4)', 'percent' => 30]),
-                'reading_time' => 200,
+                'progress_bp' => 3000,
             ]);
 
         // Save PDF progress
         $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
+            ->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+                'library_id' => $this->library->id,
+                'device_uuid' => 'test-device-progress-3',
                 'format' => 'PDF',
-                'progress_percent' => 70,
-                'last_position' => json_encode(['page' => 50, 'percent' => 70]),
-                'reading_time' => 400,
+                'progress_bp' => 7000,
             ]);
 
         // Verify both are stored separately
@@ -104,20 +104,20 @@ class BookProgressTest extends TestCase
     {
         // First save
         $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
+            ->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+                'library_id' => $this->library->id,
+                'device_uuid' => 'test-device-progress-4',
                 'format' => 'EPUB',
-                'progress_percent' => 30,
-                'last_position' => json_encode(['percent' => 30]),
-                'reading_time' => 200,
+                'progress_bp' => 3000,
             ]);
 
         // Update
         $this->actingAs($this->user)
-            ->postJson("/api/books/{$this->book->uuid}/progress", [
+            ->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+                'library_id' => $this->library->id,
+                'device_uuid' => 'test-device-progress-4',
                 'format' => 'EPUB',
-                'progress_percent' => 60,
-                'last_position' => json_encode(['percent' => 60]),
-                'reading_time' => 150,
+                'progress_bp' => 6000,
             ]);
 
         // Should have only one record updated
@@ -136,9 +136,11 @@ class BookProgressTest extends TestCase
     /** @test */
     public function it_requires_authentication()
     {
-        $response = $this->postJson("/api/books/{$this->book->uuid}/progress", [
+        $response = $this->postJson("/api/books/{$this->book->uuid}/reading-progress", [
+            'library_id' => $this->library->id,
+            'device_uuid' => 'test-device-progress-unauth',
             'format' => 'EPUB',
-            'progress_percent' => 50,
+            'progress_bp' => 5000,
         ]);
 
         $response->assertStatus(401);

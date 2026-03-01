@@ -45,6 +45,13 @@ def ensure_env():
     password = os.environ.get("TEST_USER_PASSWORD")
     if not discovery or not email or not password:
         raise SystemExit("Missing env: DISCOVERY_URL, TEST_USER_EMAIL, TEST_USER_PASSWORD")
+
+    library_path = os.environ.get(
+        "CALIMOB_TEST_LIBRARY_PATH",
+        str(TESTS_ROOT / "plugin" / "fixtures" / "CalibreTestLocal"),
+    )
+    if not os.path.isfile(os.path.join(library_path, "metadata.db")):
+        raise SystemExit(f"Missing Calibre test library: {library_path}/metadata.db")
     return discovery, email, password
 
 

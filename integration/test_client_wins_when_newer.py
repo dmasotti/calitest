@@ -26,7 +26,12 @@ def test_skip_logic_in_code():
     log("=" * 60)
     
     log("\n1. Reading sync_worker.py...")
-    with open('sync_calimob/sync_worker.py', 'r') as f:
+    # Use absolute path relative to this test file
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(test_dir, '../..'))
+    sync_worker_path = os.path.join(project_root, 'sync_calimob/sync_worker.py')
+    
+    with open(sync_worker_path, 'r') as f:
         code = f.read()
     
     # Find the skip logic section
@@ -69,7 +74,12 @@ def test_rating_conversion():
     """Verify rating None stays None (not converted to 0)"""
     log("\n3. Checking rating conversion in sync_mapper.py...")
     
-    with open('sync_calimob/sync_mapper.py', 'r') as f:
+    # Use absolute path relative to this test file
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(test_dir, '../..'))
+    sync_mapper_path = os.path.join(project_root, 'sync_calimob/sync_mapper.py')
+    
+    with open(sync_mapper_path, 'r') as f:
         code = f.read()
     
     # Look for the buggy pattern: else: metadata_dict['rating'] = 0
