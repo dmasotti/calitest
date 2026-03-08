@@ -8,6 +8,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/json_helpers.sh"
 
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CALIMOB_TMP_DIR="${CALIMOB_TMP_DIR:-$PROJECT_ROOT/tmp/uptests}"
+LOG_DIR="$CALIMOB_TMP_DIR/logs"
+mkdir -p "$LOG_DIR"
+
 # Auto-load local test env if present (override defaults)
 if [[ -f "$SCRIPT_DIR/.env" ]]; then
   set -a
@@ -15,7 +20,7 @@ if [[ -f "$SCRIPT_DIR/.env" ]]; then
   set +a
 fi
 
-LOGFILE="run_sync_http.log"
+LOGFILE="$LOG_DIR/run_sync_http.log"
 rm -f "$LOGFILE"
 
 LAST_CURL_URL=""
