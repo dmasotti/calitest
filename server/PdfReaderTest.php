@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\UserBook;
 use App\Models\BookFile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class PdfReaderTest extends TestCase
 {
@@ -38,7 +39,7 @@ class PdfReaderTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_load_pdf_reader_page()
     {
         $response = $this->actingAs($this->user)
@@ -51,7 +52,7 @@ class PdfReaderTest extends TestCase
             });
     }
 
-    /** @test */
+    #[Test]
     public function it_requires_authentication_to_view_pdf()
     {
         $response = $this->get("/pdf/{$this->book->uuid}");
@@ -59,7 +60,7 @@ class PdfReaderTest extends TestCase
         $response->assertRedirect('/login');
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_404_for_nonexistent_book()
     {
         $response = $this->actingAs($this->user)
@@ -68,7 +69,7 @@ class PdfReaderTest extends TestCase
         $response->assertStatus(404);
     }
 
-    /** @test */
+    #[Test]
     public function it_loads_max_progress_from_all_formats()
     {
         $device = \App\Models\Device::factory()->create([

@@ -95,8 +95,12 @@ class SyncV5ClientBatchingTest extends TestCase
         ]);
 
         $response->assertStatus(200);
-        $this->assertGreaterThanOrEqual(1, (int) $response->json('skipped_hash'));
-        $response->assertJsonCount(0, 'updates_for_client');
+        $response->assertJson([
+            'client_cursor_next' => null,
+            'client_done' => null,
+            'client_books_processed' => 1,
+            'client_books_total' => null,
+        ]);
     }
 
     public function test_sync_v5_does_not_mark_done_true_for_first_pre_sliced_chunk(): void

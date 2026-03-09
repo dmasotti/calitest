@@ -3,12 +3,27 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class ProfileTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (! Schema::hasTable('role_users')) {
+            Schema::create('role_users', function (Blueprint $table) {
+                $table->unsignedBigInteger('user_id');
+                $table->unsignedBigInteger('role_id');
+                $table->index(['user_id', 'role_id']);
+            });
+        }
+    }
 
     public function test_profile_page_is_displayed(): void
     {

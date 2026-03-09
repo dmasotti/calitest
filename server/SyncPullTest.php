@@ -3,6 +3,7 @@
 namespace Tests\Server;
 
 use App\Models\BookFile;
+use App\Models\FileStore;
 use App\Models\Library;
 use App\Models\User;
 use App\Models\UserBook;
@@ -305,6 +306,12 @@ class SyncPullTest extends TestCase
             'needs_file_upload' => false,
             'file_missing' => false,
         ]);
+        FileStore::create([
+            'sha256' => str_repeat('1', 64),
+            'storage_key' => 'ebooks/uploaded.epub',
+            'storage_provider' => 'local',
+            'ref_count' => 1,
+        ]);
 
         $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);
         $response->assertStatus(200);
@@ -382,6 +389,12 @@ class SyncPullTest extends TestCase
             'is_uploaded' => true,
             'needs_file_upload' => false,
             'file_missing' => false,
+        ]);
+        FileStore::create([
+            'sha256' => str_repeat('2', 64),
+            'storage_key' => 'ebooks/file.epub',
+            'storage_provider' => 'local',
+            'ref_count' => 1,
         ]);
 
         $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);

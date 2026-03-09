@@ -79,7 +79,7 @@ cleanup_created_book() {
   local cleanup_header="Authorization: Bearer $cleanup_token"
   local delete_sql
   delete_sql=$(cat <<EOF
-DELETE FROM sync_conflicts WHERE library_id=${LIBRARY_ID} AND calibre_book_id=${CREATED_BOOK_ID};
+UPDATE books SET sync_conflicts = NULL WHERE library_id=${LIBRARY_ID} AND id=${CREATED_BOOK_ID};
 DELETE FROM books WHERE library_id=${LIBRARY_ID} AND id=${CREATED_BOOK_ID};
 EOF
 )

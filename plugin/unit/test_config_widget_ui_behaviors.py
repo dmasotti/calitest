@@ -187,8 +187,40 @@ def test_open_advanced_settings_updates_shared_controls_without_overwriting_endp
     assert widget._auto_sync_enabled_global.isChecked() is True
     assert widget._auto_sync_interval_global.text() == "45"
     assert widget._auto_sync_interval_global.enabled is True
-    assert len(calls["info"]) == 1
+    assert len(calls["info"]) == 0
     assert len(calls["error"]) == 0
+
+
+def test_advanced_dialog_on_accept_keeps_modal_open_on_validation_error(monkeypatch):
+    calls = {"error": []}
+    monkeypatch.setattr(cfg, "error_dialog", lambda *args, **kwargs: calls["error"].append((args, kwargs)))
+
+    accepted = {"value": False}
+    dialog = types.SimpleNamespace()
+    dialog.get_values = Mock(side_effect=ValueError("bad value"))
+    dialog._on_save = None
+    dialog.accept = lambda: accepted.__setitem__("value", True)
+
+    cfg.SyncAdvancedSettingsDialog._on_accept(dialog)
+
+    assert accepted["value"] is False
+    assert len(calls["error"]) == 1
+
+
+def test_advanced_dialog_on_accept_keeps_modal_open_on_save_error(monkeypatch):
+    calls = {"error": []}
+    monkeypatch.setattr(cfg, "error_dialog", lambda *args, **kwargs: calls["error"].append((args, kwargs)))
+
+    accepted = {"value": False}
+    dialog = types.SimpleNamespace()
+    dialog.get_values = Mock(return_value={cfg.KEY_HTTP_TIMEOUT: 25})
+    dialog._on_save = Mock(side_effect=RuntimeError("save failed"))
+    dialog.accept = lambda: accepted.__setitem__("value", True)
+
+    cfg.SyncAdvancedSettingsDialog._on_accept(dialog)
+
+    assert accepted["value"] is False
+    assert len(calls["error"]) == 1
 
 
 def test_advanced_dialog_get_values_rejects_out_of_range_client_batch():
@@ -237,6 +269,33 @@ def test_advanced_dialog_get_values_does_not_include_endpoint_or_token():
 
     assert cfg.KEY_REST_ENDPOINT not in values
     assert cfg.KEY_REST_TOKEN not in values
+
+
+def test_advanced_dialog_get_values_includes_file_and_cover_sync_flags():
+    dialog = types.SimpleNamespace()
+    dialog._parse_int = cfg.SyncAdvancedSettingsDialog._parse_int.__get__(dialog, cfg.SyncAdvancedSettingsDialog)
+    dialog._discovery_url = _TextInput("https://disc.example")
+    dialog._http_timeout = _TextInput("30")
+    dialog._upload_timeout = _TextInput("120")
+    dialog._discovery_ttl = _TextInput("3600")
+    dialog._sync_batch = _TextInput("100")
+    dialog._pull_limit = _TextInput("100")
+    dialog._v5_client_batch = _TextInput("100")
+    dialog._v5_server_batch = _TextInput("100")
+    dialog._v5_resume_ttl = _TextInput("86400")
+    dialog._cover_batch_max = _TextInput(str(1024 * 1024))
+    dialog._cover_single_max = _TextInput(str(256 * 1024))
+    dialog._file_chunk = _TextInput(str(1024 * 1024))
+    dialog._debug_logs = _CheckBox(False)
+    dialog._auto_sync_enabled = _CheckBox(True)
+    dialog._auto_sync_minutes = _TextInput("30")
+    dialog._sync_files_enabled = _CheckBox(False)
+    dialog._sync_covers_enabled = _CheckBox(False)
+
+    values = cfg.SyncAdvancedSettingsDialog.get_values(dialog)
+
+    assert values[cfg.KEY_SYNC_FILES_ENABLED] is False
+    assert values[cfg.KEY_SYNC_COVERS_ENABLED] is False
 
 
 def test_invalidate_discovery_cache_clears_cache_and_refreshes(isolated_plugin_prefs, monkeypatch):

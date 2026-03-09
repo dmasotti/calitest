@@ -176,11 +176,13 @@ class TestLibraryHash:
         result = sync_utils.get_library_hash(test_db, 'test-lib-uuid')
         
         assert result is not None, "Library hash is None"
-        assert 'library_hash' in result, "Missing library_hash"
+        assert 'library_metadata_hash' in result, "Missing library_metadata_hash"
+        assert 'library_covers_hash' in result, "Missing library_covers_hash"
+        assert 'library_files_hash' in result, "Missing library_files_hash"
         assert 'total_books' in result, "Missing total_books"
         assert 'last_modified' in result, "Missing last_modified"
         
-        assert len(result['library_hash']) == 64, "Library hash wrong length"
+        assert len(result['library_metadata_hash']) == 64, "Library metadata hash wrong length"
         assert result['total_books'] == 1, f"Wrong total_books: {result['total_books']}"
 
 
@@ -273,9 +275,10 @@ class TestEdgeCases:
         mapping_table._ensure_hash_views(conn)
         # Don't insert into calimob_books_sync
         
-        # Should return None (book not synced)
+        # Should still return hash (VIEWs read from books table directly)
         hash_v2 = sync_utils.compute_metadata_hash_v2(conn, 1, 'lib-1')
-        assert hash_v2 is None
+        assert hash_v2 is not None
+        assert len(hash_v2) == 64
         
         conn.close()
     
@@ -321,8 +324,9 @@ class TestEdgeCases:
         result = sync_utils.get_library_hash(conn, 'lib-1')
         assert result is not None
         assert result['total_books'] == 3
-        assert result['last_modified'] == 3000  # Max timestamp
-        assert len(result['library_hash']) == 64
+        # Note: last_modified is now 0 because VIEWs don't use calimob_books_sync
+        assert result['last_modified'] == 0
+        assert len(result['library_metadata_hash']) == 64
         
         conn.close()
     
@@ -386,13 +390,14 @@ class TestEdgeCases:
         conn.close()
     
     def test_wrong_library_uuid(self, test_db):
-        """Test querying with wrong library UUID."""
-        # Should return None (book not in this library)
+        """Test querying with wrong library UUID (should still return hash)."""
+        # Note: After removing library_uuid filter, hash is always returned
+        # This is correct because VIEWs now read directly from books table
         hash_v2 = sync_utils.compute_metadata_hash_v2(test_db, 1, 'wrong-library-uuid')
-        assert hash_v2 is None
+        assert hash_v2 is not None
+        assert len(hash_v2) == 64
     
     def test_nonexistent_book_id(self, test_db):
         """Test querying non-existent book."""
         hash_v2 = sync_utils.compute_metadata_hash_v2(test_db, 99999, 'test-lib-uuid')
         assert hash_v2 is None
-

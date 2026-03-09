@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
 CALIBRE_DEBUG="${CALIBRE_DEBUG:-/Applications/calibre.app/Contents/MacOS/calibre-debug}"
 CALIBRE_CUSTOMIZE="${CALIBRE_CUSTOMIZE:-/Applications/calibre.app/Contents/MacOS/calibre-customize}"
+CALIMOB_FORCE_API_URL="${CALIMOB_FORCE_API_URL:-}"
 
 REQUIRED=(CALIMOB_DISCOVERY_URL TEST_USER_EMAIL TEST_USER_PASSWORD CALIMOB_LIBRARY_PATH CALIMOB_LIBRARY_ID CALIMOB_SERVER_LIBRARY_ID CALIMOB_CONFIG_JSON)
 for v in "${REQUIRED[@]}"; do
@@ -32,9 +33,14 @@ TMP_CFG=$(mktemp -d)
 mkdir -p "$TMP_CFG/plugins"
 cp "$CALIMOB_CONFIG_JSON" "$TMP_CFG/plugins/sync_calimob.json"
 
-API_URL=$(curl -s "${CALIMOB_DISCOVERY_URL}/discovery.php" | jq -r '.api_url // empty' 2>/dev/null || true)
-if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
-  API_URL=$(curl -s "${CALIMOB_DISCOVERY_URL}/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+if [[ -n "$CALIMOB_FORCE_API_URL" ]]; then
+  API_URL="$CALIMOB_FORCE_API_URL"
+  echo "INFO: using forced API URL: $API_URL"
+else
+  API_URL=$(curl -s "${CALIMOB_DISCOVERY_URL}/discovery.php" | jq -r '.api_url // empty' 2>/dev/null || true)
+  if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
+    API_URL=$(curl -s "${CALIMOB_DISCOVERY_URL}/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+  fi
 fi
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
   echo "FAIL: discovery failed" >&2
@@ -51,7 +57,7 @@ if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
   exit 1
 fi
 
-python - <<PY
+python3 - <<PY
 import json
 import os
 
@@ -94,7 +100,7 @@ if [[ $STATUS -ne 0 ]]; then
 fi
 
 JSON_OUT=$(mktemp)
-python - <<'PY' "$OUTPUT" "$JSON_OUT"
+python3 - <<'PY' "$OUTPUT" "$JSON_OUT"
 import json, sys
 src = open(sys.argv[1], "r", errors="ignore").read()
 
@@ -131,7 +137,7 @@ if command -v jq >/dev/null 2>&1; then
 fi
 
 METADATA_DB="$CALIMOB_LIBRARY_PATH/metadata.db"
-python - <<PY
+python3 - <<PY
 import os, sqlite3, sys
 
 db_path = os.path.join("$CALIMOB_LIBRARY_PATH", "metadata.db")

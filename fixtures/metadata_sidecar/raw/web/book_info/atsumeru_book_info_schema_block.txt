@@ -1,0 +1,44 @@
+{
+	"title": string,
+	"alt_title": string,
+	"jap_title": string,
+	"kor_title": string,
+
+	"country": string,
+    "publisher": string,
+    "published": string,
+    "event": string,
+    
+    "authors": string[],
+    "artists": string[],
+    "languages": string[],
+    "translators": string[],
+    "characters": string[],
+    "parodies": string[],
+    "circles": string[],
+    "magazines": string[],
+    
+    "genres": string[],
+    "tags": string[],
+
+	"chapters": int,
+    "volumes": int,
+    "volume": float,
+
+    "rating": int,
+    "score": float,
+
+    "description": string,
+
+	"content_type": enum|string,
+	"age_rating": enum|string,
+	"status": enum|string,
+	"translation_status": enum|string,
+	"color": enum|string,
+	"censorship": enum|string,
+
+	"links": jsonarray,
+	"bound_services": jsonarray,
+
+	"atsumeru": jsonarray
+}

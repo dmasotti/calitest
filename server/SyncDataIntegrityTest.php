@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Library;
 use App\Models\UserBook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Test data integrity during sync
@@ -45,7 +46,7 @@ class SyncDataIntegrityTest extends TestCase
         $this->token = $this->user->createToken('test')->plainTextToken;
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_all_books_without_skipping()
     {
         // Create 500 books with sequential timestamps
@@ -115,7 +116,7 @@ class SyncDataIntegrityTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_books_in_deterministic_order()
     {
         // Create 100 books
@@ -135,7 +136,7 @@ class SyncDataIntegrityTest extends TestCase
         $this->assertEquals($run1Ids, $run2Ids, 'Sync order should be deterministic');
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_books_with_same_timestamp_consistently()
     {
         $sameTimestamp = now()->timestamp;
@@ -198,7 +199,7 @@ class SyncDataIntegrityTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_includes_all_required_metadata_fields()
     {
         UserBook::factory()->create([
@@ -240,7 +241,7 @@ class SyncDataIntegrityTest extends TestCase
         $this->assertArrayHasKey('deleted_at', $change);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_mixed_changes_and_missing_without_duplication()
     {
         // Create 100 normal books

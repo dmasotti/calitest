@@ -60,5 +60,38 @@ class ReaderSmokeTest extends TestCase
         $this->actingAs($user)->get('/pdf/' . $book->uuid)->assertOk();
         $this->actingAs($user)->get('/comic/' . $book->uuid)->assertOk();
     }
-}
 
+    public function test_comic_reader_uses_deterministic_priority_order_for_formats(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $book = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'title' => 'Comic Priority',
+            'uuid' => (string) Str::uuid(),
+        ]);
+
+        foreach (['CBR', 'CBZ'] as $format) {
+            BookFile::factory()->create([
+                'book' => $book->uuid,
+                'user_id' => $user->id,
+                'library_id' => $library->id,
+                'format' => $format,
+                'name' => strtolower($format) . '-priority.' . strtolower($format),
+                'storage_key' => 'ebooks/priority/' . strtolower($format) . '.bin',
+                'storage_provider' => 'r2',
+                'file_hash' => hash('sha256', $format . '-priority'),
+                'is_uploaded' => true,
+                'needs_file_upload' => false,
+                'file_missing' => false,
+                'uuid' => (string) Str::uuid(),
+            ]);
+        }
+
+        $this->actingAs($user)
+            ->get('/comic/' . $book->uuid)
+            ->assertOk()
+            ->assertViewHas('format', 'CBZ');
+    }
+}

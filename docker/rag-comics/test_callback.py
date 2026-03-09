@@ -224,6 +224,33 @@ class TestCallbackPayloadValidation:
         
         with pytest.raises(ValueError, match="Missing required field"):
             validate_callback_payload(payload, "indexing")
+
+    def test_validate_indexing_payload_structured_without_user(self):
+        """Structured indexing payload without user should pass validation"""
+        from async_tasks import validate_callback_payload
+
+        payload = {
+            "kind": "indexing",
+            "status": "completed",
+            "book_id": "book_123",
+            "session_id": "test_CBZ",
+            "chunks_count": 24,
+            "operations": [
+                {
+                    "service": "embedding",
+                    "provider": "openai",
+                    "model": "text-embedding-3-small",
+                    "operation_type": "embedding",
+                    "tokens_input": 1000,
+                    "tokens_output": 0,
+                    "tokens_total": 1000
+                }
+            ],
+            "completed_at": "2026-02-24T10:00:00Z"
+        }
+
+        # Should not raise
+        validate_callback_payload(payload, "indexing")
     
     def test_validate_chat_payload_success(self):
         """Test valid chat payload passes validation"""

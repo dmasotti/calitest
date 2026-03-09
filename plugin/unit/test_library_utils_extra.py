@@ -38,9 +38,10 @@ def test_read_library_metadata_reads_db(tmp_path):
     db_path = tmp_path / 'metadata.db'
     conn = sqlite3.connect(str(db_path))
     cur = conn.cursor()
-    cur.execute('CREATE TABLE meta (id INTEGER PRIMARY KEY, key TEXT, value TEXT)')
-    cur.execute("INSERT INTO meta (key, value) VALUES ('library_id', 'lib-uuid-123')")
-    cur.execute("INSERT INTO meta (key, value) VALUES ('library_name', 'Test Library')")
+    cur.execute('CREATE TABLE library_id (uuid TEXT)')
+    cur.execute('CREATE TABLE preferences (key TEXT, val TEXT)')
+    cur.execute("INSERT INTO library_id (uuid) VALUES ('lib-uuid-123')")
+    cur.execute("INSERT INTO preferences (key, val) VALUES ('library_name', '\"Test Library\"')")
     conn.commit()
     conn.close()
 

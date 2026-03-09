@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
+import sqlite3
+import sys
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import Mock
@@ -18,6 +21,12 @@ class DummyDb:
         self.data = Mock()
         self.data.has_id = lambda bid: True
         self._ids = ids or []
+        # sync_v5 now uses self.db.new_api.backend.conn (APSW-style path).
+        # Use an in-memory sqlite connection for test compatibility.
+        conn = sqlite3.connect(':memory:')
+        self.new_api = SimpleNamespace(
+            backend=SimpleNamespace(conn=conn)
+        )
 
     def all_ids(self):
         return list(self._ids)
@@ -878,6 +887,1849 @@ def test_sync_v5_streaming_hash_build_is_chunked(monkeypatch):
     assert worker.client.sync_v5.call_count == 2
 
 
+def test_sync_v5_passes_resource_toggles_to_server(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': 2,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+    worker.client = FakeClient()
+
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            [],
+            {'u1': 1},
+            [{'id': 1, 'uuid': 'u1', 'last_modified': 10}],
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+
+    worker.sync_v5()
+
+    assert len(calls) == 1
+    assert calls[0].get('sync_files_enabled') is False
+    assert calls[0].get('sync_covers_enabled') is False
+
+
+def test_v5_merkle_drilldown_compares_local_and_server_and_returns_only_mismatched_leaf_uuids(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.executemany(
+        "INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)",
+        [
+            ('aa000000-0000-4000-8000-000000000001', 'a' * 64),
+            ('ab000000-0000-4000-8000-000000000002', 'b' * 64),
+            ('ba000000-0000-4000-8000-000000000003', 'c' * 64),
+        ],
+    )
+    conn.commit()
+
+    def _leaf_hash(*item_hashes):
+        return hashlib.sha256(''.join(sorted(item_hashes)).encode('utf-8')).hexdigest()
+
+    local_branch_b_hash = hashlib.sha256(_leaf_hash('c' * 64).encode('utf-8')).hexdigest()
+
+    leaf_calls = []
+    class FakeClient:
+        def get_merkle_branches(self, **kwargs):
+            return {
+                'branches': [
+                    {'branch_id': 10, 'branch_hash': 'deadbeef' * 8},  # mismatch (branch "a")
+                    {'branch_id': 11, 'branch_hash': local_branch_b_hash},  # match (branch "b")
+                ]
+            }
+
+        def get_merkle_leaves(self, **kwargs):
+            leaf_calls.append(kwargs.get('branch_id'))
+            return {
+                'leaves': [
+                    {
+                        'leaf_id': 170,  # "aa" -> local match
+                        'leaf_hash': _leaf_hash('a' * 64),
+                        'uuids': ['aa000000-0000-4000-8000-000000000001'],
+                    },
+                    {
+                        'leaf_id': 171,  # "ab" -> mismatch -> candidate
+                        'leaf_hash': 'f' * 64,
+                        'uuids': ['ab000000-0000-4000-8000-000000000002'],
+                    },
+                ]
+            }
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'local-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'server-root'},
+        ts_func=lambda: 't',
+    )
+
+    assert candidates == ['ab000000-0000-4000-8000-000000000002']
+    assert leaf_calls == [10], 'must fetch leaves only for mismatched branches'
+
+
+def test_v5_merkle_drilldown_skips_remote_calls_when_roots_match(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.execute(
+        "INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)",
+        ('aa000000-0000-4000-8000-000000000001', 'a' * 64),
+    )
+    conn.commit()
+
+    class FakeClient:
+        def __init__(self):
+            self.branches_called = 0
+            self.leaves_called = 0
+
+        def get_merkle_branches(self, **kwargs):
+            self.branches_called += 1
+            return {'branches': []}
+
+        def get_merkle_leaves(self, **kwargs):
+            self.leaves_called += 1
+            return {'leaves': []}
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'same-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'same-root'},
+        ts_func=lambda: 't',
+    )
+
+    assert candidates == []
+    assert worker.client.branches_called == 0
+    assert worker.client.leaves_called == 0
+
+
+def test_v5_merkle_drilldown_falls_back_when_branches_unavailable(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.execute(
+        "INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)",
+        ('ab000000-0000-4000-8000-000000000002', 'b' * 64),
+    )
+    conn.commit()
+
+    class FakeClient:
+        def __init__(self):
+            self.branches_called = 0
+            self.leaves_called = 0
+
+        def get_merkle_branches(self, **kwargs):
+            self.branches_called += 1
+            return {'branches': []}
+
+        def get_merkle_leaves(self, **kwargs):
+            self.leaves_called += 1
+            return {'leaves': []}
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'local-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'server-root'},
+        ts_func=lambda: 't',
+    )
+
+    assert candidates == []
+    assert worker.client.branches_called == 1
+    assert worker.client.leaves_called == 0
+
+
+def test_v5_merkle_drilldown_returns_sorted_unique_candidates_across_branches(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.executemany(
+        "INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)",
+        [
+            ('aa000000-0000-4000-8000-000000000001', 'a' * 64),
+            ('ab000000-0000-4000-8000-000000000002', 'b' * 64),
+            ('ba000000-0000-4000-8000-000000000003', 'c' * 64),
+        ],
+    )
+    conn.commit()
+
+    def _leaf_hash(*item_hashes):
+        return hashlib.sha256(''.join(sorted(item_hashes)).encode('utf-8')).hexdigest()
+
+    class FakeClient:
+        def get_merkle_branches(self, **kwargs):
+            return {
+                'branches': [
+                    {'branch_id': 10, 'branch_hash': '0' * 64},  # force mismatch
+                    {'branch_id': 11, 'branch_hash': '1' * 64},  # force mismatch
+                ]
+            }
+
+        def get_merkle_leaves(self, **kwargs):
+            if kwargs.get('branch_id') == 10:
+                return {
+                    'leaves': [
+                        {'leaf_id': 170, 'leaf_hash': 'f' * 64, 'uuids': ['aa000000-0000-4000-8000-000000000001']},
+                        {'leaf_id': 171, 'leaf_hash': 'e' * 64, 'uuids': ['ab000000-0000-4000-8000-000000000002']},
+                    ]
+                }
+            return {
+                'leaves': [
+                    # duplicate uuid should be deduplicated
+                    {'leaf_id': 186, 'leaf_hash': 'd' * 64, 'uuids': ['ba000000-0000-4000-8000-000000000003', 'ab000000-0000-4000-8000-000000000002']},
+                ]
+            }
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'local-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'server-root'},
+        ts_func=lambda: 't',
+    )
+
+    assert candidates == [
+        'aa000000-0000-4000-8000-000000000001',
+        'ab000000-0000-4000-8000-000000000002',
+        'ba000000-0000-4000-8000-000000000003',
+    ]
+
+
+def test_v5_merkle_drilldown_ignores_malformed_branch_and_leaf_entries(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.execute(
+        "INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)",
+        ('ab000000-0000-4000-8000-000000000002', 'b' * 64),
+    )
+    conn.commit()
+
+    class FakeClient:
+        def get_merkle_branches(self, **kwargs):
+            return {
+                'branches': [
+                    {'branch_id': 'not-int', 'branch_hash': '0' * 64},  # ignored
+                    {'branch_id': 10, 'branch_hash': 'f' * 64},          # valid mismatch
+                    {'branch_id': 11, 'branch_hash': ''},                # ignored
+                ]
+            }
+
+        def get_merkle_leaves(self, **kwargs):
+            return {
+                'leaves': [
+                    {'leaf_id': None, 'leaf_hash': 'f' * 64, 'uuids': ['ab000000-0000-4000-8000-000000000002']},  # ignored
+                    {'leaf_id': 171, 'leaf_hash': 'e' * 64, 'uuids': [None, '', 'ab000000-0000-4000-8000-000000000002']},
+                ]
+            }
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'local-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'server-root'},
+        ts_func=lambda: 't',
+    )
+
+    assert candidates == ['ab000000-0000-4000-8000-000000000002']
+
+
+def test_v5_merkle_drilldown_skips_when_server_root_missing(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.execute("INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)", ('aa000000-0000-4000-8000-000000000001', 'a' * 64))
+    conn.commit()
+
+    class FakeClient:
+        def __init__(self):
+            self.branches_called = 0
+
+        def get_merkle_branches(self, **kwargs):
+            self.branches_called += 1
+            return {'branches': []}
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'local-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={},  # no root_hash
+        ts_func=lambda: 't',
+    )
+
+    assert candidates == []
+    assert worker.client.branches_called == 0
+
+
+def test_v5_merkle_drilldown_skips_when_local_root_missing(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.execute("INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)", ('aa000000-0000-4000-8000-000000000001', 'a' * 64))
+    conn.commit()
+
+    class FakeClient:
+        def __init__(self):
+            self.branches_called = 0
+
+        def get_merkle_branches(self, **kwargs):
+            self.branches_called += 1
+            return {'branches': []}
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'server-root'},
+        ts_func=lambda: 't',
+    )
+
+    assert candidates == []
+    assert worker.client.branches_called == 0
+
+
+def test_v5_merkle_drilldown_ignores_leaf_entries_with_non_list_uuids(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.execute(
+        "INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)",
+        ('ab000000-0000-4000-8000-000000000002', 'b' * 64),
+    )
+    conn.commit()
+
+    class FakeClient:
+        def get_merkle_branches(self, **kwargs):
+            return {'branches': [{'branch_id': 10, 'branch_hash': 'f' * 64}]}
+
+        def get_merkle_leaves(self, **kwargs):
+            return {
+                'leaves': [
+                    {'leaf_id': 171, 'leaf_hash': 'e' * 64, 'uuids': 'not-a-list'},
+                ]
+            }
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'local-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'server-root'},
+        ts_func=lambda: 't',
+    )
+
+    assert candidates == []
+
+
+def test_sync_v5_does_not_call_merkle_drilldown_when_fast_path_hashes_match(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    class FakeClient:
+        def __init__(self):
+            self.sync_calls = 0
+
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'same-hash',
+                'library_covers_hash': None,
+                'library_files_hash': None,
+                'root_hash': 'same-root',
+                'total_books': 2,
+            }
+
+        def sync_v5(self, **kwargs):
+            self.sync_calls += 1
+            return {}
+
+    worker.client = FakeClient()
+    drilldown_called = {'count': 0}
+    monkeypatch.setattr(
+        worker,
+        '_v5_merkle_metadata_drilldown',
+        lambda *args, **kwargs: drilldown_called.__setitem__('count', drilldown_called['count'] + 1) or [],
+    )
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: ([], {'u1': 1, 'u2': 2}, [{'id': 1, 'uuid': 'u1', 'last_modified': 10}, {'id': 2, 'uuid': 'u2', 'last_modified': 20}]),
+    )
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'same-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 2,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    summary = worker.sync_v5()
+
+    assert summary.get('fast_path_used') is True
+    assert drilldown_called['count'] == 0
+    assert worker.client.sync_calls == 0
+
+
+def test_sync_v5_filters_deleted_books_with_merkle_candidates(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'server-hash',
+                'library_covers_hash': None,
+                'library_files_hash': None,
+                'root_hash': 'server-root',
+                'total_books': 3,
+            }
+
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': 1,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+    worker.client = FakeClient()
+
+    monkeypatch.setattr(worker, '_v5_merkle_metadata_drilldown', lambda *args, **kwargs: ['u2'])
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            ['u1', 'u2', 'u3'],
+            {'u1': 1, 'u2': 2, 'u3': 3},
+            [{'id': 1, 'uuid': 'u1', 'last_modified': 10}, {'id': 2, 'uuid': 'u2', 'last_modified': 20}, {'id': 3, 'uuid': 'u3', 'last_modified': 30}],
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'local-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 3,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    worker.sync_v5()
+
+    assert len(calls) == 1
+    sent = calls[0].get('client_books') or {}
+    deleted_sent = sent.get('d') or []
+    assert deleted_sent == ['u2']
+
+
+def test_sync_v5_uses_merkle_candidates_to_reduce_client_payload(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'server-hash',
+                'library_covers_hash': None,
+                'library_files_hash': None,
+                'root_hash': 'server-root',
+                'total_books': 2,
+            }
+
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': 1,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+    worker.client = FakeClient()
+
+    monkeypatch.setattr(worker, '_v5_merkle_metadata_drilldown', lambda *args, **kwargs: ['u2'])
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            [],
+            {'u1': 1, 'u2': 2},
+            [
+                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
+                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
+            ],
+        ),
+    )
+
+    chunk_calls = []
+    def fake_build_chunk(books_chunk, **kwargs):
+        chunk_calls.append([b['uuid'] for b in books_chunk])
+        return {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        }
+
+    monkeypatch.setattr(worker, '_v5_build_client_books_chunk', fake_build_chunk)
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'local-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 2,
+        },
+        get_merkle_root=lambda _conn: {'root_hash': 'local-root'},
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    worker.sync_v5()
+
+    assert chunk_calls == [['u2']]
+    assert len(calls) == 1
+    assert calls[0].get('metadata_candidate_uuids') == ['u2']
+
+
+def test_sync_v5_sends_sorted_metadata_candidate_uuids(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'server-hash',
+                'library_covers_hash': None,
+                'library_files_hash': None,
+                'root_hash': 'server-root',
+                'total_books': 3,
+            }
+
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': 3,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+    worker.client = FakeClient()
+
+    monkeypatch.setattr(
+        worker,
+        '_v5_merkle_metadata_drilldown',
+        lambda *args, **kwargs: [
+            'u3', 'u1', 'u2', 'u1'
+        ],
+    )
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            [],
+            {'u1': 1, 'u2': 2, 'u3': 3},
+            [
+                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
+                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
+                {'id': 3, 'uuid': 'u3', 'last_modified': 30},
+            ],
+        ),
+    )
+
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'local-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 3,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    worker.sync_v5()
+
+    assert len(calls) == 1
+    assert calls[0].get('metadata_candidate_uuids') == ['u1', 'u2', 'u3']
+
+
+def test_sync_v5_does_not_send_metadata_candidate_filter_when_merkle_returns_empty(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'server-hash',
+                'library_covers_hash': None,
+                'library_files_hash': None,
+                'root_hash': 'server-root',
+                'total_books': 2,
+            }
+
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': 2,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+    worker.client = FakeClient()
+
+    monkeypatch.setattr(worker, '_v5_merkle_metadata_drilldown', lambda *args, **kwargs: [])
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            [],
+            {'u1': 1, 'u2': 2},
+            [
+                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
+                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
+            ],
+        ),
+    )
+
+    chunk_calls = []
+    def fake_build_chunk(books_chunk, **kwargs):
+        chunk_calls.append([b['uuid'] for b in books_chunk])
+        return {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        }
+
+    monkeypatch.setattr(worker, '_v5_build_client_books_chunk', fake_build_chunk)
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'local-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 2,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    worker.sync_v5()
+
+    assert chunk_calls == [['u1', 'u2']]
+    assert len(calls) == 1
+    assert calls[0].get('metadata_candidate_uuids') is None
+
+
+def test_v5_merkle_drilldown_returns_empty_when_branch_endpoint_raises(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.execute(
+        "INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)",
+        ('aa000000-0000-4000-8000-000000000001', 'a' * 64),
+    )
+    conn.commit()
+
+    class FakeClient:
+        def get_merkle_branches(self, **kwargs):
+            raise RuntimeError('endpoint down')
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'local-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'server-root'},
+        ts_func=lambda: 't',
+    )
+    assert candidates == []
+
+
+def test_v5_merkle_drilldown_returns_empty_when_any_leaves_call_raises(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.executemany(
+        "INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)",
+        [
+            ('aa000000-0000-4000-8000-000000000001', 'a' * 64),
+            ('ba000000-0000-4000-8000-000000000002', 'b' * 64),
+        ],
+    )
+    conn.commit()
+
+    class FakeClient:
+        def get_merkle_branches(self, **kwargs):
+            return {
+                'branches': [
+                    {'branch_id': 10, 'branch_hash': '0' * 64},
+                    {'branch_id': 11, 'branch_hash': '1' * 64},
+                ]
+            }
+
+        def get_merkle_leaves(self, **kwargs):
+            if kwargs.get('branch_id') == 11:
+                raise RuntimeError('leaf endpoint timeout')
+            return {'leaves': []}
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'local-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'server-root'},
+        ts_func=lambda: 't',
+    )
+    assert candidates == []
+
+
+def test_sync_v5_merkle_candidates_not_in_local_inventory_send_empty_batch(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'server-hash',
+                'library_covers_hash': None,
+                'library_files_hash': None,
+                'root_hash': 'server-root',
+                'total_books': 2,
+            }
+
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': None,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+    worker.client = FakeClient()
+
+    monkeypatch.setattr(worker, '_v5_merkle_metadata_drilldown', lambda *args, **kwargs: ['u-does-not-exist'])
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            [],
+            {'u1': 1, 'u2': 2},
+            [
+                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
+                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'local-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 2,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    worker.sync_v5()
+    assert len(calls) == 1
+    assert calls[0].get('client_books') is None
+    assert calls[0].get('metadata_candidate_uuids') == ['u-does-not-exist']
+
+
+def test_sync_v5_merkle_candidates_are_deduplicated_before_client_call(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'server-hash',
+                'library_covers_hash': None,
+                'library_files_hash': None,
+                'root_hash': 'server-root',
+                'total_books': 1,
+            }
+
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': 1,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+    worker.client = FakeClient()
+
+    monkeypatch.setattr(worker, '_v5_merkle_metadata_drilldown', lambda *args, **kwargs: ['u1', 'u1', 'u1'])
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            [],
+            {'u1': 1},
+            [{'id': 1, 'uuid': 'u1', 'last_modified': 10}],
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'local-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 1,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    worker.sync_v5()
+    assert len(calls) == 1
+    assert calls[0].get('metadata_candidate_uuids') == ['u1']
+
+
+def test_sync_v5_fast_path_ignores_cover_and_files_mismatch_when_toggles_disabled(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    class FakeClient:
+        def __init__(self):
+            self.sync_calls = 0
+
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'meta-same',
+                'library_covers_hash': 'cover-server',
+                'library_files_hash': 'files-server',
+                'root_hash': 'same-root',
+                'total_books': 5,
+            }
+
+        def sync_v5(self, **kwargs):
+            self.sync_calls += 1
+            return {}
+
+    worker.client = FakeClient()
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_v5_merkle_metadata_drilldown', lambda *args, **kwargs: [])
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'meta-same',
+            'library_covers_hash': 'cover-local',
+            'library_files_hash': 'files-local',
+            'total_books': 5,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    summary = worker.sync_v5()
+    assert summary.get('fast_path_used') is True
+    assert worker.client.sync_calls == 0
+
+
+def test_sync_v5_fast_path_with_files_enabled_and_files_mismatch_forces_sync(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'meta-same',
+                'library_covers_hash': 'cover-same',
+                'library_files_hash': 'files-server',
+                'root_hash': 'server-root',
+                'total_books': 1,
+            }
+
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': 1,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+
+    worker.client = FakeClient()
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: True)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_v5_merkle_metadata_drilldown', lambda *args, **kwargs: ['u1'])
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            [],
+            {'u1': 1},
+            [{'id': 1, 'uuid': 'u1', 'last_modified': 10}],
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': 'f-%s' % b['uuid'], 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'meta-same',
+            'library_covers_hash': 'cover-same',
+            'library_files_hash': 'files-local',
+            'total_books': 1,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    summary = worker.sync_v5()
+    assert summary.get('fast_path_used') is False
+    assert len(calls) == 1
+
+
+def test_v5_merkle_drilldown_ignores_leaf_without_uuids_key(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.execute(
+        "INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)",
+        ('aa000000-0000-4000-8000-000000000201', 'a' * 64),
+    )
+    conn.commit()
+
+    class FakeClient:
+        def get_merkle_branches(self, **kwargs):
+            return {'branches': [{'branch_id': 10, 'branch_hash': 'f' * 64}]}
+
+        def get_merkle_leaves(self, **kwargs):
+            return {'leaves': [{'leaf_id': 170, 'leaf_hash': 'e' * 64}]}
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'local-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'server-root'},
+        ts_func=lambda: 't',
+    )
+    assert candidates == []
+
+
+def test_v5_merkle_drilldown_accepts_tuple_uuids(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.execute(
+        "INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)",
+        ('aa000000-0000-4000-8000-000000000202', 'a' * 64),
+    )
+    conn.commit()
+
+    class FakeClient:
+        def get_merkle_branches(self, **kwargs):
+            return {'branches': [{'branch_id': 10, 'branch_hash': 'f' * 64}]}
+
+        def get_merkle_leaves(self, **kwargs):
+            return {
+                'leaves': [
+                    {
+                        'leaf_id': 170,
+                        'leaf_hash': 'e' * 64,
+                        'uuids': ('aa000000-0000-4000-8000-000000000202',),
+                    }
+                ]
+            }
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'local-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'server-root'},
+        ts_func=lambda: 't',
+    )
+    assert candidates == ['aa000000-0000-4000-8000-000000000202']
+
+
+def test_v5_merkle_drilldown_server_branch_only_still_collects_candidates(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.execute(
+        "INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)",
+        ('aa000000-0000-4000-8000-000000000203', 'a' * 64),
+    )
+    conn.commit()
+
+    class FakeClient:
+        def get_merkle_branches(self, **kwargs):
+            # branch 11 not present in local rows => mismatch branch
+            return {'branches': [{'branch_id': 11, 'branch_hash': 'f' * 64}]}
+
+        def get_merkle_leaves(self, **kwargs):
+            return {
+                'leaves': [
+                    {
+                        'leaf_id': 186,
+                        'leaf_hash': 'e' * 64,
+                        'uuids': ['ba000000-0000-4000-8000-000000000204'],
+                    }
+                ]
+            }
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'local-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'server-root'},
+        ts_func=lambda: 't',
+    )
+    assert candidates == ['ba000000-0000-4000-8000-000000000204']
+
+
+def test_sync_v5_merkle_edge_deleted_sent_only_in_first_batch(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'server-hash',
+                'library_covers_hash': None,
+                'library_files_hash': None,
+                'root_hash': 'server-root',
+                'total_books': 2,
+            }
+
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return {
+                    'updates_for_client': [],
+                    'missing_from_server': [],
+                    'deleted_on_server': [],
+                    'cursor': '100:1',
+                    'has_more': True,
+                    'client_cursor_next': 1,
+                    'client_done': False,
+                    'skipped_hash': 0,
+                }
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:2',
+                'has_more': False,
+                'client_cursor_next': 2,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+
+    worker.client = FakeClient()
+    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '1')
+    monkeypatch.setattr(worker, '_v5_merkle_metadata_drilldown', lambda *args, **kwargs: ['u1', 'u2'])
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: (
+            ['u1', 'u3'],  # only u1 intersects merkle candidates
+            {'u1': 1, 'u2': 2},
+            [
+                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
+                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'local-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 2,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    worker.sync_v5()
+    assert len(calls) == 2
+    first_deleted = ((calls[0].get('client_books') or {}).get('d') or [])
+    second_deleted = ((calls[1].get('client_books') or {}).get('d') or [])
+    assert first_deleted == ['u1']
+    assert second_deleted == []
+
+
+def test_sync_v5_merkle_edge_server_hash_unavailable_skips_drilldown(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    drilldown_calls = {'n': 0}
+    class FakeClient:
+        def get_library_hash(self, *_args, **_kwargs):
+            return {}
+
+        def sync_v5(self, **kwargs):
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': None,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+
+    worker.client = FakeClient()
+    monkeypatch.setattr(
+        worker,
+        '_v5_merkle_metadata_drilldown',
+        lambda *args, **kwargs: drilldown_calls.__setitem__('n', drilldown_calls['n'] + 1) or [],
+    )
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: ([], {'u1': 1}, [{'id': 1, 'uuid': 'u1', 'last_modified': 10}]),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'local-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 1,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    worker.sync_v5()
+    assert drilldown_calls['n'] == 0
+
+
+def test_sync_v5_merkle_edge_local_hash_unavailable_skips_drilldown(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    drilldown_calls = {'n': 0}
+    class FakeClient:
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'server-hash',
+                'library_covers_hash': None,
+                'library_files_hash': None,
+                'root_hash': 'server-root',
+                'total_books': 1,
+            }
+
+        def sync_v5(self, **kwargs):
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': None,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+
+    worker.client = FakeClient()
+    monkeypatch.setattr(
+        worker,
+        '_v5_merkle_metadata_drilldown',
+        lambda *args, **kwargs: drilldown_calls.__setitem__('n', drilldown_calls['n'] + 1) or [],
+    )
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: ([], {'u1': 1}, [{'id': 1, 'uuid': 'u1', 'last_modified': 10}]),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    fake_sync_utils = SimpleNamespace(get_library_hash=lambda _conn, _lib_uuid: None)
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    worker.sync_v5()
+    assert drilldown_calls['n'] == 0
+
+
+def test_sync_v5_merkle_edge_candidates_all_filtered_still_send_sorted_candidate_hint(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'server-hash',
+                'library_covers_hash': None,
+                'library_files_hash': None,
+                'root_hash': 'server-root',
+                'total_books': 2,
+            }
+
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': None,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+
+    worker.client = FakeClient()
+    monkeypatch.setattr(
+        worker,
+        '_v5_fast_path_preflight',
+        lambda **kwargs: {'done': False, 'merkle_candidates': ['u9', 'u8', 'u8']},
+    )
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: ([], {'u1': 1, 'u2': 2}, [{'id': 1, 'uuid': 'u1', 'last_modified': 10}]),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+
+    worker.sync_v5()
+    assert len(calls) == 1
+    assert calls[0].get('client_books') is None
+    assert calls[0].get('metadata_candidate_uuids') == ['u8', 'u9']
+
+
+def test_sync_v5_merkle_zero_candidates_short_circuits_before_inventory(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    class FakeClient:
+        def __init__(self):
+            self.sync_calls = 0
+
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'server-mismatch',
+                'library_covers_hash': None,
+                'library_files_hash': None,
+                'root_hash': 'server-root-mismatch',
+                'total_books': 18,
+            }
+
+        def sync_v5(self, **kwargs):
+            self.sync_calls += 1
+            return {}
+
+    worker.client = FakeClient()
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_v5_merkle_metadata_drilldown', lambda *args, **kwargs: [])
+
+    # Must never be reached when short-circuit works
+    def _fail_prepare(*args, **kwargs):
+        raise AssertionError('inventory preparation must be skipped when Merkle candidates are empty')
+
+    monkeypatch.setattr(worker, '_v5_prepare_client_inventory_state', _fail_prepare)
+
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'local-mismatch',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 18,
+        },
+        get_merkle_root=lambda _conn: {'root_hash': 'local-root-mismatch'},
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    summary = worker.sync_v5()
+    assert summary.get('fast_path_used') is True
+    assert summary.get('books_synced') == 18
+    assert worker.client.sync_calls == 0
+
+
+def test_sync_v5_fast_path_cover_enabled_and_matching_allows_short_circuit(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    class FakeClient:
+        def __init__(self):
+            self.sync_calls = 0
+
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'meta-same',
+                'library_covers_hash': 'cover-same',
+                'library_files_hash': 'files-server-ignored',
+                'root_hash': 'same-root',
+                'total_books': 3,
+            }
+
+        def sync_v5(self, **kwargs):
+            self.sync_calls += 1
+            return {}
+
+    worker.client = FakeClient()
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: True)
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'meta-same',
+            'library_covers_hash': 'cover-same',
+            'library_files_hash': 'files-local-ignored',
+            'total_books': 3,
+        },
+        get_merkle_root=lambda _conn: {'root_hash': 'same-root'},
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    summary = worker.sync_v5()
+    assert summary.get('fast_path_used') is True
+    assert worker.client.sync_calls == 0
+
+
+def test_sync_v5_calls_covers_and_files_merkle_hooks_on_mismatch(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    calls = []
+    class FakeClient:
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'meta-same',
+                'library_covers_hash': 'cover-server',
+                'library_files_hash': 'files-server',
+                'metadata_merkle_root': 'meta-root-server',
+                'covers_merkle_root': 'covers-root-server',
+                'files_merkle_root': 'files-root-server',
+                'root_hash': 'meta-root-server',
+                'total_books': 1,
+            }
+
+        def sync_v5(self, **kwargs):
+            calls.append(kwargs)
+            return {
+                'updates_for_client': [],
+                'missing_from_server': [],
+                'deleted_on_server': [],
+                'cursor': '100:1',
+                'has_more': False,
+                'client_cursor_next': 1,
+                'client_done': True,
+                'skipped_hash': 0,
+            }
+    worker.client = FakeClient()
+
+    hook_calls = {'meta': 0, 'covers': 0, 'files': 0}
+    monkeypatch.setattr(
+        worker,
+        '_v5_merkle_metadata_drilldown',
+        lambda *args, **kwargs: hook_calls.__setitem__('meta', hook_calls['meta'] + 1) or [],
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_merkle_covers_drilldown',
+        lambda *args, **kwargs: hook_calls.__setitem__('covers', hook_calls['covers'] + 1) or [],
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_merkle_files_drilldown',
+        lambda *args, **kwargs: hook_calls.__setitem__('files', hook_calls['files'] + 1) or [],
+    )
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: True)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: True)
+    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
+    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
+    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
+    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+    monkeypatch.setattr(
+        worker,
+        '_v5_collect_client_books_candidates',
+        lambda **kwargs: ([], {'u1': 1}, [{'id': 1, 'uuid': 'u1', 'last_modified': 10}]),
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_build_client_books_chunk',
+        lambda books_chunk, **kwargs: {
+            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': 'c-%s' % b['uuid'], 'f': 'f-%s' % b['uuid'], 'lm': b['last_modified']}
+            for b in books_chunk
+        },
+    )
+    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
+    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
+    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
+    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
+    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'meta-same',
+            'library_covers_hash': 'cover-local',
+            'library_files_hash': 'files-local',
+            'total_books': 1,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    summary = worker.sync_v5()
+    assert summary.get('fast_path_used') is False
+    assert hook_calls == {'meta': 1, 'covers': 1, 'files': 1}
+    assert len(calls) == 1
+
+
+def test_sync_v5_does_not_call_covers_files_hooks_when_resources_disabled(monkeypatch):
+    worker = _make_worker()
+    worker.gui = None
+    worker.calimob_library_id = 8
+    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
+    worker.status_tag_mappings = {}
+
+    class FakeClient:
+        def __init__(self):
+            self.sync_calls = 0
+
+        def get_library_hash(self, *_args, **_kwargs):
+            return {
+                'library_metadata_hash': 'meta-same',
+                'library_covers_hash': 'cover-server',
+                'library_files_hash': 'files-server',
+                'metadata_merkle_root': 'meta-root-server',
+                'covers_merkle_root': 'covers-root-server',
+                'files_merkle_root': 'files-root-server',
+                'root_hash': 'meta-root-server',
+                'total_books': 2,
+            }
+
+        def sync_v5(self, **kwargs):
+            self.sync_calls += 1
+            return {}
+
+    worker.client = FakeClient()
+    hook_calls = {'meta': 0, 'covers': 0, 'files': 0}
+    monkeypatch.setattr(
+        worker,
+        '_v5_merkle_metadata_drilldown',
+        lambda *args, **kwargs: hook_calls.__setitem__('meta', hook_calls['meta'] + 1) or [],
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_merkle_covers_drilldown',
+        lambda *args, **kwargs: hook_calls.__setitem__('covers', hook_calls['covers'] + 1) or [],
+    )
+    monkeypatch.setattr(
+        worker,
+        '_v5_merkle_files_drilldown',
+        lambda *args, **kwargs: hook_calls.__setitem__('files', hook_calls['files'] + 1) or [],
+    )
+    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
+    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'meta-same',
+            'library_covers_hash': 'cover-local',
+            'library_files_hash': 'files-local',
+            'total_books': 2,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    summary = worker.sync_v5()
+    assert summary.get('fast_path_used') is True
+    assert hook_calls == {'meta': 0, 'covers': 0, 'files': 0}
+    assert worker.client.sync_calls == 0
+
+
 def test_sync_v5_resume_state_restores_client_cursor(monkeypatch):
     worker = _make_worker()
     worker.gui = None
@@ -1265,7 +3117,7 @@ def test_v5_push_missing_items_skips_file_upload_when_local_payload_unavailable(
             'file_uploads': [],
         }]
     })
-    worker._build_files_array_for_book = Mock(return_value=([], {'status': 'unavailable', 'declared_formats': []}))
+    worker._build_files_array_for_book = Mock(return_value=([], {'status': 'ok', 'declared_formats': []}))
     worker._compute_metadata_signature = Mock(return_value=None)
     worker._upload_file = Mock(return_value={'success': True})
 
@@ -1395,7 +3247,7 @@ def test_v5_push_missing_items_batches_metadata_only_upserts(monkeypatch):
         last_modified=datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
     ))
     worker.db.formats = Mock(return_value=[])
-    worker._build_files_array_for_book = Mock(return_value=([], {'status': 'ok', 'declared_formats': []}))
+    worker._build_files_array_for_book = Mock(return_value=([], {'status': 'unavailable', 'declared_formats': []}))
     worker._compute_metadata_signature = Mock(return_value='meta-hash')
 
     sm = Mock()
@@ -1433,6 +3285,120 @@ def test_v5_push_missing_items_batches_metadata_only_upserts(monkeypatch):
     assert len(captured_changes) == 1
     assert len(captured_changes[0]) == 2
     assert summary['books_synced'] == 2
+
+
+def test_v5_push_missing_items_treats_noop_as_success(monkeypatch):
+    worker = _make_worker()
+    worker.gui = object()
+    worker.status_tag_mappings = {}
+    monkeypatch.setenv('CALIMOB_V5_MISSING_METADATA_BATCH_SIZE', '500')
+
+    def _fake_post_sync(**kwargs):
+        changes = kwargs.get('changes') or []
+        return {
+            'results': [
+                {'status': 'noop', 'client_change_id': ch.get('client_change_id')}
+                for ch in changes
+            ]
+        }
+
+    worker.client = Mock()
+    worker.client.post_sync = Mock(side_effect=_fake_post_sync)
+
+    worker.db.data.has_id = lambda _bid: True
+    worker.db.get_metadata = Mock(return_value=SimpleNamespace(
+        title='Book',
+        has_cover=False,
+        last_modified=datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+    ))
+    worker.db.formats = Mock(return_value=[])
+    worker._build_files_array_for_book = Mock(return_value=([], {'status': 'unavailable', 'declared_formats': []}))
+    worker._compute_metadata_signature = Mock(return_value='meta-hash')
+
+    sm = Mock()
+    sm.calibre_to_json_item = Mock(return_value={'uuid': 'u-1', 'title': 'Book 1'})
+
+    summary = {
+        'books_created': 0,
+        'books_updated': 0,
+        'books_synced': 0,
+        'files_deleted_local': 0,
+        'files_unavailable_runtime': 0,
+        'files_missing_real': 0,
+        'files_read_errors': 0,
+        'errors': [],
+    }
+
+    had_errors = worker._v5_push_missing_items(
+        to_upload=[{'uuid': 'u-1', 'needs_metadata': True, 'needs_cover': False, 'needs_files': False}],
+        missing_id_map={'u-1': 1},
+        uuids_deleted_locally=set(),
+        sync_library_path='/tmp/unused',
+        sm=sm,
+        updates_by_uuid={},
+        summary=summary,
+    )
+
+    assert had_errors is False
+    assert summary['errors'] == []
+    assert summary['books_synced'] == 1
+
+
+def test_v5_push_missing_items_treats_merged_as_success(monkeypatch):
+    worker = _make_worker()
+    worker.gui = object()
+    worker.status_tag_mappings = {}
+    monkeypatch.setenv('CALIMOB_V5_MISSING_METADATA_BATCH_SIZE', '500')
+
+    def _fake_post_sync(**kwargs):
+        changes = kwargs.get('changes') or []
+        return {
+            'results': [
+                {'status': 'merged', 'client_change_id': ch.get('client_change_id')}
+                for ch in changes
+            ]
+        }
+
+    worker.client = Mock()
+    worker.client.post_sync = Mock(side_effect=_fake_post_sync)
+
+    worker.db.data.has_id = lambda _bid: True
+    worker.db.get_metadata = Mock(return_value=SimpleNamespace(
+        title='Book',
+        has_cover=False,
+        last_modified=datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+    ))
+    worker.db.formats = Mock(return_value=[])
+    worker._build_files_array_for_book = Mock(return_value=([], {'status': 'unavailable', 'declared_formats': []}))
+    worker._compute_metadata_signature = Mock(return_value='meta-hash')
+
+    sm = Mock()
+    sm.calibre_to_json_item = Mock(return_value={'uuid': 'u-1', 'title': 'Book 1'})
+
+    summary = {
+        'books_created': 0,
+        'books_updated': 0,
+        'books_synced': 0,
+        'files_deleted_local': 0,
+        'files_unavailable_runtime': 0,
+        'files_missing_real': 0,
+        'files_read_errors': 0,
+        'errors': [],
+    }
+
+    had_errors = worker._v5_push_missing_items(
+        to_upload=[{'uuid': 'u-1', 'needs_metadata': True, 'needs_cover': False, 'needs_files': False}],
+        missing_id_map={'u-1': 1},
+        uuids_deleted_locally=set(),
+        sync_library_path='/tmp/unused',
+        sm=sm,
+        updates_by_uuid={},
+        summary=summary,
+    )
+
+    assert had_errors is False
+    assert summary['errors'] == []
+    assert summary['books_synced'] == 1
 
 
 def test_v5_push_missing_items_batches_upserts_with_file_upload_targets(monkeypatch):
@@ -2178,3 +4144,82 @@ def test_sync_v5_resume_state_not_cleared_on_fatal_error(monkeypatch):
     assert saved_resume
     assert cleared['count'] == 0
     assert summary['errors'], "fatal path should record errors"
+
+
+def test_v5_checkpoint_does_not_force_stop_when_cursor_next_exists_even_with_batch_errors(monkeypatch):
+    worker = _make_worker()
+
+    saved_pull = []
+    saved_resume = []
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: saved_pull.append(c))
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: saved_resume.append(dict(state)))
+
+    state = worker._v5_checkpoint_batch_state(
+        cursor_next='200:2',
+        batch_had_errors=True,
+        cursor='100:1',
+        resume_sig='sig-1',
+        client_cursor=42,
+        client_total=100,
+    )
+
+    # Anche con errori batch, il loop non deve essere forzato a stop
+    # se il server ha gia fornito un cursor successivo.
+    assert state['cursor'] == '200:2'
+    assert state['has_more'] is None
+    assert state['client_done'] is None
+
+    # Checkpoint persistente solo su batch senza errori.
+    assert saved_pull == []
+    assert saved_resume == []
+
+
+def test_v5_checkpoint_persists_when_only_non_critical_errors(monkeypatch):
+    worker = _make_worker()
+
+    saved_pull = []
+    saved_resume = []
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: saved_pull.append(c))
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: saved_resume.append(dict(state)))
+
+    state = worker._v5_checkpoint_batch_state(
+        cursor_next='200:2',
+        batch_had_errors=True,
+        batch_has_critical_errors=False,
+        cursor='100:1',
+        resume_sig='sig-1',
+        client_cursor=42,
+        client_total=100,
+    )
+
+    assert state['cursor'] == '200:2'
+    assert state['has_more'] is None
+    assert state['client_done'] is None
+    assert saved_pull == ['200:2']
+    assert len(saved_resume) == 1
+    assert saved_resume[0]['server_cursor'] == '200:2'
+
+
+def test_v5_checkpoint_blocks_persist_on_critical_errors_even_with_cursor_next(monkeypatch):
+    worker = _make_worker()
+
+    saved_pull = []
+    saved_resume = []
+    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: saved_pull.append(c))
+    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: saved_resume.append(dict(state)))
+
+    state = worker._v5_checkpoint_batch_state(
+        cursor_next='200:2',
+        batch_had_errors=True,
+        batch_has_critical_errors=True,
+        cursor='100:1',
+        resume_sig='sig-1',
+        client_cursor=42,
+        client_total=100,
+    )
+
+    assert state['cursor'] == '200:2'
+    assert state['has_more'] is None
+    assert state['client_done'] is None
+    assert saved_pull == []
+    assert saved_resume == []

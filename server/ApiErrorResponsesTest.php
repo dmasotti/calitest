@@ -99,7 +99,7 @@ class ApiErrorResponsesTest extends TestCase
 
         $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);
 
-        $response->assertStatus(404);
+        $response->assertStatus(403);
         $this->assertSame('Library not found or access denied', $response->json('error'));
     }
 }

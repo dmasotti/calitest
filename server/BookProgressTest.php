@@ -8,6 +8,7 @@ use App\Models\UserBook;
 use App\Models\Library;
 use App\Models\BookDeviceProgress;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 class BookProgressTest extends TestCase
 {
@@ -29,7 +30,7 @@ class BookProgressTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_can_save_reading_progress()
     {
         $response = $this->actingAs($this->user)
@@ -50,7 +51,7 @@ class BookProgressTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_requires_progress_bp_field()
     {
         $response = $this->actingAs($this->user)
@@ -64,7 +65,7 @@ class BookProgressTest extends TestCase
         $response->assertJsonValidationErrors(['progress_bp']);
     }
 
-    /** @test */
+    #[Test]
     public function it_tracks_progress_separately_per_format()
     {
         // Save EPUB progress
@@ -99,7 +100,7 @@ class BookProgressTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_updates_existing_progress_for_same_device_and_format()
     {
         // First save
@@ -133,7 +134,7 @@ class BookProgressTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_requires_authentication()
     {
         $response = $this->postJson("/api/books/{$this->book->uuid}/reading-progress", [

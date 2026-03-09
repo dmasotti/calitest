@@ -6,6 +6,7 @@ use App\Models\BookFile;
 use App\Models\Library;
 use App\Models\User;
 use App\Models\UserBook;
+use App\Services\Sync\MetadataHasher;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -138,7 +139,6 @@ class SyncV5ProtocolCoverageTest extends TestCase
         [, $library] = $this->setupUserLibrary();
 
         $lastModified = Carbon::create(2026, 2, 27, 12, 0, 0, 'UTC');
-        $metadataHash = str_repeat('c', 64);
         $coverHashHex = str_repeat('a', 64);
         $fileHashHex = str_repeat('b', 64);
         $book = UserBook::factory()->create([
@@ -151,8 +151,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
             'cover_original_hash' => 'sha256:' . $coverHashHex,
         ]);
         $book->refresh();
-        $book->metadata_hash_cache = 'v2:' . $metadataHash . ':' . $book->last_modified->timestamp;
-        $book->save();
+        $metadataHash = $this->metadataHashForBook($book);
 
         \DB::table('files_store')->insert([
             'sha256' => $fileHashHex,
@@ -467,7 +466,6 @@ class SyncV5ProtocolCoverageTest extends TestCase
     {
         [, $library] = $this->setupUserLibrary();
 
-        $metadataHash = str_repeat('9', 64);
         $coverHashA = str_repeat('a', 64);
         $fileHashC = str_repeat('c', 64);
         $fileHashE = str_repeat('e', 64);
@@ -481,8 +479,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
             'cover_original_hash' => 'sha256:' . $coverHashA,
         ]);
         $book->refresh();
-        $book->metadata_hash_cache = 'v2:' . $metadataHash . ':' . $book->last_modified->timestamp;
-        $book->save();
+        $metadataHash = $this->metadataHashForBook($book);
 
         \DB::table('files_store')->insert([
             [
@@ -550,5 +547,25 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $response->assertStatus(200);
         $missingByUuid = collect($response->json('missing_from_server') ?? [])->keyBy('uuid');
         $this->assertNull($missingByUuid->get($book->uuid));
+    }
+
+    private function metadataHashForBook(UserBook $book): string
+    {
+        return (string) MetadataHasher::computeHash([
+            'uuid' => $book->uuid,
+            'title' => $book->title,
+            'author_sort' => $book->author_sort,
+            'authors' => [],
+            'series' => null,
+            'series_index' => $book->series_index,
+            'tags' => [],
+            'identifiers' => [],
+            'publisher' => null,
+            'languages' => [],
+            'pubdate' => $book->pubdate,
+            'description' => $book->description,
+            'rating' => $book->rating,
+            'files' => [],
+        ]);
     }
 }

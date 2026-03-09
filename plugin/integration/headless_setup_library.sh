@@ -11,6 +11,7 @@ if [[ -f "$SCRIPT_DIR/../../server/.env" ]]; then
 fi
 
 DISCOVERY_URL=${DISCOVERY_URL:-}
+CALIMOB_FORCE_API_URL=${CALIMOB_FORCE_API_URL:-}
 TEST_USER_EMAIL=${TEST_USER_EMAIL:-}
 TEST_USER_PASSWORD=${TEST_USER_PASSWORD:-}
 CALIBRE_LIBRARY_ID=${CALIBRE_LIBRARY_ID:-}
@@ -23,9 +24,14 @@ if [[ -z "$DISCOVERY_URL" || -z "$TEST_USER_EMAIL" || -z "$TEST_USER_PASSWORD" ]
   exit 0
 fi
 
-API_URL=$(curl -s "${DISCOVERY_URL}/discovery.php" | jq -r '.api_url // empty' 2>/dev/null || true)
-if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
-  API_URL=$(curl -s "${DISCOVERY_URL}/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+if [[ -n "$CALIMOB_FORCE_API_URL" ]]; then
+  API_URL="$CALIMOB_FORCE_API_URL"
+  echo "INFO: using forced API URL: $API_URL"
+else
+  API_URL=$(curl -s "${DISCOVERY_URL}/discovery.php" | jq -r '.api_url // empty' 2>/dev/null || true)
+  if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
+    API_URL=$(curl -s "${DISCOVERY_URL}/api/discovery" | jq -r '.api_url // empty' 2>/dev/null || true)
+  fi
 fi
 if [[ -z "$API_URL" || "$API_URL" == "null" ]]; then
   echo "FAIL: discovery failed" >&2
@@ -44,7 +50,7 @@ if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
 fi
 
 if [[ -z "$CALIBRE_LIBRARY_ID" ]]; then
-  CALIBRE_LIBRARY_ID=$(python - <<'PY'
+  CALIBRE_LIBRARY_ID=$(python3 - <<'PY'
 import uuid
 print(str(uuid.uuid4()))
 PY
@@ -82,7 +88,7 @@ fi
 
 if [[ -n "${SEED_BOOKS:-}" || -n "${SEED_BOOKS_COUNT:-}" ]]; then
   COUNT=${SEED_BOOKS_COUNT:-3}
-  CHANGES=$(python - <<PY
+  CHANGES=$(python3 - <<PY
 import json
 import time
 import uuid

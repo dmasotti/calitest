@@ -16,7 +16,7 @@ class IdentifiersSyncEndToEndTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_identifiers_are_applied_even_if_tags_step_fails(): void
+    public function test_metadata_failure_on_tags_is_propagated_and_identifiers_are_not_persisted(): void
     {
         $user = User::factory()->create();
         $library = Library::factory()->create(['user_id' => $user->id]);
@@ -39,31 +39,27 @@ class IdentifiersSyncEndToEndTest extends TestCase
             }
         };
 
-        $handler->applyBookMetadata($userBook, [
-            'title' => 'Identifiers Book',
-            'tags' => [['name' => 'will-fail']],
-            'identifiers' => [
-                'isbn' => '9780262035613',
-                'google' => 'Np9SDQAAQBAJ',
-                'goodreads' => '30422361',
-            ],
-            'rating' => 0,
-        ], $user, $library->id);
+        try {
+            $handler->applyBookMetadata($userBook, [
+                'title' => 'Identifiers Book',
+                'tags' => [['name' => 'will-fail']],
+                'identifiers' => [
+                    'isbn' => '9780262035613',
+                    'google' => 'Np9SDQAAQBAJ',
+                    'goodreads' => '30422361',
+                ],
+                'rating' => 0,
+            ], $user, $library->id);
+            $this->fail('Expected metadata failure when tags step throws.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('applyBookMetadata failed at step "tags"', $e->getMessage());
+        }
 
-        $this->assertDatabaseHas('books_identifiers', [
+        $this->assertDatabaseMissing('books_identifiers', [
             'book' => $userBook->uuid,
             'user_id' => $user->id,
             'library_id' => $library->id,
             'type' => 'isbn',
-            'val' => '9780262035613',
-        ]);
-
-        $this->assertDatabaseHas('books_identifiers', [
-            'book' => $userBook->uuid,
-            'user_id' => $user->id,
-            'library_id' => $library->id,
-            'type' => 'google',
-            'val' => 'Np9SDQAAQBAJ',
         ]);
     }
 
@@ -98,4 +94,3 @@ class IdentifiersSyncEndToEndTest extends TestCase
         $this->assertSame('Np9SDQAAQBAJ', $snapshot['identifiers']['google'] ?? null);
     }
 }
-

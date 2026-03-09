@@ -2,6 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\BookFile;
+use App\Models\Library;
+use App\Models\User;
+use App\Models\UserBook;
 use Tests\TestCase;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Hash;
@@ -89,31 +93,34 @@ class OpdsTest extends TestCase
 
     public function test_opds_root_with_app_password_returns_feed()
     {
-        // create user
-        $userId = DB::table('users')->insertGetId([
+        $user = User::factory()->create([
             'name' => 'OPDS Tester',
             'email' => 'opds@test.local',
             'password' => Hash::make('webpass'),
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
-
-        // create book owned by user (use opds_books to avoid schema conflicts)
-        $bookId = DB::table('opds_books')->insertGetId([
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $book = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
             'title' => 'OPDS Example Book',
-            'file_path' => 'books/opds-example.epub',
-            'mime_type' => 'application/epub+zip',
-            'user_id' => $userId,
-            'library_id' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
+        ]);
+        BookFile::factory()->create([
+            'book' => $book->uuid,
+            'format' => 'EPUB',
+            'name' => 'opds-example.epub',
+            'file_hash' => hash('sha256', 'opds-example'),
+            'is_uploaded' => true,
+            'file_missing' => false,
+            'needs_file_upload' => false,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
         ]);
 
         // create app-password (plain shown only once)
         $plain = 'apppass-test-'.bin2hex(random_bytes(6));
         $hash = Hash::make($plain);
         DB::table('user_app_passwords')->insert([
-            'user_id' => $userId,
+            'user_id' => $user->id,
             'name' => 'Test Reader',
             'password_hash' => $hash,
             'created_at' => now(),
@@ -141,30 +148,35 @@ class OpdsTest extends TestCase
 
     public function test_book_download_returns_x_accel_headers()
     {
-        // create user and book
-        $userId = DB::table('users')->insertGetId([
+        $user = User::factory()->create([
             'name' => 'Download Tester',
             'email' => 'download@test.local',
             'password' => Hash::make('webpass'),
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
-
-        $bookId = DB::table('opds_books')->insertGetId([
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $book = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
             'title' => 'Downloadable Book',
-            'file_path' => 'books/downloadable.epub',
-            'mime_type' => 'application/epub+zip',
-            'user_id' => $userId,
-            'library_id' => 2,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'uuid' => (string) \Illuminate\Support\Str::uuid(),
+        ]);
+        BookFile::factory()->create([
+            'book' => $book->uuid,
+            'format' => 'EPUB',
+            'name' => 'downloadable.epub',
+            'file_hash' => hash('sha256', 'downloadable'),
+            'is_uploaded' => true,
+            'file_missing' => false,
+            'needs_file_upload' => false,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
         ]);
 
         // create app-password
         $plain = 'apppass-dl-'.bin2hex(random_bytes(6));
         $hash = Hash::make($plain);
         DB::table('user_app_passwords')->insert([
-            'user_id' => $userId,
+            'user_id' => $user->id,
             'name' => 'DL Reader',
             'password_hash' => $hash,
             'created_at' => now(),
@@ -172,7 +184,7 @@ class OpdsTest extends TestCase
         ]);
 
         $auth = base64_encode("download@test.local:{$plain}");
-        $resp = $this->withHeaders(['Authorization' => "Basic {$auth}"])->get('/books/'.$bookId.'/download');
+        $resp = $this->withHeaders(['Authorization' => "Basic {$auth}"])->get('/books/'.$book->uuid.'/download');
         $resp->assertStatus(200);
         $resp->assertHeader('X-Accel-Redirect');
         $resp->assertHeader('Content-Disposition');

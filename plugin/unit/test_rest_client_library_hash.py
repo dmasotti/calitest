@@ -25,7 +25,9 @@ class TestRestClientLibraryHash:
         
         # Mock the get method directly
         mock_response = {
-            'library_hash': 'a' * 64,
+            'library_metadata_hash': 'a' * 64,
+            'library_covers_hash': 'b' * 64,
+            'library_files_hash': 'c' * 64,
             'total_books': 100,
             'last_modified': '2024-01-01T00:00:00Z'
         }
@@ -34,7 +36,9 @@ class TestRestClientLibraryHash:
         result = client.get_library_hash(35)
         
         assert result is not None
-        assert result['library_hash'] == 'a' * 64
+        assert result['library_metadata_hash'] == 'a' * 64
+        assert result['library_covers_hash'] == 'b' * 64
+        assert result['library_files_hash'] == 'c' * 64
         assert result['total_books'] == 100
         assert result['last_modified'] == '2024-01-01T00:00:00Z'
     
@@ -43,7 +47,7 @@ class TestRestClientLibraryHash:
         client = rest_client.RestApiClient('http://test.com', 'token123')
         
         mock_response = {
-            'library_hash': None,
+            'library_metadata_hash': None,
             'total_books': 0,
             'last_modified': None
         }
@@ -99,9 +103,9 @@ class TestRestClientLibraryHash:
         """Test response with missing fields."""
         client = rest_client.RestApiClient('http://test.com', 'token123')
         
-        # Has library_hash but missing other fields
+        # Has metadata hash but missing optional fields
         mock_response = {
-            'library_hash': 'a' * 64
+            'library_metadata_hash': 'a' * 64
         }
         client.get = Mock(return_value=mock_response)
         
@@ -109,14 +113,33 @@ class TestRestClientLibraryHash:
         
         # Should still work with partial data
         assert result is not None
-        assert result['library_hash'] == 'a' * 64
+        assert result['library_metadata_hash'] == 'a' * 64
+
+    def test_get_library_hash_accepts_split_hash_response(self):
+        """Split fingerprint response should be accepted even without legacy library_hash."""
+        client = rest_client.RestApiClient('http://test.com', 'token123')
+
+        mock_response = {
+            'library_metadata_hash': 'b' * 64,
+            'library_covers_hash': 'c' * 64,
+            'library_files_hash': 'd' * 64,
+            'total_books': 10,
+            'last_modified': '2026-03-03T11:00:00Z',
+        }
+        client.get = Mock(return_value=mock_response)
+
+        result = client.get_library_hash(35)
+        assert result is not None
+        assert result['library_metadata_hash'] == 'b' * 64
+        assert result['library_covers_hash'] == 'c' * 64
+        assert result['library_files_hash'] == 'd' * 64
     
     def test_get_library_hash_empty_hash(self):
         """Test when server returns empty hash string."""
         client = rest_client.RestApiClient('http://test.com', 'token123')
         
         mock_response = {
-            'library_hash': '',
+            'library_metadata_hash': '',
             'total_books': 0,
             'last_modified': None
         }
@@ -131,7 +154,7 @@ class TestRestClientLibraryHash:
         client = rest_client.RestApiClient('http://test.com', 'token123')
         
         mock_response = {
-            'library_hash': 'a' * 64,
+            'library_metadata_hash': 'a' * 64,
             'total_books': 1,
             'last_modified': '2024-01-01T00:00:00Z'
         }

@@ -371,6 +371,8 @@ def mock_plugin_config():
         'httpTimeout': 30,
         'uploadTimeout': 120,
         'debugApiLogs': False,
+        'presignedVerifyBatchEnabled': False,
+        'presignedVerifyEnabled': True,
     }
     
     library_mappings = {

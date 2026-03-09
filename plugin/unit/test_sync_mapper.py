@@ -103,6 +103,7 @@ class TestCalibreToJsonItem:
         assert 'fiction' in tag_names
         assert 'sci-fi' in tag_names
         assert 'test' in tag_names
+        assert [t.get('position') for t in item['tags']] == [0, 1, 2]
     
     def test_status_tag_mapping(self, mock_calibre_metadata, mock_calibre_db):
         """Test status mapping from tags."""

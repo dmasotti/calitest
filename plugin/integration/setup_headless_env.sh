@@ -49,8 +49,13 @@ command -v sqlite3 >/dev/null 2>&1 || { echo "sqlite3 non installato"; exit 1; }
 command -v php >/dev/null 2>&1 || { echo "php non installato"; exit 1; }
 
 DISCOVERY_URL="$CALIMOB_DISCOVERY_URL"
+FORCE_API_URL="${CALIMOB_FORCE_API_URL:-}"
 
 function discover_api_url() {
+  if [[ -n "$FORCE_API_URL" ]]; then
+    echo "$FORCE_API_URL"
+    return 0
+  fi
   local url
   url=$(curl -s "${DISCOVERY_URL}/discovery.php" | jq -r '.api_url // empty' 2>/dev/null || true)
   if [[ -z "$url" || "$url" == "null" ]]; then
@@ -179,6 +184,7 @@ cat <<EOF
 Ambiente pronto. Esporta queste variabili e lancia i test headless (calibre-debug o gli script in tests/plugin/integration):
 
   export CALIMOB_DISCOVERY_URL="$DISCOVERY_URL"
+  export CALIMOB_FORCE_API_URL="${FORCE_API_URL}"
   export TEST_USER_EMAIL="$TEST_USER_EMAIL"
   export TEST_USER_PASSWORD="$TEST_USER_PASSWORD"
   export CALIMOB_LIBRARY_PATH="$CALIBRE_LIBRARY_PATH"

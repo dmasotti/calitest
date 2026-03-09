@@ -93,7 +93,7 @@ class TestHashConsistency:
         # Get hash from VIEW (calculated by UDF)
         cursor.execute("""
             SELECT metadata_hash FROM calimob_books_hash_v2
-            WHERE id = 1 AND library_uuid = 'lib-1'
+            WHERE id = 1
         """)
         row = cursor.fetchone()
         assert row is not None
@@ -221,8 +221,7 @@ class TestHashConsistency:
         
         # Get library hash from VIEW (calculated by UDF)
         cursor.execute("""
-            SELECT library_hash FROM calimob_library_hash_payload
-            WHERE library_uuid = 'lib-1'
+            SELECT library_metadata_hash FROM calimob_library_hash_payload
         """)
         row = cursor.fetchone()
         assert row is not None
@@ -231,7 +230,9 @@ class TestHashConsistency:
         
         # Compute library hash on plugin side (uses same VIEW)
         plugin_result = sync_utils.get_library_hash(conn, 'lib-1')
-        plugin_library_hash = plugin_result['library_hash']
+        plugin_library_hash = plugin_result['library_metadata_hash']
+        assert 'library_covers_hash' in plugin_result
+        assert 'library_files_hash' in plugin_result
         
         # Both should return the same hash (from UDF)
         assert view_library_hash == plugin_library_hash
@@ -280,7 +281,7 @@ class TestHashConsistency:
         
         # Library hashes should be identical (VIEW orders by book ID)
         assert result1 is not None and result2 is not None
-        assert result1['library_hash'] == result2['library_hash']
+        assert result1['library_metadata_hash'] == result2['library_metadata_hash']
     
     def test_special_characters_in_metadata(self, tmp_path):
         """Test hash consistency with special SQL characters."""

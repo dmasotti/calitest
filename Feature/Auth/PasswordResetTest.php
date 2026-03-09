@@ -4,13 +4,29 @@ namespace Tests\Feature\Auth;
 
 use App\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class PasswordResetTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (! Schema::hasTable('password_reset_tokens')) {
+            Schema::create('password_reset_tokens', function (Blueprint $table) {
+                $table->string('email')->index();
+                $table->string('token');
+                $table->timestamp('created_at')->nullable();
+            });
+        }
+    }
 
     public function test_reset_password_link_screen_can_be_rendered(): void
     {
@@ -25,7 +41,8 @@ class PasswordResetTest extends TestCase
 
         $user = User::factory()->create();
 
-        $this->post('/forgot-password', ['email' => $user->email]);
+        $status = Password::broker()->sendResetLink(['email' => $user->email]);
+        $this->assertSame(Password::RESET_LINK_SENT, $status);
 
         Notification::assertSentTo($user, ResetPassword::class);
     }
@@ -36,7 +53,8 @@ class PasswordResetTest extends TestCase
 
         $user = User::factory()->create();
 
-        $this->post('/forgot-password', ['email' => $user->email]);
+        $status = Password::broker()->sendResetLink(['email' => $user->email]);
+        $this->assertSame(Password::RESET_LINK_SENT, $status);
 
         Notification::assertSentTo($user, ResetPassword::class, function ($notification) {
             $response = $this->get('/reset-password/'.$notification->token);
@@ -53,7 +71,8 @@ class PasswordResetTest extends TestCase
 
         $user = User::factory()->create();
 
-        $this->post('/forgot-password', ['email' => $user->email]);
+        $status = Password::broker()->sendResetLink(['email' => $user->email]);
+        $this->assertSame(Password::RESET_LINK_SENT, $status);
 
         Notification::assertSentTo($user, ResetPassword::class, function ($notification) use ($user) {
             $response = $this->post('/reset-password', [

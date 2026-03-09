@@ -4,9 +4,11 @@ namespace Tests\Server;
 
 use App\Models\Library;
 use App\Models\SyncConflict;
+use App\Models\SyncMapping;
 use App\Models\User;
 use App\Models\UserBook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -116,10 +118,12 @@ class SyncPushTest extends TestCase
         $this->postJson('/api/sync', $payload)
             ->assertStatus(200);
 
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('sync_mappings'));
         $this->assertDatabaseHas('books', [
             'uuid' => $uuid,
         ]);
+        if (Schema::hasTable('sync_mappings')) {
+            $this->assertSame(0, SyncMapping::query()->count());
+        }
     }
 
     public function test_sync_can_update_and_clear_status(): void
@@ -280,6 +284,13 @@ class SyncPushTest extends TestCase
         $response = $this->postJson('/api/sync', $payload);
         $response->assertStatus(200);
         $this->assertSame('conflict', $response->json('results.0.status'));
+
+        if (!SyncConflict::isStorageAvailable()) {
+            $list = $this->getJson('/api/sync/conflicts?library_id=' . $library->id);
+            $list->assertStatus(200);
+            $this->assertCount(0, $list->json('conflicts'));
+            return;
+        }
 
         $conflict = SyncConflict::first();
         $this->assertNotNull($conflict);

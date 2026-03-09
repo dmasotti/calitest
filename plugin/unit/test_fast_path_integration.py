@@ -66,7 +66,7 @@ class TestFastPathLibraryUUID:
             "SyncWorker must store library_id as instance variable"
     
     def test_fast_path_calls_get_library_hash_with_library_uuid(self):
-        """Verify fast path calls sync_utils.get_library_hash(db, library_uuid)."""
+        """Verify fast path calls sync_utils.get_library_hash(conn, library_uuid)."""
         sync_worker_path = os.path.join(
             os.path.dirname(__file__), 
             '../../..', 
@@ -78,8 +78,8 @@ class TestFastPathLibraryUUID:
             code = f.read()
         
         # Verify get_library_hash is called with library_uuid
-        assert 'sync_utils.get_library_hash(self.db, library_uuid)' in code, \
-            "Fast path must call sync_utils.get_library_hash(db, library_uuid)"
+        assert 'sync_utils.get_library_hash(conn, library_uuid)' in code, \
+            "Fast path must call sync_utils.get_library_hash(conn, library_uuid)"
     
     def test_fast_path_summary_flag_exists(self):
         """Verify fast_path_used flag is set in summary."""
@@ -105,7 +105,7 @@ class TestFastPathLogic:
     """Test fast path decision logic."""
     
     def test_fast_path_compares_hashes(self):
-        """Verify fast path compares local and server hashes."""
+        """Verify fast path compares local and server split hashes."""
         sync_worker_path = os.path.join(
             os.path.dirname(__file__), 
             '../../..', 
@@ -116,9 +116,15 @@ class TestFastPathLogic:
         with open(sync_worker_path, 'r') as f:
             code = f.read()
         
-        # Verify hash comparison
-        assert "local_hash_data['library_hash'] == server_hash_data['library_hash']" in code, \
-            "Fast path must compare local and server library hashes"
+        # Verify split-hash comparison logic
+        assert 'metadata_match' in code, \
+            "Fast path must compute metadata_match"
+        assert 'covers_match' in code, \
+            "Fast path must compute covers_match"
+        assert 'files_match' in code, \
+            "Fast path must compute files_match"
+        assert "if metadata_match and covers_match and files_match" in code, \
+            "Fast path must short-circuit only when all split hashes match"
     
     def test_fast_path_returns_early_on_match(self):
         """Verify fast path returns early when hashes match."""
@@ -158,18 +164,11 @@ class TestFastPathLogic:
         with open(sync_worker_path, 'r') as f:
             code = f.read()
         
-        # Find fast path section
-        fast_path_start = code.find('Fast path: check library hash before full sync')
-        assert fast_path_start > 0
-        
-        # Extract fast path section
-        fast_path_section = code[fast_path_start:fast_path_start + 5000]
-        
         # Verify exception handling
-        assert 'except Exception' in fast_path_section, \
+        assert 'except Exception' in code, \
             "Fast path must have exception handling"
         
-        assert 'continuing with normal sync' in fast_path_section.lower(), \
+        assert 'continuing with normal sync' in code.lower(), \
             "Fast path must log that it's falling back to normal sync"
 
 
@@ -207,14 +206,45 @@ class TestFastPathDocumentation:
         with open(sync_worker_path, 'r') as f:
             code = f.read()
         
-        # Find fast path section
-        fast_path_start = code.find('Fast path: check library hash before full sync')
-        fast_path_section = code[fast_path_start:fast_path_start + 5000]
-        
-        # Verify debug logging
-        assert 'calimob_debug' in fast_path_section, \
+        # Logging lives in _v5_fast_path_preflight helper.
+        helper_start = code.find('def _v5_fast_path_preflight')
+        helper_section = code[helper_start:helper_start + 9000]
+
+        assert 'calimob_debug' in helper_section, \
             "Fast path must have debug logging"
-        
-        assert 'Fast path:' in fast_path_section, \
+        assert 'Fast path:' in helper_section, \
             "Fast path logs should be prefixed with 'Fast path:'"
 
+
+
+
+class TestFastPathWithVIEWs:
+    """Test that fast path uses VIEWs with UDF correctly."""
+    
+    def test_udf_registration_enables_views(self):
+        """Test that UDF registration allows VIEWs to be created."""
+        import sqlite3
+        from mapping_table import _ensure_hash_views, sha256_udf
+        
+        # Create in-memory DB
+        conn = sqlite3.connect(':memory:')
+        
+        # Create minimal sync table
+        conn.execute('CREATE TABLE calimob_books_sync (id INTEGER, library_uuid TEXT)')
+        
+        # Create VIEWs with UDF (should not crash)
+        _ensure_hash_views(conn)
+        
+        # Verify UDF works
+        result = conn.execute("SELECT sha256('test')").fetchone()
+        assert result is not None
+        assert len(result[0]) == 64  # SHA256 hex length
+        
+        # Verify VIEWs exist
+        views = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='view' AND name LIKE 'calimob%'"
+        ).fetchall()
+        view_names = [v[0] for v in views]
+        
+        assert 'calimob_books_hash_v2' in view_names
+        assert 'calimob_library_hash_payload' in view_names

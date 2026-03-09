@@ -128,6 +128,7 @@ Other scripts:
 - `tests/server/presigned_upload_e2e_provider_matrix.sh` (live matrix R2/S3 nello stesso run)
 - `tests/server/presigned_upload_soak.sh` (carico concorrente start/put/complete/verify)
 - `scripts/run_boundary_dual_db_tests.sh` (parity run SQLite + MySQL per boundary suite)
+- `scripts/run_hash_views_dual_db_tests.sh` (parity run SQLite + MySQL per hash views metadata)
 
 Live boundary E2E example:
 
@@ -166,6 +167,12 @@ Boundary parity on both DB backends:
 
 ```bash
 ./scripts/run_boundary_dual_db_tests.sh
+```
+
+Hash-view parity on both DB backends:
+
+```bash
+./scripts/run_hash_views_dual_db_tests.sh
 ```
 
 ## 5) Plugin Tests (pytest)

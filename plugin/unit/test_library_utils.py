@@ -22,11 +22,12 @@ def _create_metadata_db(path, library_id='test-uuid-123', name='Test Library'):
     db_path = Path(path) / 'metadata.db'
     conn = sqlite3.connect(str(db_path))
     cur = conn.cursor()
-    cur.execute('CREATE TABLE IF NOT EXISTS meta (key TEXT, value TEXT)')
+    cur.execute('CREATE TABLE IF NOT EXISTS library_id (uuid TEXT)')
+    cur.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT, val TEXT)')
     if library_id is not None:
-        cur.execute('INSERT INTO meta (key, value) VALUES (\'library_id\', ?)', (library_id,))
+        cur.execute('INSERT INTO library_id (uuid) VALUES (?)', (library_id,))
     if name is not None:
-        cur.execute('INSERT INTO meta (key, value) VALUES (\'name\', ?)', (name,))
+        cur.execute('INSERT INTO preferences (key, val) VALUES (\'library_name\', ?)', (f'"{name}"',))
     conn.commit()
     conn.close()
     return str(path)
@@ -196,9 +197,9 @@ class TestGetAllCalibreLibraries:
         fallback.mkdir()
         _create_metadata_db(fallback, library_id='uuid-fallback', name='Fallback Lib')
 
-        monkeypatch.setattr(library_utils, '_find_recent_libs_from_config', lambda: [str(fallback)])
         gui = self._make_gui(paths=[])
+        gui.current_db = types.SimpleNamespace(library_path=str(fallback))
         libs = library_utils.get_all_calibre_libraries(gui)
 
         assert len(libs) == 1
-        assert libs[0]['id'] == 'uuid-fallback'
+        assert libs[0]['id'] == library_utils.canonicalize_uuid('uuid-fallback')

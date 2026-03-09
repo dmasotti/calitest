@@ -55,6 +55,8 @@ def test_includes_author_tag_series_ids_when_available():
 
     assert [a.get("id") for a in item["authors"]] == [101, 102]
     assert [t.get("id") for t in item["tags"]] == [201, 202]
+    assert [a.get("position") for a in item["authors"]] == [0, 1]
+    assert [t.get("position") for t in item["tags"]] == [0, 1]
     assert item["series"].get("id") == 301
 
 
@@ -83,14 +85,14 @@ def test_payload_is_stable_across_successive_generations():
         "id": item1["id"],
         "uuid": item1["uuid"],
         "authors": [(a.get("name"), a.get("id")) for a in item1["authors"]],
-        "tags": [(t.get("name"), t.get("id")) for t in item1["tags"]],
+        "tags": [(t.get("name"), t.get("id"), t.get("position")) for t in item1["tags"]],
         "series": (item1["series"].get("name"), item1["series"].get("id")),
     }
     stable2 = {
         "id": item2["id"],
         "uuid": item2["uuid"],
         "authors": [(a.get("name"), a.get("id")) for a in item2["authors"]],
-        "tags": [(t.get("name"), t.get("id")) for t in item2["tags"]],
+        "tags": [(t.get("name"), t.get("id"), t.get("position")) for t in item2["tags"]],
         "series": (item2["series"].get("name"), item2["series"].get("id")),
     }
     assert stable1 == stable2

@@ -3,10 +3,12 @@
 namespace Tests\Server;
 
 use App\Models\Library;
+use App\Models\SyncMapping;
 use App\Models\User;
 use App\Models\UserBook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -35,6 +37,15 @@ class TombstoneAdminTest extends TestCase
         ]);
         $book->deleted_at = now()->subDays(5);
         $book->save();
+        if (Schema::hasTable('sync_mappings')) {
+            SyncMapping::create([
+                'user_id' => $admin->id,
+                'library_id' => $library->id,
+                'entity_type' => 'books',
+                'client_key' => 'calibre:' . $library->calibre_library_id . ':500',
+                'server_id' => 500,
+            ]);
+        }
 
         session()->start();
         $response = $this->actingAs($admin)
@@ -47,7 +58,13 @@ class TombstoneAdminTest extends TestCase
 
         $response->assertStatus(302);
         $this->assertDatabaseMissing('books', ['id' => 500, 'library_id' => $library->id]);
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('sync_mappings'));
+        if (Schema::hasTable('sync_mappings')) {
+            $this->assertDatabaseMissing('sync_mappings', [
+                'library_id' => $library->id,
+                'entity_type' => 'books',
+                'server_id' => 500,
+            ]);
+        }
     }
 
     public function test_resolve_tombstones_creates_sync_mapping(): void
@@ -72,6 +89,16 @@ class TombstoneAdminTest extends TestCase
             ]);
 
         $response->assertStatus(302);
-        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasTable('sync_mappings'));
+        if (Schema::hasTable('sync_mappings')) {
+            $this->assertDatabaseHas('sync_mappings', [
+                'user_id' => $admin->id,
+                'library_id' => $library->id,
+                'entity_type' => 'books',
+                'client_key' => 'calibre:' . $library->calibre_library_id . ':900',
+                'server_id' => 900,
+            ]);
+        } else {
+            $response->assertSessionHas('status', 'Mappings disabled: sync_mappings table removed');
+        }
     }
 }

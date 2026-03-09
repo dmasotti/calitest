@@ -134,17 +134,8 @@ class TestUDFIntegration:
             )
         """)
         
-        # Create calimob_books_sync table
-        conn.execute("""
-            CREATE TABLE calimob_books_sync (
-                id INTEGER PRIMARY KEY,
-                library_uuid TEXT,
-                calibre_book_id INTEGER,
-                uuid TEXT,
-                last_modified INTEGER,
-                is_deleted INTEGER DEFAULT 0
-            )
-        """)
+        # Create plugin cache table with full expected schema
+        mapping_table._ensure_table(conn)
         
         # Insert test data
         conn.execute("""
@@ -316,16 +307,15 @@ class TestUDFIntegration:
         
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT library_uuid, library_hash, total_books
+            SELECT library_metadata_hash, total_books
             FROM calimob_library_hash_payload
         """)
         
         row = cursor.fetchone()
         
         assert row is not None
-        assert row[0] == 'test-library-uuid'
-        assert len(row[1]) == 64  # SHA256 hash
-        assert row[2] == 2  # 2 books
+        assert len(row[0]) == 64  # SHA256 hash
+        assert row[1] == 2  # 2 books
         
         conn.close()
     
@@ -338,7 +328,7 @@ class TestUDFIntegration:
         cursor = conn.cursor()
         
         # Get initial hash
-        cursor.execute("SELECT library_hash FROM calimob_library_hash_payload")
+        cursor.execute("SELECT library_metadata_hash FROM calimob_library_hash_payload")
         hash1 = cursor.fetchone()[0]
         
         # Modify a book
@@ -346,7 +336,7 @@ class TestUDFIntegration:
         conn.commit()
         
         # Get new hash
-        cursor.execute("SELECT library_hash FROM calimob_library_hash_payload")
+        cursor.execute("SELECT library_metadata_hash FROM calimob_library_hash_payload")
         hash2 = cursor.fetchone()[0]
         
         assert hash1 != hash2, "Library hash should change when book is modified"

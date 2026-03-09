@@ -11,6 +11,7 @@ use App\Models\Author;
 use App\Models\Series;
 use App\Services\ManualBookService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Illuminate\Support\Facades\DB;
 
 class ManualBookSaveTest extends TestCase
@@ -30,7 +31,7 @@ class ManualBookSaveTest extends TestCase
         $this->service = app(ManualBookService::class);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_book_with_all_metadata()
     {
         $data = [
@@ -115,7 +116,7 @@ class ManualBookSaveTest extends TestCase
         $this->assertEquals('Test description', $book->description);
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_book_with_cover()
     {
         $coverPath = __DIR__ . '/tmp/test_cover.jpg';
@@ -160,7 +161,7 @@ class ManualBookSaveTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_creates_book_with_files()
     {
         $epubPath = __DIR__ . '/tmp/test.epub';
@@ -217,7 +218,7 @@ class ManualBookSaveTest extends TestCase
         if (file_exists($pdfPath)) unlink($pdfPath);
     }
 
-    /** @test */
+    #[Test]
     public function it_updates_book_cover()
     {
         $book = UserBook::factory()->create([
@@ -264,7 +265,7 @@ class ManualBookSaveTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_updates_book_metadata()
     {
         $book = UserBook::factory()->create([
@@ -337,7 +338,7 @@ class ManualBookSaveTest extends TestCase
         $this->assertEquals('ita', $language->lang_code);
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_existing_entities_by_uuid()
     {
         // Create existing entities
@@ -387,7 +388,7 @@ class ManualBookSaveTest extends TestCase
         $this->assertEquals(1, Tag::where('name', 'Existing Tag')->count());
     }
 
-    /** @test */
+    #[Test]
     public function it_removes_relations_when_empty()
     {
         $book = UserBook::factory()->create([

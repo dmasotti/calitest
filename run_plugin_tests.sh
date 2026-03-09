@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DEFAULT_PLUGIN_LIB_PATH="$ROOT_DIR/tests/plugin/fixtures/CalibreTestLocal"
+DEFAULT_LARGE_FIXTURE_PATH="$ROOT_DIR/tests/plugin/fixtures/CalibreLargeLocal"
 DEFAULT_CALIBRE_CONFIG_DIR="$ROOT_DIR/tests/plugin/.calibre-config"
 ENV_FILE="$ROOT_DIR/tests/server/.env"
 
@@ -11,6 +12,15 @@ if [[ -f "$ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$ENV_FILE"
   set +a
+fi
+
+# Optional: materialize a large local fixture from an external metadata.db path.
+# This makes large-library sync tests reproducible via upTests/run_plugin_tests.
+if [[ -n "${CALIMOB_LARGE_SOURCE_METADATA_DB:-}" ]]; then
+  export CALIMOB_LARGE_SOURCE_METADATA_DB
+  export CALIMOB_LARGE_FIXTURE_DIR="${CALIMOB_LARGE_FIXTURE_DIR:-$DEFAULT_LARGE_FIXTURE_PATH}"
+  "$ROOT_DIR/tests/plugin/integration/prepare_large_fixture.sh"
+  export CALIMOB_TEST_LIBRARY_PATH="${CALIMOB_LARGE_FIXTURE_DIR}"
 fi
 
 # Allow headless protocol suite to auto-register user when missing.

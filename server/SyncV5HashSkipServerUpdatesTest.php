@@ -6,6 +6,7 @@ use App\Models\Library;
 use App\Models\BookFile;
 use App\Models\User;
 use App\Models\UserBook;
+use App\Services\Sync\MetadataHasher;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -30,8 +31,8 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
             'title' => 'Hash Match Book',
             'path' => 'Hash Match Book',
             'last_modified' => $lastModified,
-            'metadata_hash_cache' => 'v2:abc123def456:' . $lastModified->timestamp,
         ]);
+        $metadataHash = $this->metadataHashForBook($book);
 
         $response = $this->postJson('/api/sync/v5', [
             'library_id' => $library->id,
@@ -43,7 +44,7 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
             'client_books' => [
                 'b' => [
                     $book->uuid => [
-                        'm' => 'abc123def456',
+                        'm' => $metadataHash,
                     ],
                 ],
                 'd' => [],
@@ -70,8 +71,8 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
             'path' => 'Cover Mismatch Book',
             'last_modified' => $lastModified,
             'cover_original_hash' => 'sha256:' . str_repeat('a', 64),
-            'metadata_hash_cache' => 'v2:abc123def456:' . $lastModified->timestamp,
         ]);
+        $metadataHash = $this->metadataHashForBook($book);
 
         $response = $this->postJson('/api/sync/v5', [
             'library_id' => $library->id,
@@ -83,7 +84,7 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
             'client_books' => [
                 'b' => [
                     $book->uuid => [
-                        'm' => 'abc123def456',
+                        'm' => $metadataHash,
                         'c' => str_repeat('b', 64),
                     ],
                 ],
@@ -128,7 +129,6 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
             'title' => 'Matched',
             'path' => 'Matched',
             'last_modified' => $lastModified,
-            'metadata_hash_cache' => 'v2:abc123def456:' . $lastModified->timestamp,
         ]);
         $bookMissingClientState = UserBook::create([
             'uuid' => (string) Str::uuid(),
@@ -137,8 +137,8 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
             'title' => 'No Client Hash',
             'path' => 'No Client Hash',
             'last_modified' => $lastModified,
-            'metadata_hash_cache' => 'v2:feedfacecafe:' . $lastModified->timestamp,
         ]);
+        $matchedHash = $this->metadataHashForBook($bookMatched);
 
         $response = $this->postJson('/api/sync/v5', [
             'library_id' => $library->id,
@@ -149,7 +149,7 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
             'client_batch_size' => 500,
             'client_books' => [
                 'b' => [
-                    $bookMatched->uuid => ['m' => 'abc123def456'],
+                    $bookMatched->uuid => ['m' => $matchedHash],
                 ],
                 'd' => [],
             ],
@@ -175,8 +175,8 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
             'title' => 'Unavailable File Book',
             'path' => 'Unavailable File Book',
             'last_modified' => $lastModified,
-            'metadata_hash_cache' => 'v2:abc123def456:' . $lastModified->timestamp,
         ]);
+        $metadataHash = $this->metadataHashForBook($book);
 
         BookFile::factory()->create([
             'book' => $book->uuid,
@@ -202,7 +202,7 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
             'client_books' => [
                 'b' => [
                     $book->uuid => [
-                        'm' => 'abc123def456',
+                        'm' => $metadataHash,
                         'f' => str_repeat('d', 64),
                     ],
                 ],
@@ -214,5 +214,25 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
         $response->assertJsonPath('skipped_hash', 0);
         $response->assertJsonCount(1, 'updates_for_client');
         $response->assertJsonPath('updates_for_client.0.uuid', $book->uuid);
+    }
+
+    private function metadataHashForBook(UserBook $book): string
+    {
+        return (string) MetadataHasher::computeHash([
+            'uuid' => $book->uuid,
+            'title' => $book->title,
+            'author_sort' => $book->author_sort,
+            'authors' => [],
+            'series' => null,
+            'series_index' => $book->series_index,
+            'tags' => [],
+            'identifiers' => [],
+            'publisher' => null,
+            'languages' => [],
+            'pubdate' => $book->pubdate,
+            'description' => $book->description,
+            'rating' => $book->rating,
+            'files' => [],
+        ]);
     }
 }

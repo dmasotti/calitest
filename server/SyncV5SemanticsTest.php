@@ -10,6 +10,8 @@ use App\Services\Sync\BookMetadataHandler;
 use App\Services\Sync\MetadataHasher;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -166,6 +168,105 @@ class SyncV5SemanticsTest extends TestCase
         $this->assertTrue((bool) ($entry['needs_files'] ?? false));
     }
 
+    public function test_metadata_only_client_payload_does_not_trigger_missing_noop_for_cover_files(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $book = UserBook::factory()->create([
+            'user_id' => $library->user_id,
+            'library_id' => $library->id,
+            'uuid' => '3a333333-3333-3333-3333-333333333333',
+            'title' => 'Metadata Only',
+            'cover_original_hash' => 'sha256:' . str_repeat('a', 64),
+        ]);
+
+        BookFile::factory()->create([
+            'book' => $book->uuid,
+            'format' => 'EPUB',
+            'file_hash' => str_repeat('b', 64),
+            'is_uploaded' => true,
+            'file_missing' => false,
+            'needs_file_upload' => false,
+            'storage_key' => 'ebooks/metadata-only.epub',
+            'storage_provider' => 'r2',
+        ]);
+
+        $metadataHash = $this->metadataHashFromView($library->user_id, $library->id, $book->uuid);
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 100,
+            'client_books' => [
+                'b' => [
+                    // Client intentionally provides metadata hash only (file/cover sync disabled).
+                    $book->uuid => ['m' => $metadataHash, 'c' => null, 'f' => null, 'lm' => time()],
+                ],
+                'd' => [],
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        collect($response->json('missing_from_server') ?? [])->each(function (array $entry): void {
+            $this->assertTrue(
+                (bool) ($entry['needs_metadata'] ?? false)
+                || (bool) ($entry['needs_cover'] ?? false)
+                || (bool) ($entry['needs_files'] ?? false),
+                'missing_from_server must never contain no-op entries with all needs_* flags false'
+            );
+        });
+        $missingEntry = collect($response->json('missing_from_server') ?? [])->firstWhere('uuid', $book->uuid);
+        $this->assertNull(
+            $missingEntry,
+            'When client omits cover/files hashes, server must not produce no-op missing_from_server entries'
+        );
+    }
+
+    public function test_metadata_mismatch_with_cover_files_omitted_requests_only_metadata(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $book = UserBook::factory()->create([
+            'user_id' => $library->user_id,
+            'library_id' => $library->id,
+            'uuid' => '3b333333-3333-3333-3333-333333333333',
+            'title' => 'Metadata Mismatch Only',
+            'cover_original_hash' => 'sha256:' . str_repeat('a', 64),
+        ]);
+
+        BookFile::factory()->create([
+            'book' => $book->uuid,
+            'format' => 'EPUB',
+            'file_hash' => str_repeat('b', 64),
+            'is_uploaded' => true,
+            'file_missing' => false,
+            'needs_file_upload' => false,
+            'storage_key' => 'ebooks/metadata-mismatch-only.epub',
+            'storage_provider' => 'r2',
+        ]);
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 100,
+            'client_books' => [
+                'b' => [
+                    $book->uuid => ['m' => str_repeat('d', 64), 'c' => null, 'f' => null, 'lm' => time()],
+                ],
+                'd' => [],
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $missingEntry = collect($response->json('missing_from_server') ?? [])->firstWhere('uuid', $book->uuid);
+        $this->assertNotNull($missingEntry);
+        $this->assertTrue((bool) ($missingEntry['needs_metadata'] ?? false));
+        $this->assertFalse((bool) ($missingEntry['needs_cover'] ?? false));
+        $this->assertFalse((bool) ($missingEntry['needs_files'] ?? false));
+    }
+
     public function test_metadata_hasher_normalizes_pubdate_epoch_and_datetime_to_same_hash(): void
     {
         $base = [
@@ -205,19 +306,7 @@ class SyncV5SemanticsTest extends TestCase
             'pubdate' => '2021-10-16 20:00:00',
         ]);
 
-        $clientHash = MetadataHasher::computeHash([
-            'uuid' => $book->uuid,
-            'title' => $book->title,
-            'authors' => [],
-            'series' => null,
-            'tags' => [],
-            'identifiers' => [],
-            'publisher' => null,
-            'languages' => [],
-            'pubdate' => Carbon::parse('2021-10-16 20:00:00', 'UTC')->timestamp,
-            'description' => null,
-            'rating' => null,
-        ]);
+        $clientHash = $this->metadataHashFromView($library->user_id, $library->id, $book->uuid);
 
         $response = $this->postJson('/api/sync/v5', [
             'library_id' => $library->id,
@@ -262,7 +351,7 @@ class SyncV5SemanticsTest extends TestCase
         $this->assertNull($book->description);
     }
 
-    public function test_repair_no_cache_recomputes_and_persists_metadata_hash_cache(): void
+    public function test_repair_no_cache_does_not_mutate_legacy_metadata_hash_cache(): void
     {
         [, $library] = $this->setupUserLibrary();
 
@@ -295,8 +384,7 @@ class SyncV5SemanticsTest extends TestCase
         $repair->assertStatus(200);
         $book->refresh();
         $cacheAfterRepair = (string) $book->metadata_hash_cache;
-        $this->assertStringStartsWith('v2:', $cacheAfterRepair);
-        $this->assertStringNotContainsString('deadbeef', $cacheAfterRepair);
+        $this->assertStringContainsString('deadbeef', $cacheAfterRepair);
 
         $normal = $this->postJson('/api/sync/v5', [
             'library_id' => $library->id,
@@ -315,5 +403,42 @@ class SyncV5SemanticsTest extends TestCase
         $normal->assertStatus(200);
         $book->refresh();
         $this->assertSame($cacheAfterRepair, (string) $book->metadata_hash_cache);
+    }
+
+    private function metadataHashFromView(int $userId, int $libraryId, string $uuid): string
+    {
+        if (Schema::hasTable('books_hash_v2')) {
+            $hash = (string) DB::table('books_hash_v2')
+                ->where('user_id', $userId)
+                ->where('library_id', $libraryId)
+                ->where('uuid', $uuid)
+                ->selectRaw('SHA2(hash_payload, 256) as metadata_hash')
+                ->value('metadata_hash');
+            if ($hash !== '') {
+                return $hash;
+            }
+        }
+
+        $book = UserBook::where('uuid', $uuid)
+            ->where('user_id', $userId)
+            ->where('library_id', $libraryId)
+            ->firstOrFail();
+
+        return (string) MetadataHasher::computeHash([
+            'uuid' => $book->uuid,
+            'title' => $book->title,
+            'author_sort' => $book->author_sort,
+            'authors' => [],
+            'series' => null,
+            'series_index' => $book->series_index,
+            'tags' => [],
+            'identifiers' => [],
+            'publisher' => null,
+            'languages' => [],
+            'pubdate' => $book->pubdate,
+            'description' => $book->description,
+            'rating' => $book->rating,
+            'files' => [],
+        ]);
     }
 }

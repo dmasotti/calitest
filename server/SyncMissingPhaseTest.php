@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Library;
 use App\Models\UserBook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Test missing phase specifically
@@ -43,7 +44,7 @@ class SyncMissingPhaseTest extends TestCase
         $this->token = $this->user->createToken('test')->plainTextToken;
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_only_books_with_missing_flags()
     {
         // Create normal books (no missing flags)
@@ -103,7 +104,7 @@ class SyncMissingPhaseTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_offset_pagination_in_missing_phase()
     {
         // Create 100 books with cover_missing (simpler, no file dependencies)
@@ -166,7 +167,7 @@ class SyncMissingPhaseTest extends TestCase
         $this->assertEquals(100, count($seenBookIds));
     }
 
-    /** @test */
+    #[Test]
     public function it_completes_missing_phase_when_no_more_books()
     {
         // Create 10 books with missing flags (no cover to prevent self-healing)
@@ -207,7 +208,7 @@ class SyncMissingPhaseTest extends TestCase
         $this->assertNull($response->json('new_cursor'));
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_mixed_missing_flags()
     {
         // Books with different missing combinations (no files/cover to prevent self-healing)
@@ -288,7 +289,7 @@ class SyncMissingPhaseTest extends TestCase
         $this->assertContains('All Missing', $titles);
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_smaller_batch_size_for_missing_phase()
     {
         // Create 100 books with missing (no cover to prevent self-healing)

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Library;
 use App\Models\UserBook;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\Test;
 use Illuminate\Support\Facades\Artisan;
 
 /**
@@ -50,7 +51,7 @@ class SyncCompositeCursorTest extends TestCase
         $this->token = $this->user->createToken('test')->plainTextToken;
     }
 
-    /** @test */
+    #[Test]
     public function it_parses_legacy_simple_cursor()
     {
         // Legacy cursor: base64(timestamp)
@@ -72,7 +73,7 @@ class SyncCompositeCursorTest extends TestCase
         $this->assertArrayHasKey('new_cursor', $response->json());
     }
 
-    /** @test */
+    #[Test]
     public function it_parses_composite_cursor()
     {
         // Composite cursor: base64(json)
@@ -99,7 +100,7 @@ class SyncCompositeCursorTest extends TestCase
         $this->assertArrayHasKey('new_cursor', $response->json());
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_composite_cursor_on_first_sync()
     {
         // Create two books so first page always returns a cursor with limit=1
@@ -143,7 +144,7 @@ class SyncCompositeCursorTest extends TestCase
         $this->assertArrayHasKey('missing_offset', $decoded);
     }
 
-    /** @test */
+    #[Test]
     public function it_excludes_missing_books_in_changes_phase()
     {
         // Create books with different states
@@ -185,7 +186,7 @@ class SyncCompositeCursorTest extends TestCase
         $this->assertEquals('Book with Change', $changes[0]['item']['title']);
     }
 
-    /** @test */
+    #[Test]
     public function it_transitions_from_changes_to_missing_phase()
     {
         // Create 1 book with change and 1 with missing
@@ -242,7 +243,7 @@ class SyncCompositeCursorTest extends TestCase
         $this->assertTrue($changes2[0]['metadata_incomplete']);
     }
 
-    /** @test */
+    #[Test]
     public function it_completes_sync_without_infinite_loop()
     {
         // Create books that previously caused loops
@@ -297,7 +298,7 @@ class SyncCompositeCursorTest extends TestCase
         $this->fail('Sync did not complete within ' . $maxIterations . ' iterations');
     }
 
-    /** @test */
+    #[Test]
     public function it_handles_empty_library()
     {
         // No books in library
@@ -318,7 +319,7 @@ class SyncCompositeCursorTest extends TestCase
         $this->assertNull($response->json('new_cursor'));
     }
 
-    /** @test */
+    #[Test]
     public function it_uses_id_tie_breaker_for_same_timestamp()
     {
         $timestamp = now()->timestamp;

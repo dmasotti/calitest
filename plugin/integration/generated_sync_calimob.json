@@ -3,7 +3,7 @@
     "discoveryCache": {},
     "discoveryUrl": "http://caliserver.test",
     "restEndpoint": "http://caliserver.test/api",
-    "restToken": "25|M2ZqdEQEdYA0eImwIuqVXByGuiGksAie9uDuEF6x5537e5e3",
+    "restToken": "12|7AMjcfJNeVmCmq8t3D7LxdwnJ6xnaYLL3IjoLbPP1bc288ab",
     "restUsername": "",
     "restPassword": "",
     "debugApiLogs": true,
@@ -11,10 +11,10 @@
     "httpTimeout": 30
   },
   "LibraryMappings": {
-    "1685fd4f-054e-4451-9df8-119c27fc1289": {
+    "782613eb-e228-4f08-8747-d502386ca95f": {
       "syncEnabled": true,
-      "calibreLibraryId": "1685fd4f-054e-4451-9df8-119c27fc1289",
-      "calimobLibraryId": 22,
+      "calibreLibraryId": "782613eb-e228-4f08-8747-d502386ca95f",
+      "calimobLibraryId": 2,
       "calimobLibraryName": "Headless Plugin Library"
     }
   },
