@@ -32,7 +32,7 @@ LIBRARY_UUID = os.getenv("CALIMOB_TEST_LIBRARY_UUID", "1685fd4f-054e-4451-9df8-1
 CALIMOB_LIB_ID = os.getenv("CALIMOB_TEST_CALIMOB_LIB_ID", "12")
 CALIBRE_DEBUG = os.getenv("CALIBRE_DEBUG", "/Applications/calibre.app/Contents/MacOS/calibre-debug")
 PLUGIN_DIR = os.path.join(PROJECT_ROOT, "sync_calimob")
-API_URL = os.getenv("CALIMOB_TEST_API_URL", "http://caliserver.test/api")
+API_URL = os.getenv("CALIMOB_TEST_API_URL", "http://caliserver-integration.test/api")
 API_TOKEN = os.getenv("CALIMOB_TEST_TOKEN", "1|vUoYzdsOGUJDmgS0Blvr5cMewGg9WiuvKEXMZeTpc484627f")
 
 class Colors:

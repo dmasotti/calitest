@@ -27,7 +27,7 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
-        <!-- PostgreSQL connection from .env -->
-        <!-- Configure DB_CONNECTION=pgsql in .env before running -->
+        <!-- PostgreSQL connection from html/.env.testing -->
+        <!-- Keep testing isolated from the local app database -->
     </php>
 </phpunit>

@@ -8,7 +8,7 @@ import requests
 import json
 import uuid
 
-BASE_URL = "http://caliserver.test"
+BASE_URL = "http://caliserver-integration.test"
 # Use a test token or create one via tinker
 TOKEN = None  # Will get from login
 
