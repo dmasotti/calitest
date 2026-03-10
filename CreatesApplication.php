@@ -13,8 +13,9 @@ trait CreatesApplication
      */
     public function createApplication()
     {
-        // Force an isolated test database regardless of local .env defaults.
-        $this->forceDedicatedTestingDatabase();
+        // Default to an isolated SQLite DB only when the runner did not
+        // explicitly request a concrete engine such as pgsql/mysql.
+        $this->forceDedicatedTestingDatabaseIfNeeded();
 
         $app = require __DIR__.'/../html/bootstrap/app.php';
 
@@ -23,8 +24,13 @@ trait CreatesApplication
         return $app;
     }
 
-    private function forceDedicatedTestingDatabase(): void
+    private function forceDedicatedTestingDatabaseIfNeeded(): void
     {
+        $requestedDriver = getenv('DB_CONNECTION') ?: ($_ENV['DB_CONNECTION'] ?? $_SERVER['DB_CONNECTION'] ?? null);
+        if (is_string($requestedDriver) && $requestedDriver !== '' && strtolower($requestedDriver) !== 'sqlite') {
+            return;
+        }
+
         // Use a dedicated sqlite file per test process to avoid cross-run corruption
         // and "table migrations already exists" collisions.
         $token = getenv('TEST_TOKEN') ?: ('pid' . getmypid());
