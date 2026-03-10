@@ -2,6 +2,7 @@
 
 namespace Tests\Server;
 
+use App\Services\Sync\MaterializedMerkleService;
 use App\Models\Library;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,7 +27,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         return $library;
     }
 
-    public function test_unified_preflight_library_hash_includes_merkle_root_hash(): void
+    public function test_unified_preflight_library_hash_returns_only_dimension_roots(): void
     {
         $library = $this->actingUserWithLibrary();
 
@@ -34,31 +35,28 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonStructure([
-            'library_hash',
             'library_metadata_hash',
             'library_covers_hash',
             'library_files_hash',
-            'root_hash',
-            'metadata_merkle_root',
-            'covers_merkle_root',
-            'files_merkle_root',
             'total_books',
             'last_modified',
         ]);
+        $response->assertJsonMissingPath('library_hash');
+        $response->assertJsonMissingPath('root_hash');
+        $response->assertJsonMissingPath('metadata_merkle_root');
+        $response->assertJsonMissingPath('covers_merkle_root');
+        $response->assertJsonMissingPath('files_merkle_root');
     }
 
-    public function test_unified_preflight_metadata_merkle_root_matches_root_hash(): void
+    public function test_unified_preflight_uses_library_metadata_hash_as_single_metadata_root(): void
     {
         $library = $this->actingUserWithLibrary();
 
         $response = $this->getJson('/api/sync/v5/library-hash?library_id=' . $library->id);
         $response->assertOk();
-
-        $this->assertSame(
-            $response->json('root_hash'),
-            $response->json('metadata_merkle_root'),
-            'metadata_merkle_root should mirror metadata root_hash'
-        );
+        $response->assertJsonMissingPath('root_hash');
+        $response->assertJsonMissingPath('metadata_merkle_root');
+        $this->assertNotNull($response->json('library_metadata_hash'));
     }
 
     public function test_unified_preflight_accepts_calibre_library_uuid(): void
@@ -72,7 +70,6 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
             'library_metadata_hash',
             'library_covers_hash',
             'library_files_hash',
-            'root_hash',
         ]);
     }
 
@@ -87,7 +84,6 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
             'library_metadata_hash',
             'library_covers_hash',
             'library_files_hash',
-            'root_hash',
         ]);
     }
 
@@ -160,13 +156,13 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonStructure([
-            'root_hash',
             'branch_count',
             'dimension',
             'branches' => [
                 '*' => ['branch_id', 'branch_hash'],
             ],
         ]);
+        $response->assertJsonMissingPath('root_hash');
     }
 
     public function test_merkle_metadata_leaves_endpoint_contract_exists(): void
@@ -220,7 +216,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
             ->assertJsonPath('leaves', []);
     }
 
-    public function test_preflight_root_hash_matches_merkle_root_endpoint_for_same_library(): void
+    public function test_preflight_metadata_hash_matches_merkle_root_endpoint_for_same_library(): void
     {
         $library = $this->actingUserWithLibrary();
 
@@ -230,9 +226,9 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         $rootEndpoint->assertOk();
 
         $this->assertSame(
-            $preflight->json('root_hash'),
+            $preflight->json('library_metadata_hash'),
             $rootEndpoint->json('root_hash'),
-            'Preflight root_hash and merkle-root endpoint must be aligned'
+            'Preflight library_metadata_hash and merkle-root endpoint must be aligned'
         );
     }
 
@@ -283,8 +279,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
 
         $preflight = $this->getJson('/api/sync/v5/library-hash?library_id=' . $library->id);
         $preflight->assertOk();
-        $this->assertSame($root->root_hash, $preflight->json('root_hash'));
-        $this->assertSame($root->root_hash, $preflight->json('metadata_merkle_root'));
+        $this->assertSame($root->root_hash, $preflight->json('library_metadata_hash'));
     }
 
     public function test_merkle_endpoints_are_isolated_by_user_and_library(): void
@@ -342,6 +337,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
                 'updated_at' => now(),
                 'last_modified' => now(),
             ]);
+        $this->rebuildMerkle($library, ['metadata']);
 
         $branchesAfter = $this->getJson('/api/sync/v5/merkle/branches?library_id=' . $library->id . '&dimension=metadata');
         $branchesAfter->assertOk();
@@ -401,6 +397,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
                 'updated_at' => now(),
                 'last_modified' => now(),
             ]);
+        $this->rebuildMerkle($library, ['metadata']);
 
         $after = $this->toBranchMap(
             $this->getJson('/api/sync/v5/merkle/branches?library_id=' . $library->id . '&dimension=metadata')
@@ -431,14 +428,24 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         );
 
         DB::table('books')
-            ->whereIn('uuid', [$bookAa, $bookBa])
+            ->where('uuid', $bookAa)
             ->where('library_id', $library->id)
             ->where('user_id', $userId)
             ->update([
-                'title' => DB::raw("title || ' updated'"),
+                'title' => 'A1 updated',
                 'updated_at' => now(),
                 'last_modified' => now(),
             ]);
+        DB::table('books')
+            ->where('uuid', $bookBa)
+            ->where('library_id', $library->id)
+            ->where('user_id', $userId)
+            ->update([
+                'title' => 'B1 updated',
+                'updated_at' => now(),
+                'last_modified' => now(),
+            ]);
+        $this->rebuildMerkle($library, ['metadata']);
 
         $after = $this->toBranchMap(
             $this->getJson('/api/sync/v5/merkle/branches?library_id=' . $library->id . '&dimension=metadata')
@@ -471,6 +478,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
                 'updated_at' => now(),
                 'last_modified' => now(),
             ]);
+        $this->rebuildMerkle($library, ['metadata']);
 
         $leaves = $this->toLeafMap(
             $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=10')
@@ -522,6 +530,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
                 'storage_key' => 'ebooks/new-aa.epub',
                 'updated_at' => now(),
             ]);
+        $this->rebuildMerkle($library, ['files']);
 
         $after = $this->toBranchMap(
             $this->getJson('/api/sync/v5/merkle/branches?library_id=' . $library->id . '&dimension=metadata')
@@ -642,6 +651,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
             ->where('library_id', $library->id)
             ->where('user_id', $userId)
             ->update(['deleted_at' => now(), 'updated_at' => now(), 'last_modified' => now()]);
+        $this->rebuildMerkle($library, ['metadata']);
 
         $afterDelete = $this->toBranchMap(
             $this->getJson('/api/sync/v5/merkle/branches?library_id=' . $library->id . '&dimension=metadata')
@@ -654,6 +664,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
             ->where('library_id', $library->id)
             ->where('user_id', $userId)
             ->update(['deleted_at' => null, 'updated_at' => now(), 'last_modified' => now()]);
+        $this->rebuildMerkle($library, ['metadata']);
 
         $afterRestore = $this->toBranchMap(
             $this->getJson('/api/sync/v5/merkle/branches?library_id=' . $library->id . '&dimension=metadata')
@@ -709,8 +720,13 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         $userId = (int) $library->user_id;
         $this->seedBook($library, $userId, 'aa000000-0000-4000-8000-000000000131', 'A1');
 
-        DB::statement('DROP VIEW IF EXISTS books_hash_v2');
-        DB::statement('DROP TABLE IF EXISTS books_hash_v2');
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('DROP VIEW IF EXISTS library_hash CASCADE');
+            DB::statement('DROP VIEW IF EXISTS books_hash_v2 CASCADE');
+        } else {
+            DB::statement('DROP VIEW IF EXISTS books_hash_v2');
+            DB::statement('DROP TABLE IF EXISTS books_hash_v2');
+        }
 
         $response = $this->getJson('/api/sync/v5/merkle/branches?library_id=' . $library->id . '&dimension=metadata');
         $response->assertOk();
@@ -737,6 +753,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
             ->where('library_id', $library->id)
             ->where('user_id', $userId)
             ->update(['deleted_at' => now(), 'updated_at' => now(), 'last_modified' => now()]);
+        $this->rebuildMerkle($library, ['metadata']);
 
         $after = $this->getJson('/api/sync/v5/library-hash?library_id=' . $library->id);
         $after->assertOk();
@@ -826,7 +843,18 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         }
         DB::table('books_files')->insert($bookFileRow);
 
+        $this->rebuildMerkle($library, ['metadata', 'files', 'covers']);
+
         return $uuid;
+    }
+
+    private function rebuildMerkle(Library $library, array $dimensions): void
+    {
+        app(MaterializedMerkleService::class)->rebuildLibraryDimensions(
+            (int) $library->user_id,
+            (int) $library->id,
+            $dimensions
+        );
     }
 
     private function toBranchMap(array $branches): array

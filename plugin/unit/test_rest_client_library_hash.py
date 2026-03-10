@@ -133,6 +133,25 @@ class TestRestClientLibraryHash:
         assert result['library_metadata_hash'] == 'b' * 64
         assert result['library_covers_hash'] == 'c' * 64
         assert result['library_files_hash'] == 'd' * 64
+
+    def test_get_library_hash_does_not_inject_legacy_merkle_root_fields(self):
+        client = rest_client.RestApiClient('http://test.com', 'token123')
+
+        mock_response = {
+            'library_metadata_hash': 'b' * 64,
+            'library_covers_hash': 'c' * 64,
+            'library_files_hash': 'd' * 64,
+            'total_books': 10,
+            'last_modified': '2026-03-03T11:00:00Z',
+        }
+        client.get = Mock(return_value=mock_response)
+
+        result = client.get_library_hash(35)
+
+        assert result is not None
+        assert 'metadata_merkle_root' not in result
+        assert 'covers_merkle_root' not in result
+        assert 'files_merkle_root' not in result
     
     def test_get_library_hash_empty_hash(self):
         """Test when server returns empty hash string."""
