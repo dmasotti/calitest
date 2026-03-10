@@ -236,6 +236,57 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         );
     }
 
+    public function test_runtime_merkle_views_exist_and_aggregate_metadata_deterministically(): void
+    {
+        $library = $this->actingUserWithLibrary();
+        $userId = (int) $library->user_id;
+
+        $bookAa = $this->seedBook($library, $userId, 'aa000000-0000-4000-8000-000000000201', 'A1');
+        $bookAb = $this->seedBook($library, $userId, 'ab000000-0000-4000-8000-000000000202', 'A2');
+        $bookBa = $this->seedBook($library, $userId, 'ba000000-0000-4000-8000-000000000203', 'B1');
+
+        $leaves = DB::table('merkle_leaves')
+            ->where('user_id', $userId)
+            ->where('library_id', $library->id)
+            ->orderBy('leaf_id')
+            ->get();
+
+        $this->assertCount(3, $leaves, 'merkle_leaves must expose one row per UUID-prefix leaf');
+        $this->assertSame([170, 171, 186], $leaves->pluck('leaf_id')->map(fn ($v) => (int) $v)->all());
+        $this->assertSame([10, 10, 11], $leaves->pluck('branch_id')->map(fn ($v) => (int) $v)->all());
+
+        $leafMap = [];
+        foreach ($leaves as $leaf) {
+            $leafMap[(int) $leaf->leaf_id] = json_decode((string) $leaf->uuids_json, true, 512, JSON_THROW_ON_ERROR);
+        }
+        $this->assertSame([$bookAa], $leafMap[170]);
+        $this->assertSame([$bookAb], $leafMap[171]);
+        $this->assertSame([$bookBa], $leafMap[186]);
+
+        $branches = DB::table('merkle_branches')
+            ->where('user_id', $userId)
+            ->where('library_id', $library->id)
+            ->orderBy('branch_id')
+            ->get();
+
+        $this->assertCount(2, $branches, 'merkle_branches must aggregate leaf rows by stable branch id');
+        $this->assertSame([10, 11], $branches->pluck('branch_id')->map(fn ($v) => (int) $v)->all());
+        $this->assertSame([2, 1], $branches->pluck('book_count')->map(fn ($v) => (int) $v)->all());
+
+        $root = DB::table('merkle_root')
+            ->where('user_id', $userId)
+            ->where('library_id', $library->id)
+            ->first();
+
+        $this->assertNotNull($root, 'merkle_root must expose one aggregated row per library');
+        $this->assertSame(3, (int) $root->total_books);
+
+        $preflight = $this->getJson('/api/sync/v5/library-hash?library_id=' . $library->id);
+        $preflight->assertOk();
+        $this->assertSame($root->root_hash, $preflight->json('root_hash'));
+        $this->assertSame($root->root_hash, $preflight->json('metadata_merkle_root'));
+    }
+
     public function test_merkle_endpoints_are_isolated_by_user_and_library(): void
     {
         // User A + library A
