@@ -218,9 +218,43 @@ class SyncBatchTransactionMerkleTest extends TestCase
         $profile = $response['profile']['apply_sync_changes'];
         $this->assertIsArray($profile);
         $this->assertArrayHasKey('loop_changes_ms', $profile);
+        $this->assertArrayHasKey('lookup_or_create_ms', $profile);
+        $this->assertArrayHasKey('update_book_ms', $profile);
+        $this->assertArrayHasKey('metadata_apply_ms', $profile);
+        $this->assertArrayHasKey('idempotency_persist_ms', $profile);
+        $this->assertArrayHasKey('metadata_authors_ms', $profile);
+        $this->assertArrayHasKey('metadata_tags_ms', $profile);
+        $this->assertArrayHasKey('metadata_tags_prefetch_ms', $profile);
+        $this->assertArrayHasKey('metadata_tags_entity_ms', $profile);
+        $this->assertArrayHasKey('metadata_tags_links_ms', $profile);
+        $this->assertArrayHasKey('metadata_tags_mappings_ms', $profile);
+        $this->assertArrayHasKey('metadata_series_ms', $profile);
+        $this->assertArrayHasKey('metadata_publisher_ms', $profile);
+        $this->assertArrayHasKey('metadata_languages_ms', $profile);
+        $this->assertArrayHasKey('metadata_identifiers_ms', $profile);
+        $this->assertArrayHasKey('metadata_rating_ms', $profile);
+        $this->assertArrayHasKey('metadata_save_ms', $profile);
+        $this->assertArrayHasKey('metadata_files_ms', $profile);
         $this->assertArrayHasKey('rebuild_merkle_ms', $profile);
         $this->assertArrayHasKey('total_ms', $profile);
         $this->assertIsNumeric($profile['loop_changes_ms']);
+        $this->assertIsNumeric($profile['lookup_or_create_ms']);
+        $this->assertIsNumeric($profile['update_book_ms']);
+        $this->assertIsNumeric($profile['metadata_apply_ms']);
+        $this->assertIsNumeric($profile['idempotency_persist_ms']);
+        $this->assertIsNumeric($profile['metadata_authors_ms']);
+        $this->assertIsNumeric($profile['metadata_tags_ms']);
+        $this->assertIsNumeric($profile['metadata_tags_prefetch_ms']);
+        $this->assertIsNumeric($profile['metadata_tags_entity_ms']);
+        $this->assertIsNumeric($profile['metadata_tags_links_ms']);
+        $this->assertIsNumeric($profile['metadata_tags_mappings_ms']);
+        $this->assertIsNumeric($profile['metadata_series_ms']);
+        $this->assertIsNumeric($profile['metadata_publisher_ms']);
+        $this->assertIsNumeric($profile['metadata_languages_ms']);
+        $this->assertIsNumeric($profile['metadata_identifiers_ms']);
+        $this->assertIsNumeric($profile['metadata_rating_ms']);
+        $this->assertIsNumeric($profile['metadata_save_ms']);
+        $this->assertIsNumeric($profile['metadata_files_ms']);
         $this->assertIsNumeric($profile['rebuild_merkle_ms']);
         $this->assertIsNumeric($profile['total_ms']);
     }
@@ -282,13 +316,13 @@ class SyncBatchTransactionMerkleTest extends TestCase
                 );
             }
 
-            protected function updateBookFromItem($item, $user, $libraryId, $userBook = null)
+            protected function updateBookFromItem($item, $user, $libraryId, $userBook = null, ?array &$phaseTimings = null)
             {
                 if (($item['uuid'] ?? null) === $this->failingUuid) {
                     throw new \RuntimeException('forced item failure');
                 }
 
-                return parent::updateBookFromItem($item, $user, $libraryId, $userBook);
+                return parent::updateBookFromItem($item, $user, $libraryId, $userBook, $phaseTimings);
             }
         };
     }
