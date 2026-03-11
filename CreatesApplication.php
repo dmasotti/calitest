@@ -13,6 +13,7 @@ trait CreatesApplication
      */
     public function createApplication()
     {
+        $this->ensurePostgresCliOnPathIfNeeded();
         // Default to an isolated SQLite DB only when the runner did not
         // explicitly request a concrete engine such as pgsql/mysql.
         $this->forceDedicatedTestingDatabaseIfNeeded();
@@ -22,6 +23,59 @@ trait CreatesApplication
         $app->make(Kernel::class)->bootstrap();
 
         return $app;
+    }
+
+    protected function ensurePostgresCliOnPathIfNeeded(): void
+    {
+        $requestedDriver = getenv('DB_CONNECTION') ?: ($_ENV['DB_CONNECTION'] ?? $_SERVER['DB_CONNECTION'] ?? null);
+        if (!is_string($requestedDriver) || strtolower($requestedDriver) !== 'pgsql') {
+            return;
+        }
+
+        $currentPath = getenv('PATH') ?: ($_ENV['PATH'] ?? $_SERVER['PATH'] ?? '');
+        $updatedPath = static::resolvePostgresCliPath($currentPath);
+        if ($updatedPath === null || $updatedPath === $currentPath) {
+            return;
+        }
+
+        putenv('PATH=' . $updatedPath);
+        $_ENV['PATH'] = $updatedPath;
+        $_SERVER['PATH'] = $updatedPath;
+    }
+
+    public static function resolvePostgresCliPath(?string $currentPath, ?array $candidateDirs = null): ?string
+    {
+        $currentPath = (string) ($currentPath ?? '');
+        $segments = array_values(array_filter(explode(PATH_SEPARATOR, $currentPath), static fn ($segment) => $segment !== ''));
+        foreach ($segments as $segment) {
+            if (is_executable(rtrim($segment, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'psql')) {
+                return $currentPath;
+            }
+        }
+
+        $candidateDirs ??= [
+            '/Applications/Postgres.app/Contents/Versions/latest/bin',
+            '/Applications/Postgres.app/Contents/Versions/18/bin',
+            '/Applications/Postgres.app/Contents/Versions/17/bin',
+            '/Applications/Postgres.app/Contents/Versions/16/bin',
+            '/opt/homebrew/bin',
+            '/usr/local/bin',
+        ];
+
+        foreach ($candidateDirs as $dir) {
+            $normalized = rtrim((string) $dir, DIRECTORY_SEPARATOR);
+            if ($normalized === '' || !is_executable($normalized . DIRECTORY_SEPARATOR . 'psql')) {
+                continue;
+            }
+
+            if (in_array($normalized, $segments, true)) {
+                return $currentPath;
+            }
+
+            return $normalized . ($currentPath !== '' ? PATH_SEPARATOR . $currentPath : '');
+        }
+
+        return $currentPath;
     }
 
     private function forceDedicatedTestingDatabaseIfNeeded(): void
