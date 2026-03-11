@@ -462,6 +462,102 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $this->assertNotNull($book->deleted_at);
     }
 
+    public function test_sync_v5_can_return_internal_phase_profile_when_explicitly_requested(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 25,
+            'client_books' => [
+                'b' => [
+                    '99999999-9999-9999-9999-999999999999' => ['m' => 'm1', 'c' => null, 'f' => null, 'lm' => 1],
+                ],
+                'd' => [],
+            ],
+            'options' => [
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $response->assertJsonStructure([
+            'profile' => [
+                'sync_v5' => [
+                    'normalize_client_books_ms',
+                    'resolve_library_ms',
+                    'load_server_batch_ms',
+                    'process_client_deletes_ms',
+                    'load_deleted_on_server_ms',
+                    'load_server_relations_ms',
+                    'loop_missing_from_server_ms',
+                    'loop_updates_for_client_ms',
+                    'dedupe_and_finalize_ms',
+                    'total_ms',
+                ],
+            ],
+        ]);
+
+        $profile = $response->json('profile.sync_v5');
+        $this->assertIsArray($profile);
+        foreach ($profile as $key => $value) {
+            $this->assertIsNumeric($value, sprintf('Expected numeric sync/v5 profile field for key [%s]', $key));
+            $this->assertGreaterThanOrEqual(0, (float) $value, sprintf('Expected non-negative sync/v5 profile field for key [%s]', $key));
+        }
+    }
+
+    public function test_sync_v5_primes_metadata_hash_view_for_server_batch_without_per_book_lookup(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $baseTs = Carbon::create(2026, 3, 10, 12, 0, 0, 'UTC');
+        for ($i = 0; $i < 5; $i++) {
+            UserBook::factory()->create([
+                'user_id' => $library->user_id,
+                'library_id' => $library->id,
+                'uuid' => sprintf('aaaaaaa%d-aaaa-aaaa-aaaa-aaaaaaaaaaa%d', $i, $i),
+                'title' => 'Batch Hash Prime ' . $i,
+                'path' => 'Batch Hash Prime ' . $i,
+                'last_modified' => $baseTs->copy()->addSeconds($i),
+            ]);
+        }
+
+        \DB::flushQueryLog();
+        \DB::enableQueryLog();
+
+        try {
+            $response = $this->postJson('/api/sync/v5', [
+                'library_id' => (string) $library->id,
+                'calibre_library_uuid' => $library->calibre_library_id,
+                'cursor' => null,
+                'batch_size' => 10,
+                'client_books' => [
+                    'b' => [],
+                    'd' => [],
+                ],
+            ]);
+        } finally {
+            $queries = \DB::getQueryLog();
+            \DB::disableQueryLog();
+        }
+
+        $response->assertStatus(200);
+        $this->assertCount(5, $response->json('updates_for_client') ?? []);
+
+        $booksHashQueries = array_values(array_filter($queries, static function (array $entry): bool {
+            $sql = strtolower((string) ($entry['query'] ?? ''));
+            return str_contains($sql, 'books_hash_v2');
+        }));
+
+        $this->assertLessThanOrEqual(
+            1,
+            count($booksHashQueries),
+            'sync/v5 should batch-prime books_hash_v2 for the server page instead of querying per book'
+        );
+    }
+
     public function test_sync_v5_treats_prefixed_and_unsorted_files_hashes_as_equivalent_when_content_matches(): void
     {
         [, $library] = $this->setupUserLibrary();

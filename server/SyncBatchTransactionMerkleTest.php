@@ -191,6 +191,40 @@ class SyncBatchTransactionMerkleTest extends TestCase
         $this->assertSame(['ac000000-0000-4000-8000-00000000b503'], $uuids);
     }
 
+    public function test_apply_sync_changes_can_return_internal_phase_profile_when_requested(): void
+    {
+        [$user, $library] = $this->makeContext();
+
+        $service = $this->makeSyncService();
+
+        $changes = [[
+            'op' => 'upsert',
+            'idempotency_key' => 'batch-profile-1',
+            'client_change_id' => 'batch-profile-1',
+            'item' => [
+                'id' => 601,
+                'uuid' => 'ae000000-0000-4000-8000-00000000b601',
+                'title' => 'Profiled Book',
+                'last_modified' => 1772200601,
+            ],
+        ]];
+
+        $response = $service->applySyncChanges($user, $changes, null, $library->id, false, false, true);
+
+        $this->assertSame('applied', data_get($response, 'results.0.status'));
+        $this->assertIsArray($response['profile'] ?? null);
+        $this->assertArrayHasKey('apply_sync_changes', $response['profile']);
+
+        $profile = $response['profile']['apply_sync_changes'];
+        $this->assertIsArray($profile);
+        $this->assertArrayHasKey('loop_changes_ms', $profile);
+        $this->assertArrayHasKey('rebuild_merkle_ms', $profile);
+        $this->assertArrayHasKey('total_ms', $profile);
+        $this->assertIsNumeric($profile['loop_changes_ms']);
+        $this->assertIsNumeric($profile['rebuild_merkle_ms']);
+        $this->assertIsNumeric($profile['total_ms']);
+    }
+
     private function makeContext(): array
     {
         $user = User::factory()->create();
