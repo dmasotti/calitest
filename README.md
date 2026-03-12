@@ -38,6 +38,13 @@ Tests complete Sync API lifecycle:
 
 **Tests:** ~13 test cases
 
+### 2b. Reading Progress API Test (`tests/server/ReadingProgressDeviceResolutionTest.php`)
+
+**Coverage:**
+- ✅ POST `/api/books/{uuid}/reading-progress` with device token
+- ✅ Resolves device via `device_uuid` from token
+- ✅ Persists progress for the resolved device
+
 ### 3. Legacy Book Creation Test (`tests/server/test_legacy_book.sh`)
 
 Tests backward compatibility:
