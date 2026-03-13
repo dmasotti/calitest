@@ -9,6 +9,8 @@ use App\Models\UserBook;
 use App\Services\Sync\MetadataHasher;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -30,7 +32,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         [, $library] = $this->setupUserLibrary();
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -63,13 +65,13 @@ class SyncV5ProtocolCoverageTest extends TestCase
 
         $book = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '11111111-1111-1111-1111-111111111111',
             'title' => 'Client Deleted',
         ]);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -94,21 +96,21 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $ts = Carbon::create(2026, 2, 27, 16, 0, 0, 'UTC');
         $bookA = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'title' => 'Cursor A',
             'path' => 'Cursor A',
             'last_modified' => $ts,
         ]);
         $bookB = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'title' => 'Cursor B',
             'path' => 'Cursor B',
             'last_modified' => $ts,
         ]);
 
         $first = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 1,
@@ -120,7 +122,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $this->assertMatchesRegularExpression('/^\d+:\d+$/', $cursor);
 
         $second = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => $cursor,
             'batch_size' => 1,
@@ -143,7 +145,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $fileHashHex = str_repeat('b', 64);
         $book = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '22222222-2222-2222-2222-222222222222',
             'title' => 'Full Hash Match',
             'path' => 'Full Hash Match',
@@ -166,7 +168,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         BookFile::factory()->create([
             'book' => $book->uuid,
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'format' => 'EPUB',
             'file_hash' => $fileHashHex,
             'is_uploaded' => true,
@@ -177,7 +179,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         ]);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -205,19 +207,19 @@ class SyncV5ProtocolCoverageTest extends TestCase
 
         $bookA = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '33333333-3333-3333-3333-333333333333',
             'title' => 'Delete A',
         ]);
         $bookB = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '44444444-4444-4444-4444-444444444444',
             'title' => 'Delete B',
         ]);
 
         $payload = [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 10,
@@ -263,7 +265,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         [, $library] = $this->setupUserLibrary();
 
         $payload = [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 10,
@@ -310,7 +312,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         putenv('API_GZIP_RESPONSE_MIN_BYTES=1');
         try {
             $payload = [
-                'library_id' => $library->id,
+                'library_id' => (string) $library->id,
                 'calibre_library_uuid' => $library->calibre_library_id,
                 'cursor' => null,
                 'batch_size' => 10,
@@ -354,7 +356,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
 
         $book = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '55555555-5555-5555-5555-555555555555',
             'title' => 'Malformed Cursor Book',
             'path' => 'Malformed Cursor Book',
@@ -362,7 +364,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         ]);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => 'not-a-valid-cursor',
             'batch_size' => 10,
@@ -380,14 +382,14 @@ class SyncV5ProtocolCoverageTest extends TestCase
 
         $book = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '66666666-6666-6666-6666-666666666666',
             'title' => 'Delete Wins',
             'path' => 'Delete Wins',
         ]);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -412,14 +414,14 @@ class SyncV5ProtocolCoverageTest extends TestCase
         [, $library] = $this->setupUserLibrary();
 
         $responseInvalidClientBooks = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'client_books' => 'not-an-array',
         ]);
         $responseInvalidClientBooks->assertStatus(422);
 
         $responseInvalidCursor = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'client_cursor' => -1,
             'client_books' => ['b' => [], 'd' => []],
@@ -427,7 +429,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $responseInvalidCursor->assertStatus(422);
 
         $responseInvalidBatch = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'batch_size' => 0,
             'client_books' => ['b' => [], 'd' => []],
@@ -441,14 +443,14 @@ class SyncV5ProtocolCoverageTest extends TestCase
 
         $book = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '77777777-7777-7777-7777-777777777777',
             'title' => 'Delete As String',
             'path' => 'Delete As String',
         ]);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'client_books' => [
                 'b' => [],
@@ -492,6 +494,18 @@ class SyncV5ProtocolCoverageTest extends TestCase
                     'process_client_deletes_ms',
                     'load_deleted_on_server_ms',
                     'load_server_relations_ms',
+                    'prime_server_batch_hash_ms',
+                    'authors_map_ms',
+                    'series_map_ms',
+                    'tags_map_ms',
+                    'publishers_map_ms',
+                    'languages_map_ms',
+                    'identifiers_map_ms',
+                    'files_map_ms',
+                    'all_server_books_ms',
+                    'prime_client_set_hash_ms',
+                    'all_files_map_ms',
+                    'all_identifiers_map_ms',
                     'loop_missing_from_server_ms',
                     'loop_updates_for_client_ms',
                     'dedupe_and_finalize_ms',
@@ -516,7 +530,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         for ($i = 0; $i < 5; $i++) {
             UserBook::factory()->create([
                 'user_id' => $library->user_id,
-                'library_id' => $library->id,
+                'library_id' => (string) $library->id,
                 'uuid' => sprintf('aaaaaaa%d-aaaa-aaaa-aaaa-aaaaaaaaaaa%d', $i, $i),
                 'title' => 'Batch Hash Prime ' . $i,
                 'path' => 'Batch Hash Prime ' . $i,
@@ -558,6 +572,61 @@ class SyncV5ProtocolCoverageTest extends TestCase
         );
     }
 
+    public function test_sync_v5_uses_valid_metadata_hash_cache_before_querying_books_hash_v2(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $baseTs = Carbon::create(2026, 3, 11, 10, 0, 0, 'UTC');
+        for ($i = 0; $i < 5; $i++) {
+            $book = UserBook::factory()->create([
+                'user_id' => $library->user_id,
+                'library_id' => (string) $library->id,
+                'uuid' => sprintf('bbbbbbb%d-bbbb-bbbb-bbbb-bbbbbbbbbbb%d', $i, $i),
+                'title' => 'Batch Hash Cache ' . $i,
+                'path' => 'Batch Hash Cache ' . $i,
+                'last_modified' => $baseTs->copy()->addSeconds($i),
+            ]);
+            $book->refresh();
+            $hash = $this->metadataHashForBook($book);
+            $book->forceFill([
+                'metadata_hash_cache' => 'v2:' . $hash . ':' . $book->last_modified->timestamp,
+            ])->saveQuietly();
+        }
+
+        \DB::flushQueryLog();
+        \DB::enableQueryLog();
+
+        try {
+            $response = $this->postJson('/api/sync/v5', [
+                'library_id' => (string) $library->id,
+                'calibre_library_uuid' => $library->calibre_library_id,
+                'cursor' => null,
+                'batch_size' => 10,
+                'client_books' => [
+                    'b' => [],
+                    'd' => [],
+                ],
+            ]);
+        } finally {
+            $queries = \DB::getQueryLog();
+            \DB::disableQueryLog();
+        }
+
+        $response->assertStatus(200);
+        $this->assertCount(5, $response->json('updates_for_client') ?? []);
+
+        $booksHashQueries = array_values(array_filter($queries, static function (array $entry): bool {
+            $sql = strtolower((string) ($entry['query'] ?? ''));
+            return str_contains($sql, 'books_hash_v2');
+        }));
+
+        $this->assertCount(
+            0,
+            $booksHashQueries,
+            'sync/v5 should use valid books.metadata_hash_cache for the server page before falling back to books_hash_v2'
+        );
+    }
+
     public function test_sync_v5_treats_prefixed_and_unsorted_files_hashes_as_equivalent_when_content_matches(): void
     {
         [, $library] = $this->setupUserLibrary();
@@ -567,7 +636,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $fileHashE = str_repeat('e', 64);
         $book = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '88888888-8888-8888-8888-888888888888',
             'title' => 'Hash Normalization Match',
             'path' => 'Hash Normalization Match',
@@ -601,7 +670,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         BookFile::factory()->create([
             'book' => $book->uuid,
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'format' => 'EPUB',
             'file_hash' => $fileHashE,
             'is_uploaded' => true,
@@ -613,7 +682,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         BookFile::factory()->create([
             'book' => $book->uuid,
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'format' => 'PDF',
             'file_hash' => $fileHashC,
             'is_uploaded' => true,
@@ -624,7 +693,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         ]);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -647,6 +716,17 @@ class SyncV5ProtocolCoverageTest extends TestCase
 
     private function metadataHashForBook(UserBook $book): string
     {
+        if (Schema::hasTable('books_hash_v2')) {
+            $hash = (string) DB::table('books_hash_v2')
+                ->where('user_id', $book->user_id)
+                ->where('library_id', $book->library_id)
+                ->where('uuid', $book->uuid)
+                ->value('metadata_hash');
+            if ($hash !== '') {
+                return strtolower($hash);
+            }
+        }
+
         return (string) MetadataHasher::computeHash([
             'uuid' => $book->uuid,
             'title' => $book->title,

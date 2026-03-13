@@ -3,6 +3,7 @@
 namespace Tests\Server;
 
 use App\Models\Library;
+use App\Models\SyncConflict;
 use App\Models\User;
 use App\Models\UserBook;
 use App\Models\UserBookVersion;
@@ -183,5 +184,76 @@ class BookVersionApiTest extends TestCase
 
         $book->refresh();
         $this->assertTrue($book->trashed());
+    }
+
+    public function test_restore_identical_snapshot_does_not_create_extra_version(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $book = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'title' => 'Stable Title',
+            'favorite' => false,
+        ]);
+
+        $version = $this->seedVersionForBook($user, $library, $book, [
+            'title' => 'Stable Title',
+            'favorite' => false,
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $beforeCount = UserBookVersion::where('book_id', $book->uuid)->count();
+        $response = $this->postJson(
+            '/api/items/uuid/' . $book->uuid . '/versions/' . $version->id . '/restore?calibre_library_uuid=' . $library->calibre_library_id
+        );
+
+        $response->assertStatus(200);
+        $afterCount = UserBookVersion::where('book_id', $book->uuid)->count();
+        $this->assertSame($beforeCount, $afterCount);
+    }
+
+    public function test_restore_and_undelete_does_not_auto_resolve_open_conflicts(): void
+    {
+        if (!SyncConflict::isStorageAvailable()) {
+            $this->markTestSkipped('SyncConflict storage not available in this environment.');
+        }
+
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        $book = UserBook::factory()->create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+
+        $version = $this->seedVersionForBook($user, $library, $book, [
+            'favorite' => false,
+            'status' => null,
+        ]);
+
+        $conflict = SyncConflict::create([
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'user_book_id' => $book->id,
+            'calibre_book_id' => $book->id,
+            'uuid' => $book->uuid,
+            'reason' => 'manual_test',
+            'status' => 'open',
+            'conflicting_fields' => ['title'],
+            'client_item' => ['title' => 'Client Title'],
+            'server_item' => ['title' => $book->title],
+        ]);
+
+        $book->delete();
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson(
+            '/api/items/uuid/' . $book->uuid . '/versions/' . $version->id . '/restore-and-undelete?calibre_library_uuid=' . $library->calibre_library_id
+        );
+
+        $response->assertStatus(200);
+        $conflict->refresh();
+        $this->assertSame('open', $conflict->status);
     }
 }

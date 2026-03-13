@@ -22,7 +22,7 @@ class SyncV5ClientBatchingTest extends TestCase
         Sanctum::actingAs($user);
 
         $payloadBase = [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 50,
@@ -72,7 +72,7 @@ class SyncV5ClientBatchingTest extends TestCase
         $book = UserBook::create([
             'uuid' => (string) Str::uuid(),
             'user_id' => $user->id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'title' => 'Chunked Client Book',
             'path' => 'Chunked Client Book',
             'last_modified' => $lastModified,
@@ -80,7 +80,7 @@ class SyncV5ClientBatchingTest extends TestCase
         ]);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -115,7 +115,7 @@ class SyncV5ClientBatchingTest extends TestCase
         }
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 50,
@@ -143,7 +143,7 @@ class SyncV5ClientBatchingTest extends TestCase
         Sanctum::actingAs($user);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 50,

@@ -22,6 +22,15 @@ class SyncBatchTransactionMerkleTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (DB::getDriverName() === 'sqlite') {
+            $this->markTestSkipped('Batch transaction and materialized Merkle semantics are validated on MySQL/PostgreSQL.');
+        }
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();
@@ -343,6 +352,64 @@ class SyncBatchTransactionMerkleTest extends TestCase
         $this->assertIsNumeric($profile['rebuild_merkle_root_ms']);
         $this->assertIsNumeric($profile['rebuild_merkle_ensure_ms']);
         $this->assertIsNumeric($profile['total_ms']);
+    }
+
+    public function test_pgsql_apply_sync_changes_batches_metadata_hash_refresh_for_successful_upserts(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('PGSQL-only metadata hash refresh batching check.');
+        }
+
+        [$user, $library] = $this->makeContext();
+
+        $merkle = Mockery::mock(MaterializedMerkleService::class)->makePartial();
+        $merkle->shouldReceive('markDimensionsStaleForTouchedUuids')->atLeast()->once()->passthru();
+        $merkle->shouldReceive('refreshMetadataHashCacheForTouchedUuids')
+            ->once()
+            ->withArgs(function (int $userId, int $libraryId, array $uuids) use ($user, $library): bool {
+                $this->assertSame((int) $user->id, $userId);
+                $this->assertSame((int) $library->id, $libraryId);
+                sort($uuids);
+                $this->assertSame([
+                    'af000000-0000-4000-8000-00000000b610',
+                    'af000000-0000-4000-8000-00000000b611',
+                ], $uuids);
+                return true;
+            })
+            ->passthru();
+
+        $service = $this->makeSyncService($merkle);
+
+        $changes = [
+            [
+                'op' => 'upsert',
+                'idempotency_key' => 'batch-refresh-1',
+                'client_change_id' => 'batch-refresh-1',
+                'item' => [
+                    'id' => 610,
+                    'uuid' => 'af000000-0000-4000-8000-00000000b610',
+                    'title' => 'Batch Refresh One',
+                    'last_modified' => 1772200610,
+                ],
+            ],
+            [
+                'op' => 'upsert',
+                'idempotency_key' => 'batch-refresh-2',
+                'client_change_id' => 'batch-refresh-2',
+                'item' => [
+                    'id' => 611,
+                    'uuid' => 'af000000-0000-4000-8000-00000000b611',
+                    'title' => 'Batch Refresh Two',
+                    'last_modified' => 1772200611,
+                ],
+            ],
+        ];
+
+        $response = $service->applySyncChanges($user, $changes, null, $library->id, false, false, true);
+
+        $this->assertSame('applied', data_get($response, 'results.0.status'));
+        $this->assertSame('applied', data_get($response, 'results.1.status'));
+        $this->assertGreaterThanOrEqual(0, (float) data_get($response, 'profile.apply_sync_changes.metadata_hash_refresh_ms'));
     }
 
     public function test_apply_sync_changes_rebuilds_only_touched_metadata_leaves(): void

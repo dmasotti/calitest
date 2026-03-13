@@ -39,6 +39,8 @@ def create_test_schema(conn):
         )
     ''')
     
+    cursor.execute('CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT)')
+    cursor.execute('CREATE TABLE books_authors_link (book INTEGER, author INTEGER)')
     cursor.execute('CREATE TABLE series (id INTEGER PRIMARY KEY, name TEXT)')
     cursor.execute('CREATE TABLE books_series_link (book INTEGER, series INTEGER)')
     cursor.execute('CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT)')
@@ -80,6 +82,8 @@ class TestHashConsistency:
             INSERT INTO books (id, uuid, title, author_sort, series_index, pubdate)
             VALUES (1, 'test-uuid', 'Test Book', 'Author, Test', 1.0, '2024-01-01')
         """)
+        cursor.execute("INSERT INTO authors (id, name) VALUES (1, 'Test Author')")
+        cursor.execute("INSERT INTO books_authors_link (book, author) VALUES (1, 1)")
         conn.commit()
         
         mapping_table._ensure_table(conn)
@@ -176,6 +180,8 @@ class TestHashConsistency:
             INSERT INTO books (id, uuid, title, author_sort)
             VALUES (1, 'uuid-1', '日本語タイトル', 'Müller, François')
         """)
+        cursor.execute("INSERT INTO authors (id, name) VALUES (1, 'Müller François')")
+        cursor.execute("INSERT INTO books_authors_link (book, author) VALUES (1, 1)")
         conn.commit()
         
         mapping_table._ensure_table(conn)

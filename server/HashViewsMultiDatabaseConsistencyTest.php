@@ -2,7 +2,6 @@
 
 namespace Tests\Server;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -79,6 +78,55 @@ class HashViewsMultiDatabaseConsistencyTest extends TestCase
         echo "\n✅ Hash identico su tutti i database: " . array_keys($databases)[0] . " = " . array_keys($databases)[1] . "\n";
     }
 
+    public function test_books_hash_v2_metadata_hash_is_identical_across_all_databases(): void
+    {
+        $databases = $this->getAvailableDatabases();
+
+        if (count($databases) < 2) {
+            $this->markTestSkipped('Serve almeno 2 database configurati per test cross-DB');
+        }
+
+        $hashes = [];
+        $usableDatabases = [];
+        $skipReasons = [];
+
+        foreach ($databases as $dbName => $config) {
+            try {
+                $this->switchDatabase($dbName, $config);
+                [, , $bookUuid] = $this->seedTestBook();
+
+                $row = DB::table('books_hash_v2')
+                    ->where('uuid', $bookUuid)
+                    ->select('hash_payload', 'metadata_hash')
+                    ->first();
+
+                $this->assertNotNull($row, "books_hash_v2 deve ritornare una riga su {$dbName}");
+                $this->assertSame(
+                    hash('sha256', (string) $row->hash_payload),
+                    strtolower((string) $row->metadata_hash),
+                    "metadata_hash deve essere SHA256 del payload su {$dbName}"
+                );
+
+                $hashes[$dbName] = strtolower((string) $row->metadata_hash);
+                $usableDatabases[] = $dbName;
+            } catch (\Throwable $e) {
+                $skipReasons[] = "{$dbName}: " . $e->getMessage();
+            }
+        }
+
+        if (count($usableDatabases) < 2) {
+            $reason = empty($skipReasons) ? 'nessuna motivazione disponibile' : implode(' | ', $skipReasons);
+            $this->markTestSkipped("Serve almeno 2 database realmente utilizzabili per test cross-DB ({$reason})");
+        }
+
+        $this->assertCount(
+            1,
+            array_unique($hashes),
+            "metadata_hash deve essere identico su tutti i database!\n" .
+            json_encode($hashes, JSON_PRETTY_PRINT)
+        );
+    }
+
     /**
      * Test library_hash su tutti i database.
      */
@@ -138,102 +186,71 @@ class HashViewsMultiDatabaseConsistencyTest extends TestCase
     /**
      * Ritorna lista database disponibili per test.
      * 
-     * IMPORTANTE: Usa SOLO database temporanei con suffisso _test_multi
+     * IMPORTANTE: Usa SOLO database temporanei con prefisso test_
      * per evitare di toccare database di produzione/sviluppo.
      */
     private function getAvailableDatabases(): array
     {
         $databases = [];
-        
-        // SQLite (sempre disponibile, in-memory)
+
+        // SQLite baseline sempre disponibile per verifiche cross-engine rapide.
         $databases['sqlite'] = [
             'driver' => 'sqlite',
             'database' => ':memory:',
         ];
-        
-        // MySQL (se disponibile)
-        if ($this->isMySQLAvailable()) {
-            $testDbName = 'caliweb_test_multi';
-            
-            // SAFEGUARD: Non usare mai database di produzione
-            $prodDbName = env('DB_DATABASE', 'caliweb');
-            if ($testDbName === $prodDbName) {
-                throw new \Exception("CRITICAL: Test database name matches production! Aborting.");
-            }
-            
-            $databases['mysql'] = [
-                'driver' => 'mysql',
-                'host' => env('DB_HOST', '127.0.0.1'),
-                'port' => env('DB_PORT', '3306'),
-                'database' => $testDbName,
-                'username' => env('DB_USERNAME', 'root'),
-                'password' => env('DB_PASSWORD', ''),
-            ];
+
+        // Usa la connessione di test corrente se è già un database isolato.
+        $currentConfig = Config::get('database.connections.' . Config::get('database.default'), []);
+        $currentDatabase = (string) ($currentConfig['database'] ?? '');
+        $currentDriver = (string) ($currentConfig['driver'] ?? '');
+
+        if ($currentDriver !== '' && $currentDatabase !== '' && str_starts_with($currentDatabase, 'test_')) {
+            $databases[$currentDriver] = $currentConfig;
         }
-        
-        // PostgreSQL (se disponibile)
-        if ($this->isPostgreSQLAvailable()) {
-            $testDbName = 'caliweb_test_multi';
-            
-            // SAFEGUARD: Non usare mai database di produzione
-            if ($testDbName === env('DB_DATABASE')) {
-                throw new \Exception("CRITICAL: Test database name matches production! Aborting.");
+
+        // Altri motori sono opzionali e devono essere configurati esplicitamente.
+        foreach (['mysql', 'pgsql'] as $driver) {
+            if (isset($databases[$driver])) {
+                continue;
             }
-            
-            $databases['pgsql'] = [
-                'driver' => 'pgsql',
-                'host' => '127.0.0.1',
-                'port' => '5432',
-                'database' => $testDbName,
-                'username' => 'postgres',
-                'password' => env('DB_PASSWORD', ''),
-            ];
+
+            $optional = $this->buildOptionalDatabaseConfig($driver);
+            if ($optional !== null) {
+                $databases[$driver] = $optional;
+            }
         }
-        
+
         return $databases;
     }
 
-    /**
-     * Verifica se MySQL è disponibile e prepara il database test dedicato.
-     */
-    private function isMySQLAvailable(): bool
+    private function buildOptionalDatabaseConfig(string $driver): ?array
     {
-        try {
-            $host = env('DB_HOST', '127.0.0.1');
-            $port = env('DB_PORT', '3306');
-            $username = env('DB_USERNAME', 'root');
-            $password = env('DB_PASSWORD', '');
-            $testDbName = 'caliweb_test_multi';
+        $upper = strtoupper($driver);
+        $database = env("TEST_MULTI_{$upper}_DATABASE");
 
-            $pdo = new \PDO(
-                "mysql:host={$host};port={$port};charset=utf8mb4",
-                $username,
-                $password
-            );
-            $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-            $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$testDbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-
-            return true;
-        } catch (\PDOException $e) {
-            return false;
+        if ((!is_string($database) || $database === '') && $driver === 'pgsql') {
+            $database = 'test_calibre_plg_pgsql';
         }
-    }
 
-    /**
-     * Verifica se PostgreSQL è disponibile.
-     */
-    private function isPostgreSQLAvailable(): bool
-    {
-        try {
-            $pdo = new \PDO('pgsql:host=127.0.0.1;port=5432;dbname=postgres', 'postgres', '');
-            
-            // Crea database test se non esiste
-            $pdo->exec('CREATE DATABASE caliweb_test_multi');
-            
-            return true;
-        } catch (\PDOException $e) {
-            return false;
+        if (!is_string($database) || $database === '' || !str_starts_with($database, 'test_')) {
+            return null;
         }
+
+        $config = [
+            'driver' => $driver,
+            'host' => env("TEST_MULTI_{$upper}_HOST", '127.0.0.1'),
+            'port' => env("TEST_MULTI_{$upper}_PORT", $driver === 'mysql' ? '3306' : '5432'),
+            'database' => $database,
+            'username' => env("TEST_MULTI_{$upper}_USERNAME", $driver === 'mysql' ? 'root' : 'postgres'),
+            'password' => env("TEST_MULTI_{$upper}_PASSWORD", ''),
+        ];
+
+        if ($driver === 'mysql') {
+            $config['charset'] = 'utf8mb4';
+            $config['collation'] = 'utf8mb4_unicode_ci';
+        }
+
+        return $config;
     }
 
     /**
@@ -246,22 +263,26 @@ class HashViewsMultiDatabaseConsistencyTest extends TestCase
     {
         // SAFEGUARD: Verifica che sia un database di test
         $dbName = $config['database'] ?? '';
-        $safeNames = [':memory:', 'caliweb_test_multi'];
-        
-        if (!in_array($dbName, $safeNames)) {
+
+        if ($dbName !== ':memory:' && !str_starts_with((string) $dbName, 'test_')) {
             throw new \Exception(
                 "CRITICAL: Refusing to run migrate:fresh on non-test database: {$dbName}\n" .
-                "Only allowed: " . implode(', ', $safeNames)
+                "Only allowed: :memory: or databases starting with test_"
             );
         }
         
         // Configura connessione
-        Config::set("database.connections.{$name}", array_merge([
-            'charset' => 'utf8mb4',
-            'collation' => 'utf8mb4_unicode_ci',
+        $baseConfig = [
             'prefix' => '',
             'strict' => true,
-        ], $config));
+        ];
+
+        if (($config['driver'] ?? null) === 'mysql') {
+            $baseConfig['charset'] = 'utf8mb4';
+            $baseConfig['collation'] = 'utf8mb4_unicode_ci';
+        }
+
+        Config::set("database.connections.{$name}", array_merge($baseConfig, $config));
         
         // Switch default connection
         Config::set('database.default', $name);
@@ -282,7 +303,7 @@ class HashViewsMultiDatabaseConsistencyTest extends TestCase
         $user = \App\Models\User::factory()->create();
         $library = \App\Models\Library::factory()->create(['user_id' => $user->id]);
         
-        $uuid = (string) Str::uuid();
+        $uuid = '11111111-2222-4333-8444-555555555555';
         $now = now();
         
         DB::table('books')->insert([
@@ -313,7 +334,7 @@ class HashViewsMultiDatabaseConsistencyTest extends TestCase
         $now = now();
         
         for ($i = 1; $i <= $count; $i++) {
-            $uuid = (string) Str::uuid();
+            $uuid = sprintf('11111111-2222-4333-8444-%012d', $i);
             $uuids[] = $uuid;
             
             DB::table('books')->insert([

@@ -355,6 +355,82 @@ class TestUnifiedBatchSync(unittest.TestCase):
 
         self.worker._download_covers_parallel.assert_not_called()
         self.worker._download_ebooks_parallel.assert_not_called()
+
+    def test_second_run_uses_checkpoint_cursor_after_cover_download_failure(self):
+        """Test second run resumes from pull checkpoint after a cover download failure."""
+        saved_state = {'pull_cursor': None, 'final_cursor': None}
+
+        def get_pull_cursor():
+            return saved_state['pull_cursor']
+
+        def save_pull_cursor(cursor):
+            saved_state['pull_cursor'] = cursor
+
+        def save_cursor(cursor):
+            saved_state['final_cursor'] = cursor
+
+        self.worker.get_pull_cursor = Mock(side_effect=get_pull_cursor)
+        self.worker.save_pull_cursor = Mock(side_effect=save_pull_cursor)
+        self.worker.save_cursor = Mock(side_effect=save_cursor)
+
+        first_response = {
+            'changes': [
+                {
+                    'op': 'update',
+                    'item': {
+                        'id': 1,
+                        'uuid': 'uuid-1',
+                        'title': 'Book 1',
+                        'cover': {'has_cover': True, 'cover_hash': 'sha256:cover1'},
+                    }
+                },
+            ],
+            'conflicts': [],
+            'new_cursor': 'cursor-after-apply',
+            'has_more': False,
+            'total_books': 100
+        }
+
+        second_response = {
+            'changes': [
+                {
+                    'op': 'update',
+                    'item': {
+                        'id': 1,
+                        'uuid': 'uuid-1',
+                        'title': 'Book 1',
+                        'cover': {'has_cover': True, 'cover_hash': 'sha256:cover1'},
+                        'cover_missing': True,
+                    }
+                },
+            ],
+            'conflicts': [],
+            'new_cursor': 'cursor-after-retry',
+            'has_more': False,
+            'total_books': 100
+        }
+
+        self.mock_client.post_sync_pull.side_effect = [first_response, second_response]
+        self.worker._should_download_cover = Mock(return_value=(True, 'hash_mismatch'))
+        self.worker._download_covers_parallel = Mock(side_effect=[
+            Exception('Cover download failed'),
+            1,
+        ])
+
+        first_summary = self.worker.sync_unified_batches(batch_size=50)
+
+        self.assertTrue(first_summary.get('errors'))
+        self.assertEqual(saved_state['pull_cursor'], 'cursor-after-apply')
+        self.assertEqual(saved_state['final_cursor'], 'cursor-after-apply')
+
+        second_summary = self.worker.sync_unified_batches(batch_size=50)
+
+        self.assertEqual(second_summary.get('covers_downloaded'), 1)
+        pull_cursors = [
+            call.kwargs.get('cursor')
+            for call in self.mock_client.post_sync_pull.call_args_list
+        ]
+        self.assertEqual(pull_cursors, [None, 'cursor-after-apply'])
     
     def test_total_errors_in_summary(self):
         """Test total_errors is populated for UI error detection."""

@@ -14,6 +14,15 @@ class SyncV5CurrentBugsTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (DB::getDriverName() === 'sqlite') {
+            $this->markTestSkipped('Materialized metadata Merkle bug regression is validated on MySQL/PostgreSQL.');
+        }
+    }
+
     public function test_current_bug_seeded_books_do_not_populate_metadata_merkle_branches(): void
     {
         $user = User::factory()->create();

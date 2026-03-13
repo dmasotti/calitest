@@ -28,7 +28,7 @@ class IdentifiersSyncEndToEndTest extends TestCase
 
         $core = app(CoreDelegate::class);
         $handler = new class($core) extends BookMetadataHandler {
-            protected function attachTagsToUserBook($userBook, $tags, $user, $libraryId): void
+            protected function attachTagsToUserBook(UserBook $userBook, $tags, $user, $libraryId, ?array &$phaseTimings = null): void
             {
                 throw new \RuntimeException('forced tags failure');
             }

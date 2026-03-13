@@ -94,7 +94,6 @@ class LibraryLimitsTest extends TestCase
         $user = User::factory()->create([
             'subscription_tier' => 'basic',
             'subscription_status' => 'active',
-            'subscription_expires_at' => now()->addDays(30),
         ]);
         Sanctum::actingAs($user);
 

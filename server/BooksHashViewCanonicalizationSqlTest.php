@@ -55,14 +55,24 @@ class BooksHashViewCanonicalizationSqlTest extends TestCase
         );
     }
 
-    public function test_books_hash_v2_migration_scales_rating_to_calibre_internal_scale(): void
+    public function test_books_hash_v2_migration_preserves_native_calibre_rating_scale(): void
     {
         $sql = $this->migrationSql();
 
-        $this->assertStringContainsString(
-            'WHEN rating_agg.rating_value BETWEEN 1 AND 5 THEN rating_agg.rating_value * 2',
+        $this->assertStringNotContainsString(
+            'rating_value * 2',
             $sql,
-            'books_hash_v2 must map star-scale ratings to calibre internal scale for hash parity'
+            'books_hash_v2 must not scale rating away from native Calibre 0..10 values'
+        );
+        $this->assertStringContainsString(
+            'ELSE rating_agg.rating_value',
+            $sql,
+            'books_hash_v2 must preserve native rating values instead of remapping them to a star scale'
+        );
+        $this->assertStringContainsString(
+            'AS CHAR',
+            $sql,
+            'books_hash_v2 must preserve native rating values in the canonical hash payload'
         );
     }
 

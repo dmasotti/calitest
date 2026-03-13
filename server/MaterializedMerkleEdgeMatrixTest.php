@@ -14,6 +14,15 @@ class MaterializedMerkleEdgeMatrixTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (DB::getDriverName() === 'sqlite') {
+            $this->markTestSkipped('Materialized Merkle rebuild SQL is exercised on MySQL/PostgreSQL runtime drivers, not SQLite.');
+        }
+    }
+
     public function test_mm001_same_leaf_multiple_metadata_changes_change_only_that_leaf_and_branch(): void
     {
         [$library, $userId] = $this->seedLibrary();
@@ -157,6 +166,51 @@ class MaterializedMerkleEdgeMatrixTest extends TestCase
         $this->assertNotSame($beforeFiles, $this->rootHash($library, 'files'));
     }
 
+    public function test_mm005_incremental_rebuild_preserves_untouched_leaf_rows(): void
+    {
+        [$library, $userId] = $this->seedLibrary();
+
+        $uuidAa = $this->seedBook($library, $userId, 'aa000000-0000-4000-8000-000000000235', 'AA');
+        $this->seedBook($library, $userId, 'ab000000-0000-4000-8000-000000000236', 'AB');
+        $this->seedBook($library, $userId, 'ba000000-0000-4000-8000-000000000237', 'BA');
+        $this->rebuild($library, ['metadata']);
+
+        $untouchedLeafBefore = DB::table('sync_merkle_leaves')
+            ->where('user_id', (int) $library->user_id)
+            ->where('library_id', (int) $library->id)
+            ->where('dimension', 'metadata')
+            ->where('leaf_id', 0xAB)
+            ->first();
+
+        $this->assertNotNull($untouchedLeafBefore);
+
+        DB::table('books')
+            ->where('uuid', $uuidAa)
+            ->update([
+                'title' => 'AA incremental updated',
+                'updated_at' => now(),
+                'last_modified' => now(),
+            ]);
+
+        app(MaterializedMerkleService::class)->rebuildLibraryDimensionsForTouchedUuids(
+            (int) $library->user_id,
+            (int) $library->id,
+            ['metadata' => [$uuidAa]]
+        );
+
+        $untouchedLeafAfter = DB::table('sync_merkle_leaves')
+            ->where('user_id', (int) $library->user_id)
+            ->where('library_id', (int) $library->id)
+            ->where('dimension', 'metadata')
+            ->where('leaf_id', 0xAB)
+            ->first();
+
+        $this->assertNotNull($untouchedLeafAfter);
+        $this->assertSame((int) $untouchedLeafBefore->id, (int) $untouchedLeafAfter->id);
+        $this->assertSame((string) $untouchedLeafBefore->leaf_hash, (string) $untouchedLeafAfter->leaf_hash);
+        $this->assertSame((string) $untouchedLeafBefore->updated_at, (string) $untouchedLeafAfter->updated_at);
+    }
+
     public function test_mm006_mm008_item_hash_edges_survive_to_materialized_metadata_root(): void
     {
         [$library, $userId] = $this->seedLibrary();
@@ -196,6 +250,215 @@ class MaterializedMerkleEdgeMatrixTest extends TestCase
         $this->assertNotNull($bookHash);
         $this->assertStringContainsString('"rating":10', (string) $bookHash);
         $this->assertStringContainsString('\\u00e9', strtolower((string) $bookHash));
+    }
+
+    public function test_mm009_incremental_rebuild_does_not_touch_other_library_of_same_user(): void
+    {
+        $user = User::factory()->create();
+        $libraryA = Library::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Isolation A',
+        ]);
+        $libraryB = Library::factory()->create([
+            'user_id' => $user->id,
+            'name' => 'Isolation B',
+        ]);
+
+        $uuidA = $this->seedBook($libraryA, (int) $user->id, 'aa000000-0000-4000-8000-000000000251', 'A');
+        $this->seedBook($libraryB, (int) $user->id, 'aa000000-0000-4000-8000-000000000252', 'B');
+
+        $this->rebuild($libraryA, ['metadata']);
+        $this->rebuild($libraryB, ['metadata']);
+
+        $rootBefore = DB::table('sync_merkle_roots')
+            ->where('user_id', (int) $user->id)
+            ->where('library_id', (int) $libraryB->id)
+            ->where('dimension', 'metadata')
+            ->first();
+        $leafBefore = DB::table('sync_merkle_leaves')
+            ->where('user_id', (int) $user->id)
+            ->where('library_id', (int) $libraryB->id)
+            ->where('dimension', 'metadata')
+            ->where('leaf_id', 0xAA)
+            ->first();
+
+        $this->assertNotNull($rootBefore);
+        $this->assertNotNull($leafBefore);
+
+        DB::table('books')
+            ->where('uuid', $uuidA)
+            ->where('user_id', (int) $user->id)
+            ->where('library_id', (int) $libraryA->id)
+            ->update([
+                'title' => 'A updated',
+                'updated_at' => now(),
+                'last_modified' => now(),
+            ]);
+
+        app(MaterializedMerkleService::class)->rebuildLibraryDimensionsForTouchedUuids(
+            (int) $user->id,
+            (int) $libraryA->id,
+            ['metadata' => [$uuidA]]
+        );
+
+        $rootAfter = DB::table('sync_merkle_roots')
+            ->where('user_id', (int) $user->id)
+            ->where('library_id', (int) $libraryB->id)
+            ->where('dimension', 'metadata')
+            ->first();
+        $leafAfter = DB::table('sync_merkle_leaves')
+            ->where('user_id', (int) $user->id)
+            ->where('library_id', (int) $libraryB->id)
+            ->where('dimension', 'metadata')
+            ->where('leaf_id', 0xAA)
+            ->first();
+
+        $this->assertNotNull($rootAfter);
+        $this->assertNotNull($leafAfter);
+        $this->assertSame((int) $rootBefore->id, (int) $rootAfter->id);
+        $this->assertSame((string) $rootBefore->root_hash, (string) $rootAfter->root_hash);
+        $this->assertSame((string) $rootBefore->updated_at, (string) $rootAfter->updated_at);
+        $this->assertSame((int) $leafBefore->id, (int) $leafAfter->id);
+        $this->assertSame((string) $leafBefore->leaf_hash, (string) $leafAfter->leaf_hash);
+        $this->assertSame((string) $leafBefore->updated_at, (string) $leafAfter->updated_at);
+    }
+
+    public function test_mm010_incremental_rebuild_does_not_touch_other_user_same_leaf_prefix(): void
+    {
+        [$libraryA, $userAId] = $this->seedLibrary();
+        [$libraryB, $userBId] = $this->seedLibrary();
+
+        $uuidA = $this->seedBook($libraryA, $userAId, 'ab000000-0000-4000-8000-000000000261', 'User A');
+        $this->seedBook($libraryB, $userBId, 'ab000000-0000-4000-8000-000000000262', 'User B');
+
+        $this->rebuild($libraryA, ['metadata']);
+        $this->rebuild($libraryB, ['metadata']);
+
+        $rootBefore = DB::table('sync_merkle_roots')
+            ->where('user_id', $userBId)
+            ->where('library_id', (int) $libraryB->id)
+            ->where('dimension', 'metadata')
+            ->first();
+        $leafBefore = DB::table('sync_merkle_leaves')
+            ->where('user_id', $userBId)
+            ->where('library_id', (int) $libraryB->id)
+            ->where('dimension', 'metadata')
+            ->where('leaf_id', 0xAB)
+            ->first();
+
+        $this->assertNotNull($rootBefore);
+        $this->assertNotNull($leafBefore);
+
+        DB::table('books')
+            ->where('uuid', $uuidA)
+            ->where('user_id', $userAId)
+            ->where('library_id', (int) $libraryA->id)
+            ->update([
+                'title' => 'User A updated',
+                'updated_at' => now(),
+                'last_modified' => now(),
+            ]);
+
+        app(MaterializedMerkleService::class)->rebuildLibraryDimensionsForTouchedUuids(
+            $userAId,
+            (int) $libraryA->id,
+            ['metadata' => [$uuidA]]
+        );
+
+        $rootAfter = DB::table('sync_merkle_roots')
+            ->where('user_id', $userBId)
+            ->where('library_id', (int) $libraryB->id)
+            ->where('dimension', 'metadata')
+            ->first();
+        $leafAfter = DB::table('sync_merkle_leaves')
+            ->where('user_id', $userBId)
+            ->where('library_id', (int) $libraryB->id)
+            ->where('dimension', 'metadata')
+            ->where('leaf_id', 0xAB)
+            ->first();
+
+        $this->assertNotNull($rootAfter);
+        $this->assertNotNull($leafAfter);
+        $this->assertSame((int) $rootBefore->id, (int) $rootAfter->id);
+        $this->assertSame((string) $rootBefore->root_hash, (string) $rootAfter->root_hash);
+        $this->assertSame((string) $rootBefore->updated_at, (string) $rootAfter->updated_at);
+        $this->assertSame((int) $leafBefore->id, (int) $leafAfter->id);
+        $this->assertSame((string) $leafBefore->leaf_hash, (string) $leafAfter->leaf_hash);
+        $this->assertSame((string) $leafBefore->updated_at, (string) $leafAfter->updated_at);
+    }
+
+    public function test_mm011_lazy_read_path_rebuilds_only_stale_leaves_and_preserves_untouched_rows(): void
+    {
+        [$library, $userId] = $this->seedLibrary();
+
+        $uuidAa = $this->seedBook($library, $userId, 'aa000000-0000-4000-8000-000000000261', 'AA');
+        $this->seedBook($library, $userId, 'ab000000-0000-4000-8000-000000000262', 'AB');
+        $this->seedBook($library, $userId, 'ba000000-0000-4000-8000-000000000263', 'BA');
+
+        $service = app(MaterializedMerkleService::class);
+        $service->rebuildLibraryDimensions((int) $library->user_id, (int) $library->id, ['metadata']);
+
+        $untouchedLeafBefore = DB::table('sync_merkle_leaves')
+            ->where('user_id', (int) $library->user_id)
+            ->where('library_id', (int) $library->id)
+            ->where('dimension', 'metadata')
+            ->where('leaf_id', 0xAB)
+            ->first();
+        $staleLeafBefore = DB::table('sync_merkle_leaves')
+            ->where('user_id', (int) $library->user_id)
+            ->where('library_id', (int) $library->id)
+            ->where('dimension', 'metadata')
+            ->where('leaf_id', 0xAA)
+            ->first();
+
+        $this->assertNotNull($untouchedLeafBefore);
+        $this->assertNotNull($staleLeafBefore);
+
+        DB::table('books')
+            ->where('uuid', $uuidAa)
+            ->update([
+                'title' => 'AA lazy stale updated',
+                'updated_at' => now(),
+                'last_modified' => now(),
+            ]);
+
+        $service->markDimensionsStaleForTouchedUuids(
+            (int) $library->user_id,
+            (int) $library->id,
+            ['metadata' => [$uuidAa]]
+        );
+
+        $roots = $service->getLibraryRoots((int) $library->user_id, (int) $library->id);
+        $this->assertNotEmpty($roots['metadata'] ?? null);
+
+        $untouchedLeafAfter = DB::table('sync_merkle_leaves')
+            ->where('user_id', (int) $library->user_id)
+            ->where('library_id', (int) $library->id)
+            ->where('dimension', 'metadata')
+            ->where('leaf_id', 0xAB)
+            ->first();
+        $staleLeafAfter = DB::table('sync_merkle_leaves')
+            ->where('user_id', (int) $library->user_id)
+            ->where('library_id', (int) $library->id)
+            ->where('dimension', 'metadata')
+            ->where('leaf_id', 0xAA)
+            ->first();
+
+        $this->assertNotNull($untouchedLeafAfter);
+        $this->assertNotNull($staleLeafAfter);
+        $this->assertSame((int) $untouchedLeafBefore->id, (int) $untouchedLeafAfter->id);
+        $this->assertSame((string) $untouchedLeafBefore->leaf_hash, (string) $untouchedLeafAfter->leaf_hash);
+        $this->assertSame((string) $untouchedLeafBefore->updated_at, (string) $untouchedLeafAfter->updated_at);
+        $this->assertNotSame((int) $staleLeafBefore->id, (int) $staleLeafAfter->id);
+        $this->assertNotSame((string) $staleLeafBefore->leaf_hash, (string) $staleLeafAfter->leaf_hash);
+        $this->assertSame(
+            0,
+            (int) DB::table('sync_merkle_roots')
+                ->where('user_id', (int) $library->user_id)
+                ->where('library_id', (int) $library->id)
+                ->where('dimension', 'metadata')
+                ->value('is_stale')
+        );
     }
 
     public function test_mm007_pgsql_pre_1970_pubdate_survives_to_materialized_metadata_root(): void
@@ -255,6 +518,7 @@ class MaterializedMerkleEdgeMatrixTest extends TestCase
 
     private function leafMap(Library $library, string $dimension): array
     {
+        $service = app(\App\Services\Sync\MaterializedMerkleService::class);
         $rows = DB::table('sync_merkle_leaves')
             ->where('user_id', (int) $library->user_id)
             ->where('library_id', (int) $library->id)
@@ -266,7 +530,13 @@ class MaterializedMerkleEdgeMatrixTest extends TestCase
         foreach ($rows as $row) {
             $map[(int) $row->leaf_id] = [
                 'leaf_hash' => (string) $row->leaf_hash,
-                'uuids' => json_decode((string) $row->uuids_json, true, 512, JSON_THROW_ON_ERROR),
+                'uuids' => $service->getLeafUuids(
+                    (int) $library->user_id,
+                    (int) $library->id,
+                    $dimension,
+                    (int) $row->branch_id,
+                    (int) $row->leaf_id
+                ),
             ];
         }
 

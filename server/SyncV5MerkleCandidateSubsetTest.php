@@ -22,7 +22,7 @@ class SyncV5MerkleCandidateSubsetTest extends TestCase
         $bookB = $this->seedBook($library, 'bbbbbbbb-2222-4222-8222-222222222222', 'b');
 
         $payload = [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -68,7 +68,7 @@ class SyncV5MerkleCandidateSubsetTest extends TestCase
         $book = $this->seedBook($library, 'cccccccc-3333-4333-8333-333333333333', 'c');
 
         $payload = [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -105,7 +105,7 @@ class SyncV5MerkleCandidateSubsetTest extends TestCase
 
         Sanctum::actingAs($user);
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -143,7 +143,7 @@ class SyncV5MerkleCandidateSubsetTest extends TestCase
 
         Sanctum::actingAs($user);
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -171,7 +171,7 @@ class SyncV5MerkleCandidateSubsetTest extends TestCase
         Sanctum::actingAs($user);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -190,7 +190,7 @@ class SyncV5MerkleCandidateSubsetTest extends TestCase
         Sanctum::actingAs($user);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -215,7 +215,7 @@ class SyncV5MerkleCandidateSubsetTest extends TestCase
         Sanctum::actingAs($user);
 
         $basePayload = [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -265,7 +265,7 @@ class SyncV5MerkleCandidateSubsetTest extends TestCase
 
         Sanctum::actingAs($user);
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -302,7 +302,7 @@ class SyncV5MerkleCandidateSubsetTest extends TestCase
 
         Sanctum::actingAs($user);
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -341,7 +341,7 @@ class SyncV5MerkleCandidateSubsetTest extends TestCase
             'id' => $bookId,
             'uuid' => $uuid,
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'title' => 'Merkle Candidate Book ' . $seed,
             'path' => 'Merkle Candidate Book ' . $seed,
             'author_sort' => 'Author ' . strtoupper($seed),
@@ -391,7 +391,7 @@ class SyncV5MerkleCandidateSubsetTest extends TestCase
         $bookFileRow = [
             'book' => $uuid,
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'format' => 'EPUB',
             'name' => 'merkle-candidate-' . $seed . '.epub',
             'file_hash' => $file,

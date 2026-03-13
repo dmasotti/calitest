@@ -77,7 +77,7 @@ def test_calibre_to_json_item_includes_expected_fields():
     assert item['languages'] == ['eng', 'ita']
     assert any(tag['name'] == 'Fiction' for tag in item['tags'])
     assert item['status'] == 'reading'
-    assert item['rating'] == 4
+    assert item['rating'] == 8
     assert item['comments'] == metadata.comments
 
 
@@ -93,7 +93,7 @@ def test_json_item_to_calibre_populates_fields():
         'pubdate': int(datetime(2024, 1, 1, tzinfo=timezone.utc).timestamp()),
         'languages': ['eng'],
         'tags': [{'name': 'Fiction'}, 'Adventure'],
-        'rating': 4,
+        'rating': 8,
         'comments': 'Nice',
         'timestamps': {'created_at': int(datetime(2023, 1, 1, tzinfo=timezone.utc).timestamp())},
         'uuid': 'uuid-value',

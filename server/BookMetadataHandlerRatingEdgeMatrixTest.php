@@ -61,6 +61,43 @@ class BookMetadataHandlerRatingEdgeMatrixTest extends TestCase
         $this->assertSame(10, $this->ratingForBook($book, $user, $library));
     }
 
+    public function test_rating_resolution_reuses_handler_cache_across_books(): void
+    {
+        [$user, $library, $book] = $this->makeContext();
+        $otherBook = UserBook::create([
+            'id' => 9502,
+            'uuid' => 'dd000000-0000-4000-8000-000000009502',
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'title' => 'Rating Test Book 2',
+            'path' => 'rating-test-book-2',
+            'author_sort' => 'Tester, Rating',
+            'last_modified' => now(),
+        ]);
+        $handler = app(BookMetadataHandler::class);
+
+        $this->createRating($user, $library, 6);
+
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = strtolower($query->sql);
+        });
+
+        $payload = ['rating' => 6];
+        $handler->applyBookMetadata($book, $payload, $user, $library->id);
+        $handler->applyBookMetadata($otherBook, $payload, $user, $library->id);
+
+        $ratingSelects = array_values(array_filter($queries, static function (string $sql): bool {
+            return str_contains($sql, 'from `books_ratings`') && str_contains($sql, 'select');
+        }));
+
+        $this->assertLessThanOrEqual(
+            2,
+            count($ratingSelects),
+            'Rating resolution should be cached across multiple books in the same handler lifecycle'
+        );
+    }
+
     public function test_rating_edge_matrix_explicit_null_clears_link(): void
     {
         [$user, $library, $book] = $this->makeContext();
@@ -91,6 +128,43 @@ class BookMetadataHandlerRatingEdgeMatrixTest extends TestCase
         ], $user, $library->id);
 
         $this->assertNull($this->ratingForBook($book, $user, $library));
+    }
+
+    public function test_rating_change_updates_existing_link_without_delete(): void
+    {
+        [$user, $library, $book] = $this->makeContext();
+        $handler = app(BookMetadataHandler::class);
+
+        $this->createRating($user, $library, 4);
+        $this->createRating($user, $library, 8);
+
+        DB::table('books_ratings_links')->insert([
+            'id' => -9802,
+            'idx' => 9802,
+            'uuid' => 'rating-pivot-2',
+            'book' => $book->uuid,
+            'rating' => 4,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = strtolower($query->sql);
+        });
+
+        $handler->applyBookMetadata($book, [
+            'rating' => 8,
+        ], $user, $library->id);
+
+        $deleteQueries = array_values(array_filter($queries, static function (string $sql): bool {
+            return str_contains($sql, 'delete') && str_contains($sql, 'books_ratings_links');
+        }));
+
+        $this->assertSame([], $deleteQueries, 'Changing rating to another existing value must update the link without delete+reinsert');
+        $this->assertSame(8, $this->ratingForBook($book, $user, $library));
     }
 
     private function makeContext(): array

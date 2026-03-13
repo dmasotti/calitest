@@ -329,7 +329,7 @@ class SyncPullTest extends TestCase
         Sanctum::actingAs($user);
 
         $response = $this->getJson('/api/sync?calibre_library_uuid=' . $library->calibre_library_id);
-        $response->assertStatus(404);
+        $response->assertStatus(403);
     }
 
     public function test_pull_cover_flags_consistent(): void

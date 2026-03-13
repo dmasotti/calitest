@@ -102,6 +102,84 @@ class MerkleViewsCrossEngineParityTest extends TestCase
 
     private function createDriverSpecificMerkleViews(string $driver): void
     {
+        if ($driver === 'sqlite') {
+            $pdo = DB::connection()->getPdo();
+            $pdo->sqliteCreateFunction('sha256', static fn ($v) => hash('sha256', (string) ($v ?? '')), 1);
+            $pdo->sqliteCreateFunction('hex_to_int', static fn ($v) => hexdec((string) ($v ?? '0')), 1);
+
+            DB::statement(<<<'SQL'
+                CREATE VIEW test_merkle_leaves AS
+                SELECT
+                    user_id,
+                    library_id,
+                    hex_to_int(substr(leaf_hex, 1, 1)) AS branch_id,
+                    hex_to_int(leaf_hex) AS leaf_id,
+                    sha256(group_concat(metadata_hash, '')) AS leaf_hash,
+                    COUNT(*) AS book_count,
+                    MAX(last_modified) AS last_modified,
+                    '[' || group_concat(json_quote(uuid), ',') || ']' AS uuids_json
+                FROM (
+                    SELECT
+                        user_id,
+                        library_id,
+                        uuid,
+                        lower(replace(uuid, '-', '')) AS uuid_norm,
+                        substr(lower(replace(uuid, '-', '')), 1, 2) AS leaf_hex,
+                        metadata_hash,
+                        last_modified
+                    FROM test_merkle_seed
+                    ORDER BY user_id, library_id, leaf_hex, uuid_norm
+                ) s
+                GROUP BY user_id, library_id, leaf_hex
+            SQL);
+
+            DB::statement(<<<'SQL'
+                CREATE VIEW test_merkle_branches AS
+                SELECT
+                    user_id,
+                    library_id,
+                    branch_id,
+                    sha256(group_concat(leaf_hash, '')) AS branch_hash,
+                    SUM(book_count) AS book_count,
+                    MAX(last_modified) AS last_modified
+                FROM (
+                    SELECT
+                        user_id,
+                        library_id,
+                        branch_id,
+                        leaf_hash,
+                        book_count,
+                        last_modified
+                    FROM test_merkle_leaves
+                    ORDER BY user_id, library_id, leaf_id
+                )
+                GROUP BY user_id, library_id, branch_id
+            SQL);
+
+            DB::statement(<<<'SQL'
+                CREATE VIEW test_merkle_root AS
+                SELECT
+                    user_id,
+                    library_id,
+                    sha256(group_concat(branch_hash, '')) AS root_hash,
+                    SUM(book_count) AS total_books,
+                    MAX(last_modified) AS last_modified
+                FROM (
+                    SELECT
+                        user_id,
+                        library_id,
+                        branch_hash,
+                        book_count,
+                        last_modified
+                    FROM test_merkle_branches
+                    ORDER BY user_id, library_id, branch_id
+                )
+                GROUP BY user_id, library_id
+            SQL);
+
+            return;
+        }
+
         if (in_array($driver, ['mysql', 'mariadb'], true)) {
             DB::statement(<<<'SQL'
                 CREATE VIEW test_merkle_leaves AS

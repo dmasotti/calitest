@@ -39,6 +39,15 @@ class IsbnNullableTest extends TestCase
             return ((int) ($info->notnull ?? 1)) === 0;
         }
 
+        if ($driver === 'pgsql') {
+            $info = DB::selectOne(
+                'select is_nullable from information_schema.columns where table_name = ? and column_name = ?',
+                [$table, $column]
+            );
+
+            return $info !== null && strtoupper((string) ($info->is_nullable ?? 'NO')) === 'YES';
+        }
+
         $info = DB::selectOne("SHOW COLUMNS FROM `{$table}` WHERE `Field` = ?", [$column]);
         return $info !== null && ($info->Null ?? 'NO') === 'YES';
     }

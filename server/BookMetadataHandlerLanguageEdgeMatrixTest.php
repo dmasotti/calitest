@@ -8,6 +8,7 @@ use App\Models\UserBook;
 use App\Services\Sync\BookMetadataHandler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class BookMetadataHandlerLanguageEdgeMatrixTest extends TestCase
@@ -22,12 +23,11 @@ class BookMetadataHandlerLanguageEdgeMatrixTest extends TestCase
         $englishId = $this->createLanguage($user, $library, 1101, 'eng');
         $italianId = $this->createLanguage($user, $library, 1102, 'ita');
 
-        DB::table('books_languages_link')->insert([
+        $rows = [
             [
                 'uuid' => 'lang-pivot-1',
                 'book' => $book->uuid,
                 'lang_code' => $englishId,
-                'item_order' => 0,
                 'user_id' => $user->id,
                 'library_id' => $library->id,
             ],
@@ -35,11 +35,15 @@ class BookMetadataHandlerLanguageEdgeMatrixTest extends TestCase
                 'uuid' => 'lang-pivot-2',
                 'book' => $book->uuid,
                 'lang_code' => $italianId,
-                'item_order' => 1,
                 'user_id' => $user->id,
                 'library_id' => $library->id,
             ],
-        ]);
+        ];
+        if (Schema::hasColumn('books_languages_link', 'item_order')) {
+            $rows[0]['item_order'] = 0;
+            $rows[1]['item_order'] = 1;
+        }
+        DB::table('books_languages_link')->insert($rows);
 
         $queries = [];
         DB::listen(static function ($query) use (&$queries): void {
@@ -164,7 +168,7 @@ class BookMetadataHandlerLanguageEdgeMatrixTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ];
-        if (\Illuminate\Support\Facades\Schema::hasColumn('books_languages', 'idx')) {
+        if (Schema::hasColumn('books_languages', 'idx')) {
             $row['idx'] = $id;
         }
         DB::table('books_languages')->insert($row);
@@ -179,6 +183,10 @@ class BookMetadataHandlerLanguageEdgeMatrixTest extends TestCase
             ->where('books_languages_link.book', $book->uuid)
             ->where('books_languages_link.user_id', $user->id)
             ->where('books_languages_link.library_id', $library->id)
+            ->when(
+                Schema::hasColumn('books_languages_link', 'item_order'),
+                static fn ($query) => $query->orderBy('books_languages_link.item_order')
+            )
             ->orderBy('books_languages.lang_code')
             ->pluck('books_languages.lang_code')
             ->values()

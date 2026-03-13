@@ -46,8 +46,14 @@ class IdentifiersSyncNormalizationTest extends TestCase
         ]);
 
         $this->assertCount(2, $normalized);
-        $this->assertSame('isbn', $normalized[0]['type']);
-        $this->assertSame('978123', $normalized[0]['value']);
+        $normalizedMap = [];
+        foreach ($normalized as $entry) {
+            $normalizedMap[$entry['type']] = $entry['value'];
+        }
+
+        $this->assertSame([
+            'amazon' => 'B00TEST',
+            'isbn' => '978123',
+        ], $normalizedMap);
     }
 }
-

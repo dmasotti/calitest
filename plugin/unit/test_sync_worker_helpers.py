@@ -1851,10 +1851,9 @@ def test_sync_v5_merkle_candidates_not_in_local_inventory_send_empty_batch(monke
     )
     monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
 
-    worker.sync_v5()
-    assert len(calls) == 1
-    assert calls[0].get('client_books') is None
-    assert calls[0].get('metadata_candidate_uuids') == ['u-does-not-exist']
+    summary = worker.sync_v5()
+    assert len(calls) == 0
+    assert summary.get('fast_path_used') is True
 
 
 def test_sync_v5_merkle_candidates_are_deduplicated_before_client_call(monkeypatch):
@@ -2468,10 +2467,9 @@ def test_sync_v5_merkle_edge_candidates_all_filtered_still_send_sorted_candidate
     monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
     monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
 
-    worker.sync_v5()
-    assert len(calls) == 1
-    assert calls[0].get('client_books') is None
-    assert calls[0].get('metadata_candidate_uuids') == ['u8', 'u9']
+    summary = worker.sync_v5()
+    assert len(calls) == 0
+    assert summary.get('fast_path_used') is True
 
 
 def test_sync_v5_merkle_zero_candidates_short_circuits_before_inventory(monkeypatch):
@@ -3680,6 +3678,125 @@ def test_should_download_cover_downloads_when_server_effective_is_newer(monkeypa
 
     assert should_download is True
     assert reason == 'hash_mismatch_or_missing'
+
+
+def test_should_download_cover_skips_when_server_has_no_cover(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-123'
+    worker.db = SimpleNamespace(cover=Mock(return_value=b'local-cover'))
+
+    should_download, reason = worker._should_download_cover(
+        1,
+        {
+            'last_modified': 300,
+            'cover': {
+                'has_cover': False,
+            },
+        },
+    )
+
+    assert should_download is False
+    assert reason == 'server_no_cover'
+
+
+def test_should_download_cover_skips_when_server_marks_cover_missing(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-123'
+
+    should_download, reason = worker._should_download_cover(
+        1,
+        {
+            'last_modified': 300,
+            'cover_missing': True,
+            'cover': {
+                'has_cover': True,
+                'cover_hash': 'sha256:server',
+            },
+        },
+    )
+
+    assert should_download is False
+    assert reason == 'server_cover_missing_flag'
+
+
+def test_should_download_file_skips_when_server_hash_missing(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-123'
+
+    should_download, reason = worker._should_download_file(
+        1,
+        'EPUB',
+        None,
+        item={'last_modified': 300},
+    )
+
+    assert should_download is False
+    assert reason == 'no_server_hash'
+
+
+def test_should_download_cover_defers_when_local_cover_unavailable_without_hashes(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-123'
+
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_mapping_entry', lambda *args, **kwargs: {'notes': {'cover': {}}})
+    monkeypatch.setattr(worker, '_read_cover_bytes_byte_only', lambda *_args, **_kwargs: (None, 'db.cover', 'unavailable'))
+
+    should_download, reason = worker._should_download_cover(
+        1,
+        {
+            'last_modified': 300,
+            'cover': {
+                'has_cover': True,
+                'cover_hash': None,
+            },
+        },
+    )
+
+    assert should_download is False
+    assert reason == 'local_cover_unavailable_defer'
+
+
+def test_should_download_cover_skips_when_cached_hash_exists_and_server_hash_missing(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-123'
+
+    monkeypatch.setattr(sync_worker.cfg, 'get_book_mapping_entry', lambda *args, **kwargs: {
+        'notes': {
+            'cover': {
+                'hash': 'sha256:cached',
+            }
+        }
+    })
+
+    should_download, reason = worker._should_download_cover(
+        1,
+        {
+            'last_modified': 300,
+            'cover': {
+                'has_cover': True,
+                'cover_hash': None,
+            },
+        },
+    )
+
+    assert should_download is False
+    assert reason == 'cached_hash_no_server_hash'
+
+
+def test_should_download_file_skips_when_previously_unavailable(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-123'
+    worker._missing_formats_unavailable = {(1, 'EPUB')}
+
+    should_download, reason = worker._should_download_file(
+        1,
+        'EPUB',
+        'sha256:server-hash',
+        item={'last_modified': 300},
+    )
+
+    assert should_download is False
+    assert reason == 'previously_unavailable'
 
 
 def test_apply_update_skips_cover_download_when_cover_unavailable(monkeypatch):

@@ -43,6 +43,21 @@ class TestUDFIntegration:
         """)
         
         conn.execute("""
+            CREATE TABLE authors (
+                id INTEGER PRIMARY KEY,
+                name TEXT
+            )
+        """)
+        
+        conn.execute("""
+            CREATE TABLE books_authors_link (
+                id INTEGER PRIMARY KEY,
+                book INTEGER,
+                author INTEGER
+            )
+        """)
+        
+        conn.execute("""
             CREATE TABLE series (
                 id INTEGER PRIMARY KEY,
                 name TEXT
@@ -146,6 +161,15 @@ class TestUDFIntegration:
         conn.execute("""
             INSERT INTO books (id, uuid, title, author_sort, path, series_index, pubdate, last_modified)
             VALUES (2, 'test-uuid-2', 'Test Book 2', 'Author Two', 'path2', 2.0, '2020-02-01', 1234567891)
+        """)
+        
+        conn.execute("""
+            INSERT INTO authors (id, name) VALUES (1, 'Author One'), (2, 'Author Two')
+        """)
+        
+        conn.execute("""
+            INSERT INTO books_authors_link (id, book, author)
+            VALUES (1, 1, 1), (2, 2, 2)
         """)
         
         conn.execute("""

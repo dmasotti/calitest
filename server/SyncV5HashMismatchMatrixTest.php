@@ -28,7 +28,7 @@ class SyncV5HashMismatchMatrixTest extends TestCase
         $seed = $this->seedBookWithDeterministicHashes($library);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -64,7 +64,7 @@ class SyncV5HashMismatchMatrixTest extends TestCase
         $seed = $this->seedBookWithDeterministicHashes($library);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -101,7 +101,7 @@ class SyncV5HashMismatchMatrixTest extends TestCase
         $seed = $this->seedBookWithDeterministicHashes($library);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -132,7 +132,7 @@ class SyncV5HashMismatchMatrixTest extends TestCase
         $seed = $this->seedBookWithDeterministicHashes($library);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -162,7 +162,7 @@ class SyncV5HashMismatchMatrixTest extends TestCase
         $seed = $this->seedBookWithDeterministicHashes($library);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -225,7 +225,7 @@ class SyncV5HashMismatchMatrixTest extends TestCase
             'id' => $bookId,
             'uuid' => $uuid,
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'title' => 'Mismatch Matrix Book',
             'path' => 'Mismatch Matrix Book',
             'author_sort' => 'Mismatch Author',
@@ -262,9 +262,10 @@ class SyncV5HashMismatchMatrixTest extends TestCase
             'uuid' => 'bbbbbbbb-2222-4333-8444-555555555555',
             'book' => $uuid,
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'format' => 'EPUB',
             'name' => 'mismatch-matrix.epub',
+            'file_path' => 'ebooks/mismatch-matrix.epub',
             'file_hash' => $file,
             'storage_key' => 'ebooks/mismatch-matrix.epub',
             'storage_provider' => 'r2',
@@ -293,10 +294,9 @@ class SyncV5HashMismatchMatrixTest extends TestCase
                 ->where('user_id', $library->user_id)
                 ->where('library_id', $library->id)
                 ->where('uuid', $uuid)
-                ->selectRaw('SHA2(hash_payload, 256) as metadata_hash')
                 ->value('metadata_hash');
             if ($hash !== '') {
-                return $hash;
+                return strtolower($hash);
             }
         }
 

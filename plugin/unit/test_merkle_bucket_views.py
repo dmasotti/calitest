@@ -32,6 +32,8 @@ def _create_calibre_schema(conn):
         )
         """
     )
+    cursor.execute("CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT)")
+    cursor.execute("CREATE TABLE books_authors_link (book INTEGER, author INTEGER)")
     cursor.execute("CREATE TABLE series (id INTEGER PRIMARY KEY, name TEXT)")
     cursor.execute("CREATE TABLE books_series_link (book INTEGER, series INTEGER)")
     cursor.execute("CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT)")

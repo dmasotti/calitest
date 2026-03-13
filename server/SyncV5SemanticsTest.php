@@ -34,14 +34,14 @@ class SyncV5SemanticsTest extends TestCase
 
         $book = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '11111111-1111-1111-1111-111111111111',
             'title' => 'Deleted On Server',
         ]);
         $book->delete();
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -66,7 +66,7 @@ class SyncV5SemanticsTest extends TestCase
         [, $library] = $this->setupUserLibrary();
 
         $payload = [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -106,13 +106,13 @@ class SyncV5SemanticsTest extends TestCase
 
         $book = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '22222222-2222-2222-2222-222222222222',
             'cover_original_hash' => 'sha256:servercoverhash',
         ]);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -137,7 +137,7 @@ class SyncV5SemanticsTest extends TestCase
 
         $book = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '33333333-3333-3333-3333-333333333333',
         ]);
 
@@ -148,7 +148,7 @@ class SyncV5SemanticsTest extends TestCase
         ]);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -174,7 +174,7 @@ class SyncV5SemanticsTest extends TestCase
 
         $book = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '3a333333-3333-3333-3333-333333333333',
             'title' => 'Metadata Only',
             'cover_original_hash' => 'sha256:' . str_repeat('a', 64),
@@ -194,7 +194,7 @@ class SyncV5SemanticsTest extends TestCase
         $metadataHash = $this->metadataHashFromView($library->user_id, $library->id, $book->uuid);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -229,7 +229,7 @@ class SyncV5SemanticsTest extends TestCase
 
         $book = UserBook::factory()->create([
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '3b333333-3333-3333-3333-333333333333',
             'title' => 'Metadata Mismatch Only',
             'cover_original_hash' => 'sha256:' . str_repeat('a', 64),
@@ -247,7 +247,7 @@ class SyncV5SemanticsTest extends TestCase
         ]);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -299,7 +299,7 @@ class SyncV5SemanticsTest extends TestCase
         $book = UserBook::create([
             'id' => 4444,
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '44444444-4444-4444-4444-444444444444',
             'title' => 'Pubdate Normalization',
             'path' => 'Pubdate Normalization',
@@ -309,7 +309,7 @@ class SyncV5SemanticsTest extends TestCase
         $clientHash = $this->metadataHashFromView($library->user_id, $library->id, $book->uuid);
 
         $response = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -334,7 +334,7 @@ class SyncV5SemanticsTest extends TestCase
         $book = UserBook::create([
             'id' => 5555,
             'user_id' => $user->id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '55555555-5555-5555-5555-555555555555',
             'title' => 'Clear Description',
             'path' => 'Clear Description',
@@ -358,7 +358,7 @@ class SyncV5SemanticsTest extends TestCase
         $book = UserBook::create([
             'id' => 6666,
             'user_id' => $library->user_id,
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'uuid' => '66666666-6666-6666-6666-666666666666',
             'title' => 'Repair Cache Refresh',
             'path' => 'Repair Cache Refresh',
@@ -368,7 +368,7 @@ class SyncV5SemanticsTest extends TestCase
         ]);
 
         $repair = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -387,7 +387,7 @@ class SyncV5SemanticsTest extends TestCase
         $this->assertStringContainsString('deadbeef', $cacheAfterRepair);
 
         $normal = $this->postJson('/api/sync/v5', [
-            'library_id' => $library->id,
+            'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'cursor' => null,
             'batch_size' => 100,
@@ -412,10 +412,9 @@ class SyncV5SemanticsTest extends TestCase
                 ->where('user_id', $userId)
                 ->where('library_id', $libraryId)
                 ->where('uuid', $uuid)
-                ->selectRaw('SHA2(hash_payload, 256) as metadata_hash')
                 ->value('metadata_hash');
             if ($hash !== '') {
-                return $hash;
+                return strtolower($hash);
             }
         }
 

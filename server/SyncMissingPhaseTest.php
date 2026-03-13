@@ -168,6 +168,91 @@ class SyncMissingPhaseTest extends TestCase
     }
 
     #[Test]
+    public function it_does_not_skip_next_missing_book_when_previous_one_self_heals_between_pages()
+    {
+        $bookA = UserBook::create([
+            'user_id' => $this->user->id,
+            'library_id' => $this->library->id,
+            'uuid' => \Illuminate\Support\Str::uuid(),
+            'title' => 'Missing Book A',
+            'last_modified' => now()->subYear()->timestamp,
+            'cover_missing' => false,
+            'ebook_missing' => false,
+            'metadata_incomplete' => true,
+        ]);
+
+        $bookB = UserBook::create([
+            'user_id' => $this->user->id,
+            'library_id' => $this->library->id,
+            'uuid' => \Illuminate\Support\Str::uuid(),
+            'title' => 'Missing Book B',
+            'last_modified' => now()->subYear()->timestamp,
+            'cover_missing' => false,
+            'ebook_missing' => false,
+            'metadata_incomplete' => true,
+        ]);
+
+        $bookC = UserBook::create([
+            'user_id' => $this->user->id,
+            'library_id' => $this->library->id,
+            'uuid' => \Illuminate\Support\Str::uuid(),
+            'title' => 'Missing Book C',
+            'last_modified' => now()->subYear()->timestamp,
+            'cover_missing' => false,
+            'ebook_missing' => false,
+            'metadata_incomplete' => true,
+        ]);
+
+        $cursor = base64_encode(json_encode([
+            'timestamp' => now()->timestamp,
+            'last_id' => 0,
+            'phase' => 'missing',
+            'missing_offset' => 0,
+        ]));
+
+        $response1 = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept' => 'application/json',
+        ])->postJson('/api/sync/pull', [
+            'cursor' => $cursor,
+            'limit' => 1,
+            'library_id' => $this->library->id,
+            'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
+        ]);
+
+        $response1->assertStatus(200);
+        $changes1 = $response1->json('changes');
+        $this->assertCount(1, $changes1);
+        $this->assertSame('Missing Book A', $changes1[0]['item']['title']);
+
+        $cursor2 = $response1->json('new_cursor');
+        $this->assertNotNull($cursor2);
+
+        $bookA->forceFill(['metadata_incomplete' => false])->save();
+
+        $response2 = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept' => 'application/json',
+        ])->postJson('/api/sync/pull', [
+            'cursor' => $cursor2,
+            'limit' => 1,
+            'library_id' => $this->library->id,
+            'calibre_library_uuid' => $this->library->calibre_library_id,
+            'stream' => false,
+        ]);
+
+        $response2->assertStatus(200);
+        $changes2 = $response2->json('changes');
+        $this->assertCount(1, $changes2);
+        $this->assertSame(
+            'Missing Book B',
+            $changes2[0]['item']['title'],
+            'Missing-phase pagination must not skip the next missing book when a previous row self-heals between requests.'
+        );
+    }
+
+    #[Test]
     public function it_completes_missing_phase_when_no_more_books()
     {
         // Create 10 books with missing flags (no cover to prevent self-healing)

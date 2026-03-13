@@ -69,6 +69,43 @@ class BookMetadataHandlerPublisherEdgeMatrixTest extends TestCase
         $this->assertLessThanOrEqual(2, count($publisherSelects));
     }
 
+    public function test_publisher_resolution_reuses_handler_cache_across_books(): void
+    {
+        [$user, $library, $book] = $this->makeContext();
+        $otherBook = UserBook::create([
+            'id' => 9402,
+            'uuid' => 'dd000000-0000-4000-8000-000000009402',
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'title' => 'Publisher Test Book 2',
+            'path' => 'publisher-test-book-2',
+            'author_sort' => 'Tester, Publisher',
+            'last_modified' => now(),
+        ]);
+        $handler = app(BookMetadataHandler::class);
+
+        $this->createPublisher($user, $library, 3202, 'Shared Publisher');
+
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = strtolower($query->sql);
+        });
+
+        $payload = ['publisher' => 'Shared Publisher'];
+        $handler->applyBookMetadata($book, $payload, $user, $library->id);
+        $handler->applyBookMetadata($otherBook, $payload, $user, $library->id);
+
+        $publisherSelects = array_values(array_filter($queries, static function (string $sql): bool {
+            return str_contains($sql, 'from `books_publishers`') && str_contains($sql, 'select');
+        }));
+
+        $this->assertLessThanOrEqual(
+            2,
+            count($publisherSelects),
+            'Publisher resolution should be cached across multiple books in the same handler lifecycle'
+        );
+    }
+
     public function test_publisher_edge_matrix_trims_name_and_preserves_accented_text(): void
     {
         [$user, $library, $book] = $this->makeContext();
@@ -95,6 +132,71 @@ class BookMetadataHandlerPublisherEdgeMatrixTest extends TestCase
         ], $user, $library->id);
 
         $this->assertNull($this->publisherNameForBook($book, $user, $library));
+    }
+
+    public function test_publisher_change_to_existing_value_updates_link_without_delete(): void
+    {
+        [$user, $library, $book] = $this->makeContext();
+        $handler = app(BookMetadataHandler::class);
+
+        $this->createPublisher($user, $library, 3301, 'Old House');
+        $this->createPublisher($user, $library, 3302, 'New House');
+
+        DB::table('books_publishers_link')->insert([
+            'uuid' => 'publisher-pivot-2',
+            'book' => $book->uuid,
+            'publisher' => 3301,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = strtolower($query->sql);
+        });
+
+        $handler->applyBookMetadata($book, [
+            'publisher' => 'New House',
+        ], $user, $library->id);
+
+        $deleteQueries = array_values(array_filter($queries, static function (string $sql): bool {
+            return str_contains($sql, 'delete') && str_contains($sql, 'books_publishers_link');
+        }));
+
+        $this->assertSame([], $deleteQueries, 'Changing publisher to another existing entity must update the link without delete+reinsert');
+        $this->assertSame('New House', $this->publisherNameForBook($book, $user, $library));
+    }
+
+    public function test_publisher_noop_update_does_not_issue_link_update(): void
+    {
+        [$user, $library, $book] = $this->makeContext();
+        $handler = app(BookMetadataHandler::class);
+
+        $this->createPublisher($user, $library, 3401, 'Noop House');
+
+        DB::table('books_publishers_link')->insert([
+            'uuid' => 'publisher-pivot-3',
+            'book' => $book->uuid,
+            'publisher' => 3401,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = strtolower($query->sql);
+        });
+
+        $handler->applyBookMetadata($book, [
+            'publisher' => 'Noop House',
+        ], $user, $library->id);
+
+        $linkUpdates = array_values(array_filter($queries, static function (string $sql): bool {
+            return str_contains($sql, 'update')
+                && str_contains($sql, 'books_publishers_link');
+        }));
+
+        $this->assertSame([], $linkUpdates, 'No-op publisher update must not issue pivot update');
     }
 
     private function makeContext(): array

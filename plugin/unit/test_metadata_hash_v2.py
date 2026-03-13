@@ -53,6 +53,8 @@ def create_calibre_schema(conn):
     ''')
     
     # Related tables
+    cursor.execute('CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT)')
+    cursor.execute('CREATE TABLE books_authors_link (book INTEGER, author INTEGER)')
     cursor.execute('CREATE TABLE series (id INTEGER PRIMARY KEY, name TEXT)')
     cursor.execute('CREATE TABLE books_series_link (book INTEGER, series INTEGER)')
     cursor.execute('CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT)')
@@ -83,6 +85,8 @@ def test_db(tmp_path):
         INSERT INTO books (id, uuid, title, author_sort, series_index, pubdate)
         VALUES (1, 'test-uuid-123', 'Test Book', 'Author, Test', 1.0, '2024-01-01')
     ''')
+    cursor.execute("INSERT INTO authors (id, name) VALUES (1, 'Author Test')")
+    cursor.execute("INSERT INTO books_authors_link (book, author) VALUES (1, 1)")
     
     cursor.execute("INSERT INTO series (id, name) VALUES (1, 'Test Series')")
     cursor.execute("INSERT INTO books_series_link (book, series) VALUES (1, 1)")
