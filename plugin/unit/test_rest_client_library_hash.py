@@ -67,25 +67,35 @@ class TestRestClientLibraryHash:
         
         assert result is None
     
-    def test_get_library_hash_500_error(self):
-        """Test when server returns 500 error."""
+    def test_get_library_hash_500_error_returns_error_dict(self):
+        """When server raises (e.g. RestApiError 500), return _error dict for UI visibility (per PREFLIGHT_LIBRARY_HASH_ERROR_VISIBILITY_TODO)."""
         client = rest_client.RestApiClient('http://test.com', 'token123')
-        
+        client.get = Mock(side_effect=rest_client.RestApiError('Server error', status_code=500))
+        result = client.get_library_hash(35)
+        assert result is not None
+        assert result.get('_error') is True
+        assert 'Server error' in result.get('message', '')
+        assert result.get('status_code') == 500
+
+    def test_get_library_hash_generic_exception_returns_error_dict(self):
+        """When generic Exception (e.g. ConnectionError), return _error dict with status_code None."""
+        client = rest_client.RestApiClient('http://test.com', 'token123')
         client.get = Mock(side_effect=Exception('Server error'))
-        
         result = client.get_library_hash(35)
-        
-        assert result is None
+        assert result is not None
+        assert result.get('_error') is True
+        assert 'Server error' in result.get('message', '')
+        assert result.get('status_code') is None
     
-    def test_get_library_hash_network_timeout(self):
-        """Test network timeout handling."""
+    def test_get_library_hash_network_timeout_returns_error_dict(self):
+        """Network/timeout errors must be visible: return _error dict (per PREFLIGHT_LIBRARY_HASH_ERROR_VISIBILITY_TODO)."""
         client = rest_client.RestApiClient('http://test.com', 'token123')
-        
         client.get = Mock(side_effect=TimeoutError('Connection timeout'))
-        
         result = client.get_library_hash(35)
-        
-        assert result is None
+        assert result is not None
+        assert result.get('_error') is True
+        assert 'Connection timeout' in result.get('message', '')
+        assert result.get('status_code') is None
     
     def test_get_library_hash_invalid_json(self):
         """Test invalid JSON response."""

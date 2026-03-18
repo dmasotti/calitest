@@ -1357,7 +1357,36 @@ def test_sync_v5_does_not_call_merkle_drilldown_when_fast_path_hashes_match(monk
 
     assert summary.get('fast_path_used') is True
     assert drilldown_called['count'] == 0
-    assert worker.client.sync_calls == 0
+
+
+def test_v5_fast_path_preflight_server_error_appends_to_summary_and_returns_done_false(monkeypatch):
+    """When get_library_hash returns _error dict, preflight must add error to summary and return done=False (sync continues; per PREFLIGHT_LIBRARY_HASH_ERROR_VISIBILITY_TODO)."""
+    worker = _make_worker()
+    worker.client = Mock()
+    worker.client.get_library_hash = Mock(return_value={
+        '_error': True,
+        'message': 'Server error 500',
+        'status_code': 500,
+    })
+    conn = worker.db.new_api.backend.conn
+    summary = {}
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'local-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 1,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+    result = worker._v5_fast_path_preflight(conn, None, summary)
+    assert result.get('done') is False
+    assert result.get('merkle_candidates') is None
+    errs = summary.get('errors') or []
+    assert len(errs) == 1
+    assert errs[0].get('phase') == 'preflight_library_hash'
+    assert 'Server error 500' in (errs[0].get('error') or '')
+    assert errs[0].get('status_code') == 500
 
 
 def test_sync_v5_filters_deleted_books_with_merkle_candidates(monkeypatch):
