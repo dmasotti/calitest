@@ -608,7 +608,7 @@ def test_push_sync_saves_progress_cursor(monkeypatch):
         'progress_cursor': 'progress-123',
         'new_cursor': None,
     })
-    worker._process_batch_results = Mock()
+    worker._process_batch_results = Mock(return_value=False)  # falsy so we don't break before save_cursor
     worker._collect_local_changes_progressive = Mock(return_value=[(
         [{'op': 'update', 'item': {'id': 1, 'uuid': 'u1', 'title': 'T', 'last_modified': 1}, 'idempotency_key': 'c1'}],
         {},
@@ -641,7 +641,7 @@ def test_push_sync_saves_progress_cursor_each_batch():
             'new_cursor': 'new-2',
         },
     ])
-    worker._process_batch_results = Mock()
+    worker._process_batch_results = Mock(return_value=False)  # falsy so we don't break before save_cursor
     worker._collect_local_changes_progressive = Mock(return_value=[
         ([{'op': 'update', 'item': {'id': 1, 'uuid': 'u1', 'title': 'T1', 'last_modified': 1}, 'idempotency_key': 'c1'}], {}, {}),
         ([{'op': 'update', 'item': {'id': 2, 'uuid': 'u2', 'title': 'T2', 'last_modified': 2}, 'idempotency_key': 'c2'}], {}, {}),
