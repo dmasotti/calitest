@@ -35,6 +35,7 @@ def test_sync_json_request_is_gzipped_when_large(monkeypatch):
     assert body["ok"] is True
     assert len(calls) == 1
     assert calls[0]["headers"].get("Content-Encoding") == "gzip"
+    assert calls[0]["headers"].get("Content-Length") == str(len(calls[0]["body"]))
     assert "X-Original-Content-Length" in calls[0]["headers"]
     assert gzip.decompress(calls[0]["body"]).decode("utf-8").startswith('{"items":')
 
@@ -86,6 +87,7 @@ def test_non_sync_request_is_not_gzipped_even_when_large(monkeypatch):
     assert body["ok"] is True
     assert len(calls) == 1
     assert "Content-Encoding" not in calls[0]["headers"]
+    assert calls[0]["headers"].get("Content-Length") == str(len(calls[0]["body"]))
 
 
 def test_binary_cover_upload_is_not_gzipped(monkeypatch):
@@ -115,6 +117,7 @@ def test_binary_cover_upload_is_not_gzipped(monkeypatch):
     assert len(calls) == 1
     assert calls[0]["body"] == cover_data
     assert "Content-Encoding" not in calls[0]["headers"]
+    assert calls[0]["headers"].get("Content-Length") == str(len(cover_data))
 
 
 def test_gzip_response_body_is_decoded_when_transport_returns_compressed_bytes(monkeypatch):
