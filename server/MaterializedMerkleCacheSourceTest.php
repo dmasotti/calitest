@@ -15,6 +15,67 @@ class MaterializedMerkleCacheSourceTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_mysql_refreshing_touched_metadata_cache_uses_books_hash_v2_and_writes_versioned_cache(): void
+    {
+        if (!in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+            $this->markTestSkipped('MySQL-only cache source check');
+        }
+
+        [$user, $library] = $this->makeContext();
+        $service = app(MaterializedMerkleService::class);
+
+        $book = UserBook::create([
+            'id' => 9691,
+            'uuid' => 'aa000000-0000-4000-8000-000000009691',
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'title' => 'MySQL View Refresh',
+            'path' => 'mysql-view-refresh',
+            'author_sort' => 'Tester, Mysql',
+            'last_modified' => Carbon::create(2026, 3, 19, 11, 0, 0, 'UTC'),
+        ])->fresh();
+
+        $expectedHash = (string) DB::table('books_hash_v2')
+            ->where('user_id', $user->id)
+            ->where('library_id', $library->id)
+            ->where('uuid', $book->uuid)
+            ->value('metadata_hash');
+
+        $book->forceFill([
+            'metadata_hash_cache' => null,
+        ])->saveQuietly();
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        try {
+            $service->refreshMetadataHashCacheForTouchedUuids(
+                (int) $user->id,
+                (int) $library->id,
+                [$book->uuid]
+            );
+        } finally {
+            $queries = DB::getQueryLog();
+            DB::disableQueryLog();
+        }
+
+        $book->refresh();
+
+        $booksHashQueries = array_values(array_filter($queries, static function (array $entry): bool {
+            $sql = strtolower((string) ($entry['query'] ?? ''));
+            return str_contains($sql, 'books_hash_v2');
+        }));
+
+        $this->assertNotEmpty(
+            $booksHashQueries,
+            'MySQL refresh path should still read metadata hash from books_hash_v2 until a different strategy is explicitly adopted'
+        );
+        $this->assertSame(
+            'v2:' . $expectedHash . ':' . $book->last_modified->timestamp,
+            (string) $book->metadata_hash_cache
+        );
+    }
+
     public function test_pgsql_materialized_metadata_rebuild_uses_valid_book_cache_without_books_hash_view(): void
     {
         if (DB::getDriverName() !== 'pgsql') {

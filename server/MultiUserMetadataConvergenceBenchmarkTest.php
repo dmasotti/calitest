@@ -150,6 +150,22 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
         $this->assertSame(2, DB::table('libraries')->count());
     }
 
+    public function test_small_multi_user_metadata_benchmark_can_converge_in_one_pass_after_apply_side_effects(): void
+    {
+        $stats = app(MultiUserMetadataConvergenceBenchmarkService::class)->run([
+            'users' => 1,
+            'min_books' => 4,
+            'max_books' => 4,
+            'seed' => 20260312,
+            'max_passes' => 1,
+            'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
+            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+        ]);
+
+        $this->assertTrue($stats['user_results'][0]['converged']);
+        $this->assertSame(1, (int) $stats['user_results'][0]['passes']);
+    }
+
     public function test_small_multi_user_asset_benchmark_reports_cover_and_file_phase_breakdown(): void
     {
         $events = [];
