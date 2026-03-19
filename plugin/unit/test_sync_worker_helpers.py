@@ -1389,6 +1389,43 @@ def test_v5_fast_path_preflight_server_error_appends_to_summary_and_returns_done
     assert errs[0].get('status_code') == 500
 
 
+def test_v5_fast_path_preflight_rebuild_pending_exhausted_appends_pending_context_to_summary(monkeypatch):
+    worker = _make_worker()
+    worker.client = Mock()
+    worker.client.get_library_hash = Mock(return_value={
+        '_error': True,
+        'message': 'Library hash rebuild pending after 3 attempts',
+        'status_code': 202,
+        'rebuild_pending': True,
+        'retry_after': 60,
+        'reason': 'stale_dimensions',
+        'dimensions': ['metadata', 'covers', 'files'],
+    })
+    conn = worker.db.new_api.backend.conn
+    summary = {}
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'local-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 1,
+        }
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    result = worker._v5_fast_path_preflight(conn, None, summary)
+
+    assert result.get('done') is False
+    errs = summary.get('errors') or []
+    assert len(errs) == 1
+    assert errs[0].get('phase') == 'preflight_library_hash'
+    assert errs[0].get('status_code') == 202
+    assert errs[0].get('rebuild_pending') is True
+    assert errs[0].get('retry_after') == 60
+    assert errs[0].get('reason') == 'stale_dimensions'
+    assert errs[0].get('dimensions') == ['metadata', 'covers', 'files']
+
+
 def test_sync_v5_filters_deleted_books_with_merkle_candidates(monkeypatch):
     worker = _make_worker()
     worker.gui = None
@@ -1802,6 +1839,126 @@ def test_v5_merkle_drilldown_returns_empty_when_any_leaves_call_raises(monkeypat
         ts_func=lambda: 't',
     )
     assert candidates == []
+
+
+def test_v5_fast_path_merkle_branch_error_appends_to_summary(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+    worker.client = SimpleNamespace(
+        get_library_hash=lambda *_args, **_kwargs: {
+            'library_metadata_hash': 'server-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'root_hash': 'server-root',
+            'total_books': 1,
+        },
+        get_merkle_branches=lambda **_kwargs: {
+            '_error': True,
+            'message': 'branches endpoint 503',
+            'status_code': 503,
+        },
+    )
+    summary = {}
+    conn = worker.db.new_api.backend.conn
+    fake_sync_utils = SimpleNamespace(
+        get_library_hash=lambda _conn, _lib_uuid: {
+            'library_metadata_hash': 'local-hash',
+            'library_covers_hash': None,
+            'library_files_hash': None,
+            'total_books': 1,
+        },
+        get_merkle_root=lambda _conn: {'root_hash': 'local-root'},
+    )
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    result = worker._v5_fast_path_preflight(conn, None, summary)
+
+    assert result.get('done') is False
+    errs = summary.get('errors') or []
+    assert any(isinstance(err, dict) and err.get('phase') == 'merkle_drilldown_branches' for err in errs)
+    branch_err = next(err for err in errs if isinstance(err, dict) and err.get('phase') == 'merkle_drilldown_branches')
+    assert branch_err.get('status_code') == 503
+    assert 'branches endpoint 503' in (branch_err.get('error') or '')
+
+
+def test_v5_push_missing_verify_batch_failure_appends_summary_error():
+    worker = _make_worker()
+    worker._v5_get_missing_sql_payload_map = Mock(return_value={})
+    worker._last_v5_missing_sql_payload_error = None
+    worker._compute_metadata_signature = Mock(return_value='sha256:fallback-meta')
+    worker._cached_metadata_signature = Mock(return_value='sha256:fallback-meta')
+    worker._check_cancelled = Mock()
+    worker._pending_verify_policy = Mock(return_value='eventual')
+    worker._presigned_verify_enabled = Mock(return_value=True)
+    worker._presigned_verify_batch_enabled = Mock(return_value=True)
+    worker._sync_files_enabled = Mock(return_value=True)
+    worker._sync_covers_enabled = Mock(return_value=False)
+    worker._v5_extract_hash_no_ts = Mock(return_value='abc')
+    worker._v5_get_sync_cache_field_by_uuid = Mock(return_value=None)
+    worker._read_cover_bytes_byte_only = Mock(return_value=(None, 'none', 'none'))
+    worker._v5_remove_local_formats = Mock(return_value=0)
+    worker._v5_delete_file_from_server = Mock(return_value=True)
+    worker._v5_delete_cover_from_server = Mock(return_value=True)
+    worker._presigned_verify_enabled = Mock(return_value=True)
+    worker._presigned_verify_batch_enabled = Mock(return_value=True)
+    worker.status_tag_mappings = {}
+    worker._build_files_array_for_book = Mock(return_value=(
+        [{'format': 'EPUB', 'path': '/tmp/book.epub', 'file_hash': 'abc'}],
+        {
+            'status': 'ok',
+            'declared_formats': ['EPUB'],
+            'files_payload_count': 1,
+            'missing_formats': [],
+            'error_formats': [],
+            'unavailable_formats': [],
+        },
+    ))
+    worker.db.get_metadata = Mock(return_value=SimpleNamespace(uuid='u-1'))
+    worker.db.data.has_id = lambda _bid: True
+    worker.db.formats = Mock(return_value=['EPUB'])
+    worker.db.get_proxy_metadata = Mock(return_value=SimpleNamespace(uuid='u-1'))
+    worker.client = SimpleNamespace(
+        post_sync=Mock(return_value={'results': [{
+            'status': 'created',
+            'uuid': 'u-1',
+            'book_id': 1,
+            'file_uploads': [{'format': 'EPUB', 'upload_url': 'https://upload.test/file'}],
+            'server_item': {},
+        }]}),
+        upload_file=Mock(return_value={'session_id': 'sess-1'}),
+        upload_cover=Mock(return_value={}),
+        verify_upload_sessions_batch=Mock(side_effect=RuntimeError('verify batch down')),
+    )
+    sm = Mock()
+    sm.calibre_to_json_item = Mock(return_value={
+        'uuid': 'u-1',
+        'title': 'T',
+        'files': [{'format': 'EPUB', 'path': '/tmp/book.epub'}],
+    })
+    worker._upload_file = Mock(return_value={
+        'success': True,
+        'response': {
+            'pending_verify': True,
+            'session_id': 'sess-1',
+        },
+    })
+    summary = {'books_created': 0, 'books_updated': 0, 'books_synced': 0, 'files_deleted_local': 0, 'errors': []}
+
+    had_errors = worker._v5_push_missing_items(
+        to_upload=[{'uuid': 'u-1', 'needs_metadata': True, 'needs_cover': False, 'needs_files': True}],
+        missing_id_map={'u-1': 1},
+        uuids_deleted_locally=set(),
+        sync_library_path='/tmp/unused',
+        sm=sm,
+        updates_by_uuid={},
+        summary=summary,
+    )
+
+    assert had_errors is True
+    errs = summary.get('errors') or []
+    assert any(isinstance(err, dict) and err.get('phase') == 'push_missing_verify_batch' for err in errs)
+    verify_err = next(err for err in errs if isinstance(err, dict) and err.get('phase') == 'push_missing_verify_batch')
+    assert 'verify batch down' in (verify_err.get('error') or '')
 
 
 def test_sync_v5_merkle_candidates_not_in_local_inventory_send_empty_batch(monkeypatch):

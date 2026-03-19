@@ -201,3 +201,142 @@ class TestRestClientLibraryHash:
         # Should have params with library_id
         assert 'params' in call_args[1]
         assert call_args[1]['params']['library_id'] == 42
+
+    def test_get_library_hash_retries_after_rebuild_pending_then_succeeds(self, monkeypatch):
+        client = rest_client.RestApiClient('http://test.com', 'token123')
+
+        responses = [
+            rest_client.RestApiError(
+                'Request failed with status 202',
+                status_code=202,
+                response_body={
+                    'rebuild_pending': True,
+                    'reason': 'stale_dimensions',
+                    'dimensions': ['metadata', 'covers', 'files'],
+                    'retry_after': 2,
+                },
+            ),
+            {
+                'library_metadata_hash': 'a' * 64,
+                'library_covers_hash': 'b' * 64,
+                'library_files_hash': 'c' * 64,
+                'total_books': 100,
+                'last_modified': '2024-01-01T00:00:00Z',
+            },
+        ]
+        sleeps = []
+
+        def fake_get(*_args, **_kwargs):
+            result = responses.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        client.get = Mock(side_effect=fake_get)
+        monkeypatch.setattr(rest_client.time, 'sleep', lambda seconds: sleeps.append(seconds))
+
+        result = client.get_library_hash(35)
+
+        assert result is not None
+        assert result['library_metadata_hash'] == 'a' * 64
+        assert sleeps == [2]
+        assert client.get.call_count == 2
+
+    def test_get_library_hash_returns_error_after_max_rebuild_pending_retries(self, monkeypatch):
+        client = rest_client.RestApiClient('http://test.com', 'token123')
+
+        def pending_error(retry_after):
+            return rest_client.RestApiError(
+                'Request failed with status 202',
+                status_code=202,
+                response_body={
+                    'rebuild_pending': True,
+                    'reason': 'missing_dimensions',
+                    'dimensions': ['metadata', 'covers', 'files'],
+                    'retry_after': retry_after,
+                },
+            )
+
+        client.get = Mock(side_effect=[
+            pending_error(1),
+            pending_error(3),
+            pending_error(5),
+        ])
+        sleeps = []
+        monkeypatch.setattr(rest_client.time, 'sleep', lambda seconds: sleeps.append(seconds))
+
+        result = client.get_library_hash(35)
+
+        assert result is not None
+        assert result.get('_error') is True
+        assert result.get('status_code') == 202
+        assert 'rebuild pending' in result.get('message', '').lower()
+        assert result.get('retry_after') == 5
+        assert result.get('rebuild_pending') is True
+        assert sleeps == [1, 3]
+        assert client.get.call_count == 3
+
+    def test_get_library_hash_rebuild_pending_invalid_retry_after_uses_default_wait(self, monkeypatch):
+        client = rest_client.RestApiClient('http://test.com', 'token123')
+
+        client.get = Mock(side_effect=[
+            rest_client.RestApiError(
+                'Request failed with status 202',
+                status_code=202,
+                response_body={
+                    'rebuild_pending': True,
+                    'reason': 'stale_dimensions',
+                    'dimensions': ['metadata'],
+                    'retry_after': 'invalid',
+                },
+            ),
+            {
+                'library_metadata_hash': 'd' * 64,
+                'library_covers_hash': None,
+                'library_files_hash': None,
+                'total_books': 5,
+                'last_modified': '2024-01-01T00:00:00Z',
+            },
+        ])
+        sleeps = []
+        monkeypatch.setattr(rest_client.time, 'sleep', lambda seconds: sleeps.append(seconds))
+
+        result = client.get_library_hash(35)
+
+        assert result is not None
+        assert result['library_metadata_hash'] == 'd' * 64
+        assert sleeps == [60]
+        assert client.get.call_count == 2
+
+    def test_get_merkle_branches_500_error_returns_error_dict(self):
+        client = rest_client.RestApiClient('http://test.com', 'token123')
+        client.get = Mock(side_effect=rest_client.RestApiError('Merkle branches failed', status_code=500))
+
+        result = client.get_merkle_branches(library_id=35, dimension='metadata')
+
+        assert result is not None
+        assert result.get('_error') is True
+        assert result.get('status_code') == 500
+        assert 'Merkle branches failed' in result.get('message', '')
+
+    def test_get_merkle_leaves_timeout_returns_error_dict(self):
+        client = rest_client.RestApiClient('http://test.com', 'token123')
+        client.get = Mock(side_effect=TimeoutError('Merkle leaves timeout'))
+
+        result = client.get_merkle_leaves(library_id=35, dimension='metadata', branch_id=3)
+
+        assert result is not None
+        assert result.get('_error') is True
+        assert result.get('status_code') is None
+        assert 'Merkle leaves timeout' in result.get('message', '')
+
+    def test_get_merkle_root_generic_exception_returns_error_dict(self):
+        client = rest_client.RestApiClient('http://test.com', 'token123')
+        client.get = Mock(side_effect=Exception('Merkle root exploded'))
+
+        result = client.get_merkle_root(library_id=35)
+
+        assert result is not None
+        assert result.get('_error') is True
+        assert result.get('status_code') is None
+        assert 'Merkle root exploded' in result.get('message', '')
