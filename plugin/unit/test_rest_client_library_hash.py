@@ -6,7 +6,7 @@ Tests network error handling and response parsing.
 import pytest
 from pathlib import Path
 import importlib.util
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock, MagicMock, patch
 
 # Import rest_client
 plugin_path = Path(__file__).parent.parent.parent.parent / 'sync_calimob'
@@ -340,3 +340,18 @@ class TestRestClientLibraryHash:
         assert result.get('_error') is True
         assert result.get('status_code') is None
         assert 'Merkle root exploded' in result.get('message', '')
+
+    def test_sync_v5_can_enable_server_profile_via_env(self, monkeypatch):
+        client = rest_client.RestApiClient('http://test.com', 'token123')
+        monkeypatch.setenv('CALIMOB_PROFILE_SYNC_V5', '1')
+
+        with patch.object(client, 'post', return_value={'ok': True}) as mock_post:
+            client.sync_v5(
+                library_id=8,
+                calibre_library_uuid='1685fd4f-054e-4451-9df8-119c27fc1289',
+                client_books={'b': {}, 'd': []},
+            )
+
+        _, kwargs = mock_post.call_args
+        body = kwargs['body']
+        assert body['options']['profile_sync_v5'] is True

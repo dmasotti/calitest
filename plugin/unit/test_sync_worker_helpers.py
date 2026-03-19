@@ -2313,6 +2313,55 @@ def test_v5_merkle_drilldown_accepts_tuple_uuids(monkeypatch):
     assert candidates == ['aa000000-0000-4000-8000-000000000202']
 
 
+def test_v5_merkle_drilldown_requests_inline_uuids_for_metadata_leaves(monkeypatch):
+    worker = _make_worker()
+    worker.library_id = 'lib-merkle'
+
+    conn = sqlite3.connect(':memory:')
+    conn.execute("CREATE TABLE calimob_books_hash_v2 (uuid TEXT, metadata_hash TEXT)")
+    conn.execute(
+        "INSERT INTO calimob_books_hash_v2 (uuid, metadata_hash) VALUES (?, ?)",
+        ('aa000000-0000-4000-8000-000000000204', 'a' * 64),
+    )
+    conn.commit()
+
+    leaf_calls = []
+
+    class FakeClient:
+        def get_merkle_branches(self, **kwargs):
+            return {'branches': [{'branch_id': 10, 'branch_hash': 'f' * 64}]}
+
+        def get_merkle_leaves(self, **kwargs):
+            leaf_calls.append(kwargs)
+            return {
+                'leaves': [
+                    {
+                        'leaf_id': 170,
+                        'leaf_hash': 'e' * 64,
+                        'uuids': ['aa000000-0000-4000-8000-000000000204'],
+                    }
+                ]
+            }
+
+        def get_merkle_leaf_uuids(self, **kwargs):
+            raise AssertionError('metadata drill-down should not need leaf-uuids when leaves already requested inline')
+
+    worker.client = FakeClient()
+    fake_sync_utils = SimpleNamespace(get_merkle_root=lambda _conn: {'root_hash': 'local-root'})
+    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
+
+    candidates = worker._v5_merkle_metadata_drilldown(
+        conn,
+        local_hash_data={'library_metadata_hash': 'x' * 64},
+        server_hash_data={'root_hash': 'server-root'},
+        ts_func=lambda: 't',
+    )
+
+    assert candidates == ['aa000000-0000-4000-8000-000000000204']
+    assert leaf_calls
+    assert leaf_calls[0]['include_uuids'] is True
+
+
 def test_v5_merkle_drilldown_server_branch_only_still_collects_candidates(monkeypatch):
     worker = _make_worker()
     worker.library_id = 'lib-merkle'
