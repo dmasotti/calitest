@@ -1,6 +1,7 @@
 import gzip
 from unittest.mock import Mock
 
+import calibre_plugins.sync_calimob.rest_client as rest_client_module
 from calibre_plugins.sync_calimob.rest_client import RestApiClient
 
 
@@ -12,6 +13,7 @@ def _make_client():
     client = RestApiClient(gui)
     client.token = "test-token-123"
     client._raw_discovery_endpoint = "https://api.example.com"
+    client.get_api_base = lambda force_refresh=False: "https://api.example.com/api"
     return client
 
 
@@ -136,3 +138,61 @@ def test_gzip_response_body_is_decoded_when_transport_returns_compressed_bytes(m
     assert response["status"] == "200"
     assert body["ok"] is True
     assert body["mode"] == "compressed"
+
+
+def test_request_adds_ts_cache_buster_without_existing_params(monkeypatch):
+    client = _make_client()
+    calls = []
+
+    def fake_request(url, method, body, headers):
+        calls.append({"url": url, "method": method, "body": body, "headers": dict(headers)})
+        return {"status": "200"}, b'{"ok": true}'
+
+    monkeypatch.setattr(rest_client_module.time, "time", lambda: 1700000000.123)
+    client.http.request = fake_request
+
+    response, body = client._request("GET", "/libraries", success_status=200)
+
+    assert response["status"] == "200"
+    assert body["ok"] is True
+    assert len(calls) == 1
+    assert calls[0]["url"] == "https://api.example.com/api/libraries?ts=1700000000123"
+
+
+def test_request_adds_ts_cache_buster_and_preserves_existing_params(monkeypatch):
+    client = _make_client()
+    calls = []
+
+    def fake_request(url, method, body, headers):
+        calls.append({"url": url, "method": method, "body": body, "headers": dict(headers)})
+        return {"status": "200"}, b'{"ok": true}'
+
+    monkeypatch.setattr(rest_client_module.time, "time", lambda: 1700000001.456)
+    client.http.request = fake_request
+
+    response, body = client._request("GET", "/sync/v5/library-hash", params={"library_id": "abc-123"}, success_status=200)
+
+    assert response["status"] == "200"
+    assert body["ok"] is True
+    assert len(calls) == 1
+    assert calls[0]["url"] == "https://api.example.com/api/sync/v5/library-hash?library_id=abc-123&ts=1700000001456"
+
+
+def test_request_adds_test_db_connection_header_when_env_is_set(monkeypatch):
+    client = _make_client()
+    calls = []
+
+    def fake_request(url, method, body, headers):
+        calls.append({"url": url, "method": method, "body": body, "headers": dict(headers)})
+        return {"status": "200"}, b'{"ok": true}'
+
+    monkeypatch.setenv("CALIMOB_TEST_DB_CONNECTION", "pgsql_test")
+    monkeypatch.setattr(rest_client_module.time, "time", lambda: 1700000002.789)
+    client.http.request = fake_request
+
+    response, body = client._request("GET", "/libraries", success_status=200)
+
+    assert response["status"] == "200"
+    assert body["ok"] is True
+    assert len(calls) == 1
+    assert calls[0]["headers"].get("X-Calimob-Test-Connection") == "pgsql_test"
