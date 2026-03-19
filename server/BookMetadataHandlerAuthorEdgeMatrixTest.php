@@ -59,7 +59,7 @@ class BookMetadataHandlerAuthorEdgeMatrixTest extends TestCase
         }));
 
         $this->assertSame([], $deleteQueries, 'No-op author update must not delete and recreate pivot rows');
-        $this->assertSame(['H. G. Wells', 'Marcus Sakey'], $this->authorNamesForBook($book, $user, $library));
+        $this->assertSame(['Marcus Sakey', 'H. G. Wells'], $this->authorNamesForBook($book, $user, $library));
     }
 
     public function test_authors_existing_resolution_is_prefetched_not_one_query_per_author(): void
@@ -273,7 +273,7 @@ class BookMetadataHandlerAuthorEdgeMatrixTest extends TestCase
             count($linkWrites),
             'Author pivot persistence must use bulk write, not one insert/update per author row'
         );
-        $this->assertSame(['AC/DC Writer', 'Marcus Sakey', 'Québec Author'], $this->authorNamesForBook($book, $user, $library));
+        $this->assertSame(['Québec Author', 'Marcus Sakey', 'AC/DC Writer'], $this->authorNamesForBook($book, $user, $library));
     }
 
     public function test_authors_edge_matrix_explicit_empty_array_clears_links(): void
@@ -293,6 +293,68 @@ class BookMetadataHandlerAuthorEdgeMatrixTest extends TestCase
         ], $user, $library->id);
 
         $this->assertSame([], $this->authorNamesForBook($book, $user, $library));
+    }
+
+    public function test_authors_position_reorder_preserves_round_trip_order(): void
+    {
+        [$user, $library, $book] = $this->makeContext();
+        $handler = app(BookMetadataHandler::class);
+
+        $first = $this->createAuthor($user, $library, 1601, 'Marcus Sakey');
+        $second = $this->createAuthor($user, $library, 1602, 'H. G. Wells');
+        $third = $this->createAuthor($user, $library, 1603, 'AC/DC Writer');
+
+        DB::table('books_authors_link')->insert([
+            [
+                'uuid' => 'author-pivot-reorder-1',
+                'book' => $book->uuid,
+                'author' => $first->id,
+                'position' => 0,
+                'user_id' => $user->id,
+                'library_id' => $library->id,
+            ],
+            [
+                'uuid' => 'author-pivot-reorder-2',
+                'book' => $book->uuid,
+                'author' => $second->id,
+                'position' => 1,
+                'user_id' => $user->id,
+                'library_id' => $library->id,
+            ],
+            [
+                'uuid' => 'author-pivot-reorder-3',
+                'book' => $book->uuid,
+                'author' => $third->id,
+                'position' => 2,
+                'user_id' => $user->id,
+                'library_id' => $library->id,
+            ],
+        ]);
+
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = strtolower($query->sql);
+        });
+
+        $handler->applyBookMetadata($book, [
+            'authors' => [
+                ['name' => 'AC/DC Writer', 'position' => 0],
+                ['name' => 'Marcus Sakey', 'position' => 1],
+                ['name' => 'H. G. Wells', 'position' => 2],
+            ],
+        ], $user, $library->id);
+
+        $linkWrites = array_values(array_filter($queries, static function (string $sql): bool {
+            return str_contains($sql, 'books_authors_link')
+                && (str_contains($sql, 'insert') || str_contains($sql, 'update'));
+        }));
+
+        $this->assertLessThanOrEqual(
+            2,
+            count($linkWrites),
+            'Author reorder should use bulk pivot persistence, not one write per reordered row'
+        );
+        $this->assertSame(['AC/DC Writer', 'Marcus Sakey', 'H. G. Wells'], $this->authorNamesForBook($book, $user, $library));
     }
 
     private function makeContext(): array
@@ -337,7 +399,7 @@ class BookMetadataHandlerAuthorEdgeMatrixTest extends TestCase
             ->where('books_authors_link.book', $book->uuid)
             ->where('books_authors_link.user_id', $user->id)
             ->where('books_authors_link.library_id', $library->id)
-            ->orderBy('books_authors.name')
+            ->orderBy('books_authors_link.position')
             ->pluck('books_authors.name')
             ->values()
             ->all();
