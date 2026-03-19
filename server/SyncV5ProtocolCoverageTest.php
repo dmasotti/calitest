@@ -508,6 +508,9 @@ class SyncV5ProtocolCoverageTest extends TestCase
                     'all_identifiers_map_ms',
                     'loop_missing_from_server_ms',
                     'loop_updates_for_client_ms',
+                    'loop_updates_metadata_payload_ms',
+                    'loop_updates_metadata_bookdata_ms',
+                    'loop_updates_metadata_hash_ms',
                     'dedupe_and_finalize_ms',
                     'total_ms',
                 ],
@@ -827,7 +830,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
 
         $response->assertStatus(200);
         $this->assertCount(5, $response->json('updates_for_client') ?? []);
-        $this->assertSame(2, $this->countBooksHashV2Queries($queries));
+        $this->assertSame(1, $this->countBooksHashV2Queries($queries));
     }
 
     public function test_sync_v5_updates_for_client_keeps_metadata_hash_when_no_uuid_overlap_and_cache_missing(): void
@@ -968,6 +971,41 @@ class SyncV5ProtocolCoverageTest extends TestCase
             $entry = collect($response->json('updates_for_client') ?? [])->firstWhere('uuid', $book->uuid);
             $this->assertSame($this->metadataHashForBook($book), strtolower((string) ($entry['metadata_hash'] ?? '')));
         }
+    }
+
+    public function test_sync_v5_metadata_profile_subtimers_are_reported_and_consistent(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $this->seedServerBatchBooksWithCacheState($library, 3, 'all_missing');
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 10,
+            'client_books' => [
+                'b' => [
+                    '99999999-9999-9999-9999-999999999996' => ['m' => str_repeat('f', 64)],
+                ],
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $profile = $response->json('profile.sync_v5') ?? [];
+        $payloadMs = (float) ($profile['loop_updates_metadata_payload_ms'] ?? -1);
+        $bookdataMs = (float) ($profile['loop_updates_metadata_bookdata_ms'] ?? -1);
+        $hashMs = (float) ($profile['loop_updates_metadata_hash_ms'] ?? -1);
+        $this->assertGreaterThanOrEqual(0.0, $bookdataMs);
+        $this->assertGreaterThanOrEqual(0.0, $hashMs);
+        $this->assertGreaterThanOrEqual($bookdataMs + $hashMs, $payloadMs);
+        $this->assertSame(0.0, (float) ($profile['loop_updates_files_payload_ms'] ?? -1));
     }
 
     public function test_sync_v5_treats_prefixed_and_unsorted_files_hashes_as_equivalent_when_content_matches(): void
