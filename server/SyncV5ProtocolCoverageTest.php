@@ -627,6 +627,349 @@ class SyncV5ProtocolCoverageTest extends TestCase
         );
     }
 
+    public function test_sync_v5_server_batch_prime_skips_reloading_books_when_server_page_cache_is_all_valid(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $this->seedServerBatchBooksWithCacheState($library, 5, 'all_valid');
+
+        \DB::flushQueryLog();
+        \DB::enableQueryLog();
+
+        try {
+            $response = $this->postJson('/api/sync/v5', [
+                'library_id' => (string) $library->id,
+                'calibre_library_uuid' => $library->calibre_library_id,
+                'cursor' => null,
+                'batch_size' => 10,
+                'client_books' => ['b' => [], 'd' => []],
+                'options' => [
+                    'sync_files_enabled' => false,
+                    'sync_covers_enabled' => false,
+                    'profile_sync_v5' => true,
+                ],
+            ]);
+        } finally {
+            $queries = \DB::getQueryLog();
+            \DB::disableQueryLog();
+        }
+
+        $response->assertStatus(200);
+        $this->assertCount(5, $response->json('updates_for_client') ?? []);
+        $this->assertSame(0, $this->countServerBatchPrimeBooksQueries($queries));
+        $this->assertSame(0, $this->countBooksHashV2Queries($queries));
+    }
+
+    public function test_sync_v5_server_batch_prime_queries_books_hash_v2_only_for_missing_cache_subset(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $this->seedServerBatchBooksWithCacheState($library, 5, 'mixed');
+
+        \DB::flushQueryLog();
+        \DB::enableQueryLog();
+
+        try {
+            $response = $this->postJson('/api/sync/v5', [
+                'library_id' => (string) $library->id,
+                'calibre_library_uuid' => $library->calibre_library_id,
+                'cursor' => null,
+                'batch_size' => 10,
+                'client_books' => ['b' => [], 'd' => []],
+                'options' => [
+                    'sync_files_enabled' => false,
+                    'sync_covers_enabled' => false,
+                    'profile_sync_v5' => true,
+                ],
+            ]);
+        } finally {
+            $queries = \DB::getQueryLog();
+            \DB::disableQueryLog();
+        }
+
+        $response->assertStatus(200);
+        $this->assertCount(5, $response->json('updates_for_client') ?? []);
+        $this->assertSame(0, $this->countServerBatchPrimeBooksQueries($queries));
+        $this->assertSame(0, $this->countBooksHashV2Queries($queries));
+    }
+
+    public function test_sync_v5_server_batch_prime_falls_back_to_single_books_hash_v2_query_when_all_cache_missing(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $this->seedServerBatchBooksWithCacheState($library, 5, 'all_missing');
+
+        \DB::flushQueryLog();
+        \DB::enableQueryLog();
+
+        try {
+            $response = $this->postJson('/api/sync/v5', [
+                'library_id' => (string) $library->id,
+                'calibre_library_uuid' => $library->calibre_library_id,
+                'cursor' => null,
+                'batch_size' => 10,
+                'client_books' => ['b' => [], 'd' => []],
+                'options' => [
+                    'sync_files_enabled' => false,
+                    'sync_covers_enabled' => false,
+                    'profile_sync_v5' => true,
+                ],
+            ]);
+        } finally {
+            $queries = \DB::getQueryLog();
+            \DB::disableQueryLog();
+        }
+
+        $response->assertStatus(200);
+        $this->assertCount(5, $response->json('updates_for_client') ?? []);
+        $this->assertSame(0, $this->countServerBatchPrimeBooksQueries($queries));
+        $this->assertSame(0, $this->countBooksHashV2Queries($queries));
+    }
+
+    public function test_sync_v5_server_batch_prime_is_zero_when_server_page_is_empty(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 10,
+            'client_books' => ['b' => [], 'd' => []],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $this->assertSame([], $response->json('updates_for_client') ?? []);
+        $this->assertSame(0.0, (float) ($response->json('profile.sync_v5.prime_server_batch_hash_ms') ?? -1));
+    }
+
+    public function test_sync_v5_server_batch_prime_is_zero_when_client_inventory_has_no_uuid_overlap(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $this->seedServerBatchBooksWithCacheState($library, 5, 'all_missing');
+
+        \DB::flushQueryLog();
+        \DB::enableQueryLog();
+
+        try {
+            $response = $this->postJson('/api/sync/v5', [
+                'library_id' => (string) $library->id,
+                'calibre_library_uuid' => $library->calibre_library_id,
+                'cursor' => null,
+                'batch_size' => 10,
+                'client_books' => [
+                    'b' => [
+                        '99999999-9999-9999-9999-999999999991' => ['m' => str_repeat('a', 64)],
+                        '99999999-9999-9999-9999-999999999992' => ['m' => str_repeat('b', 64)],
+                    ],
+                    'd' => [],
+                ],
+                'options' => [
+                    'sync_files_enabled' => false,
+                    'sync_covers_enabled' => false,
+                    'profile_sync_v5' => true,
+                ],
+            ]);
+        } finally {
+            $queries = \DB::getQueryLog();
+            \DB::disableQueryLog();
+        }
+
+        $response->assertStatus(200);
+        $this->assertCount(5, $response->json('updates_for_client') ?? []);
+        $this->assertLessThan(
+            1.0,
+            (float) ($response->json('profile.sync_v5.prime_server_batch_hash_ms') ?? -1),
+            'prime_server_batch_hash_ms should stay near-zero when there is no UUID overlap with the client inventory'
+        );
+        $this->assertSame(0, $this->countBooksHashV2Queries($queries));
+    }
+
+    public function test_sync_v5_server_batch_prime_limits_books_hash_v2_to_overlapping_server_page_subset(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $books = $this->seedServerBatchBooksWithCacheState($library, 5, 'all_missing');
+
+        \DB::flushQueryLog();
+        \DB::enableQueryLog();
+
+        try {
+            $response = $this->postJson('/api/sync/v5', [
+                'library_id' => (string) $library->id,
+                'calibre_library_uuid' => $library->calibre_library_id,
+                'cursor' => null,
+                'batch_size' => 10,
+                'client_books' => [
+                    'b' => [
+                        $books[0]->uuid => ['m' => str_repeat('a', 64)],
+                        $books[1]->uuid => ['m' => str_repeat('b', 64)],
+                        '99999999-9999-9999-9999-999999999993' => ['m' => str_repeat('c', 64)],
+                    ],
+                    'd' => [],
+                ],
+                'options' => [
+                    'sync_files_enabled' => false,
+                    'sync_covers_enabled' => false,
+                    'profile_sync_v5' => true,
+                ],
+            ]);
+        } finally {
+            $queries = \DB::getQueryLog();
+            \DB::disableQueryLog();
+        }
+
+        $response->assertStatus(200);
+        $this->assertCount(5, $response->json('updates_for_client') ?? []);
+        $this->assertSame(2, $this->countBooksHashV2Queries($queries));
+    }
+
+    public function test_sync_v5_updates_for_client_keeps_metadata_hash_when_no_uuid_overlap_and_cache_missing(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $books = $this->seedServerBatchBooksWithCacheState($library, 3, 'all_missing');
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 10,
+            'client_books' => [
+                'b' => [
+                    '99999999-9999-9999-9999-999999999991' => ['m' => str_repeat('a', 64)],
+                    '99999999-9999-9999-9999-999999999992' => ['m' => str_repeat('b', 64)],
+                ],
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $updatesByUuid = collect($response->json('updates_for_client') ?? [])->keyBy('uuid');
+        foreach ($books as $book) {
+            $entry = $updatesByUuid->get($book->uuid);
+            $this->assertNotNull($entry, 'Server book must still be returned in updates_for_client');
+            $this->assertNotNull($entry['metadata_hash'] ?? null, 'metadata_hash must not become null when there is no UUID overlap');
+            $this->assertSame($this->metadataHashForBook($book), strtolower((string) $entry['metadata_hash']));
+        }
+    }
+
+    public function test_sync_v5_updates_for_client_keeps_metadata_hash_when_no_uuid_overlap_and_cache_is_valid(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $books = $this->seedServerBatchBooksWithCacheState($library, 3, 'all_valid');
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 10,
+            'client_books' => [
+                'b' => [
+                    '99999999-9999-9999-9999-999999999993' => ['m' => str_repeat('c', 64)],
+                ],
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $updatesByUuid = collect($response->json('updates_for_client') ?? [])->keyBy('uuid');
+        foreach ($books as $book) {
+            $entry = $updatesByUuid->get($book->uuid);
+            $this->assertNotNull($entry);
+            $this->assertSame($this->metadataHashForBook($book), strtolower((string) ($entry['metadata_hash'] ?? '')));
+        }
+    }
+
+    public function test_sync_v5_updates_for_client_keeps_metadata_hash_for_overlap_and_non_overlap_books(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $books = $this->seedServerBatchBooksWithCacheState($library, 4, 'all_missing');
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 10,
+            'client_books' => [
+                'b' => [
+                    $books[0]->uuid => ['m' => str_repeat('a', 64)],
+                    $books[1]->uuid => ['m' => str_repeat('b', 64)],
+                    '99999999-9999-9999-9999-999999999994' => ['m' => str_repeat('d', 64)],
+                ],
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $updatesByUuid = collect($response->json('updates_for_client') ?? [])->keyBy('uuid');
+        foreach ($books as $book) {
+            $entry = $updatesByUuid->get($book->uuid);
+            $this->assertNotNull($entry);
+            $this->assertNotSame('', (string) ($entry['metadata_hash'] ?? ''));
+            $this->assertSame($this->metadataHashForBook($book), strtolower((string) $entry['metadata_hash']));
+        }
+    }
+
+    public function test_sync_v5_updates_for_client_metadata_hash_survives_metadata_only_short_circuit(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $books = $this->seedServerBatchBooksWithCacheState($library, 2, 'mixed');
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 10,
+            'client_books' => [
+                'b' => [
+                    '99999999-9999-9999-9999-999999999995' => ['m' => str_repeat('e', 64)],
+                ],
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $this->assertSame(0.0, (float) ($response->json('profile.sync_v5.loop_updates_files_payload_ms') ?? -1));
+        foreach ($response->json('updates_for_client') ?? [] as $entry) {
+            $this->assertNotSame('', (string) ($entry['metadata_hash'] ?? ''));
+            $this->assertNotNull($entry['metadata_hash'] ?? null);
+        }
+        foreach ($books as $book) {
+            $entry = collect($response->json('updates_for_client') ?? [])->firstWhere('uuid', $book->uuid);
+            $this->assertSame($this->metadataHashForBook($book), strtolower((string) ($entry['metadata_hash'] ?? '')));
+        }
+    }
+
     public function test_sync_v5_treats_prefixed_and_unsorted_files_hashes_as_equivalent_when_content_matches(): void
     {
         [, $library] = $this->setupUserLibrary();
@@ -743,5 +1086,53 @@ class SyncV5ProtocolCoverageTest extends TestCase
             'rating' => $book->rating,
             'files' => [],
         ]);
+    }
+
+    private function seedServerBatchBooksWithCacheState(Library $library, int $count, string $mode): array
+    {
+        $baseTs = Carbon::create(2026, 3, 18, 9, 0, 0, 'UTC');
+        $books = [];
+        for ($i = 0; $i < $count; $i++) {
+            $book = UserBook::factory()->create([
+                'user_id' => $library->user_id,
+                'library_id' => (string) $library->id,
+                'uuid' => sprintf('ccccccc%d-cccc-cccc-cccc-ccccccccccc%d', $i, $i),
+                'title' => 'Prime Matrix ' . $i,
+                'path' => 'Prime Matrix ' . $i,
+                'last_modified' => $baseTs->copy()->addSeconds($i),
+            ]);
+            $book->refresh();
+            $hash = $this->metadataHashForBook($book);
+
+            $cache = match ($mode) {
+                'all_valid' => 'v2:' . $hash . ':' . $book->last_modified->timestamp,
+                'mixed' => $i < 2 ? 'v2:' . $hash . ':' . $book->last_modified->timestamp : null,
+                'all_missing' => null,
+                default => throw new \InvalidArgumentException('Unsupported cache seed mode: ' . $mode),
+            };
+
+            $book->forceFill([
+                'metadata_hash_cache' => $cache,
+            ])->saveQuietly();
+            $books[] = $book->fresh();
+        }
+
+        return $books;
+    }
+
+    private function countServerBatchPrimeBooksQueries(array $queries): int
+    {
+        return count(array_filter($queries, static function (array $entry): bool {
+            $sql = strtolower((string) ($entry['query'] ?? ''));
+            return str_contains($sql, 'select "uuid", "last_modified", "metadata_hash_cache" from "books"');
+        }));
+    }
+
+    private function countBooksHashV2Queries(array $queries): int
+    {
+        return count(array_filter($queries, static function (array $entry): bool {
+            $sql = strtolower((string) ($entry['query'] ?? ''));
+            return str_contains($sql, 'books_hash_v2');
+        }));
     }
 }
