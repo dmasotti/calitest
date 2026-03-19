@@ -196,3 +196,10 @@ def test_request_adds_test_db_connection_header_when_env_is_set(monkeypatch):
     assert body["ok"] is True
     assert len(calls) == 1
     assert calls[0]["headers"].get("X-Calimob-Test-Connection") == "pgsql_test"
+
+
+def test_normalize_endpoint_returns_string_and_build_url_uses_it():
+    client = _make_client()
+
+    assert client._normalize_endpoint("http://caliserver.test/api") == "http://caliserver.test/api"
+    assert client._build_url("/sync/v5") == "https://api.example.com/api/sync/v5"

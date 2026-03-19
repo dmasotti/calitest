@@ -457,6 +457,80 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
         $response->assertJsonCount(0, 'updates_for_client');
     }
 
+    public function test_sync_v5_profile_skips_all_file_work_when_sync_files_is_disabled(): void
+    {
+        $user = User::factory()->create();
+        $library = Library::factory()->create(['user_id' => $user->id]);
+        Sanctum::actingAs($user);
+
+        $lastModified = Carbon::create(2026, 2, 27, 12, 0, 0, 'UTC');
+        $book = UserBook::create([
+            'uuid' => (string) Str::uuid(),
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'title' => 'Profile Metadata Only Book',
+            'path' => 'Profile Metadata Only Book',
+            'last_modified' => $lastModified,
+        ]);
+        $metadataHash = $this->metadataHashForBook($book);
+
+        DB::table('files_store')->insert([
+            'sha256' => str_repeat('d', 64),
+            'storage_key' => 'bench/profile-file.epub',
+            'storage_provider' => 'bench',
+            'storage_url' => null,
+            'ref_count' => 1,
+            'size' => 1234,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        BookFile::factory()->create([
+            'book' => $book->uuid,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'format' => 'EPUB',
+            'file_hash' => str_repeat('d', 64),
+            'storage_key' => 'bench/profile-file.epub',
+            'storage_provider' => 'bench',
+            'is_uploaded' => true,
+            'needs_file_upload' => false,
+            'file_missing' => false,
+            'uuid' => (string) Str::uuid(),
+        ]);
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 100,
+            'client_cursor' => 10,
+            'client_batch_size' => 500,
+            'client_books' => [
+                'b' => [
+                    $book->uuid => [
+                        'm' => $metadataHash,
+                        'f' => null,
+                    ],
+                ],
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $profile = $response->json('profile.sync_v5');
+        $this->assertIsArray($profile);
+        $this->assertSame(0.0, (float) ($profile['files_map_ms'] ?? -1));
+        $this->assertSame(0.0, (float) ($profile['all_files_map_ms'] ?? -1));
+        $this->assertSame(0.0, (float) ($profile['loop_missing_files_ms'] ?? -1));
+        $this->assertSame(0.0, (float) ($profile['loop_updates_files_payload_ms'] ?? -1));
+    }
+
     private function metadataHashForBook(UserBook $book): string
     {
         return (string) MetadataHasher::computeHash([
