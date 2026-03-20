@@ -502,6 +502,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
                     'publishers_map_ms',
                     'languages_map_ms',
                     'identifiers_map_ms',
+                    'payload_base_prep_ms',
                     'files_map_ms',
                     'all_server_books_ms',
                     'prime_client_set_hash_ms',
@@ -867,6 +868,9 @@ class SyncV5ProtocolCoverageTest extends TestCase
 
         $response->assertStatus(200);
         $item = $response->json('updates_for_client.0');
+        $this->assertSame($book->uuid, $item['uuid'] ?? null);
+        $this->assertSame($book->id, $item['calibre_book_id'] ?? null);
+        $this->assertSame('Relation Payload Integrity', $item['title'] ?? null);
         $this->assertSame(['Author One'], $item['authors'] ?? null);
         $this->assertSame('Series One', $item['series'] ?? null);
         $this->assertSame(2.5, (float) ($item['series_index'] ?? 0));
@@ -874,6 +878,10 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $this->assertSame('Publisher One', $item['publisher'] ?? null);
         $this->assertSame(['eng'], $item['languages'] ?? null);
         $this->assertSame(['isbn' => '9780000000002'], $item['identifiers'] ?? null);
+        $this->assertSame($book->description, $item['description'] ?? null);
+        $this->assertNotNull($item['last_modified'] ?? null);
+        $this->assertNotNull($item['updated_at'] ?? null);
+        $this->assertArrayHasKey('deleted_at', $item);
     }
 
     public function test_sync_v5_primes_metadata_hash_view_for_server_batch_without_per_book_lookup(): void
@@ -1410,6 +1418,8 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $payloadMs = (float) ($profile['loop_updates_metadata_payload_ms'] ?? -1);
         $bookdataMs = (float) ($profile['loop_updates_metadata_bookdata_ms'] ?? -1);
         $hashMs = (float) ($profile['loop_updates_metadata_hash_ms'] ?? -1);
+        $payloadBasePrepMs = (float) ($profile['payload_base_prep_ms'] ?? -1);
+        $this->assertGreaterThanOrEqual(0.0, $payloadBasePrepMs);
         $this->assertGreaterThanOrEqual(0.0, $bookdataMs);
         $this->assertGreaterThanOrEqual(0.0, $hashMs);
         $this->assertGreaterThanOrEqual($bookdataMs + $hashMs, $payloadMs);
