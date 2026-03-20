@@ -525,6 +525,99 @@ class SyncV5ProtocolCoverageTest extends TestCase
         }
     }
 
+    public function test_sync_v5_skips_unused_all_identifiers_map_preload_in_profiled_runs(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $book = UserBook::factory()->create([
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'uuid' => '12121212-1212-1212-1212-121212121212',
+            'title' => 'Identifiers Preload Guardrail',
+            'path' => 'Identifiers Preload Guardrail',
+            'last_modified' => Carbon::create(2026, 3, 20, 10, 0, 0, 'UTC'),
+        ]);
+
+        DB::table('books_identifiers')->insert([
+            'book' => $book->uuid,
+            'type' => 'isbn',
+            'val' => '9780000000001',
+        ]);
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 25,
+            'client_books' => [
+                'b' => [
+                    $book->uuid => ['m' => 'client-mismatch', 'c' => null, 'f' => null, 'lm' => 1],
+                ],
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $this->assertSame(
+            0.0,
+            (float) ($response->json('profile.sync_v5.all_identifiers_map_ms') ?? -1),
+            'sync/v5 should not preload the unused allIdentifiersMap in profiled runs'
+        );
+    }
+
+    public function test_sync_v5_skips_server_relation_map_loading_when_all_server_books_match_client_hashes(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $book = UserBook::factory()->create([
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'uuid' => '34343434-3434-3434-3434-343434343434',
+            'title' => 'All Match Relation Guardrail',
+            'path' => 'All Match Relation Guardrail',
+            'last_modified' => Carbon::create(2026, 3, 20, 11, 0, 0, 'UTC'),
+            'cover_original_hash' => null,
+        ]);
+        $book->refresh();
+        $metadataHash = $this->metadataHashForBook($book);
+        $book->forceFill([
+            'metadata_hash_cache' => 'v2:' . $metadataHash . ':' . $book->last_modified->timestamp,
+        ])->saveQuietly();
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 25,
+            'client_books' => [
+                'b' => [
+                    $book->uuid => ['m' => $metadataHash, 'c' => null, 'f' => null, 'lm' => $book->last_modified->timestamp],
+                ],
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $this->assertSame([], $response->json('updates_for_client') ?? []);
+        $this->assertSame(0.0, (float) ($response->json('profile.sync_v5.load_server_relations_ms') ?? -1));
+        $this->assertSame(0.0, (float) ($response->json('profile.sync_v5.authors_map_ms') ?? -1));
+        $this->assertSame(0.0, (float) ($response->json('profile.sync_v5.series_map_ms') ?? -1));
+        $this->assertSame(0.0, (float) ($response->json('profile.sync_v5.tags_map_ms') ?? -1));
+        $this->assertSame(0.0, (float) ($response->json('profile.sync_v5.publishers_map_ms') ?? -1));
+        $this->assertSame(0.0, (float) ($response->json('profile.sync_v5.languages_map_ms') ?? -1));
+        $this->assertSame(0.0, (float) ($response->json('profile.sync_v5.identifiers_map_ms') ?? -1));
+    }
+
     public function test_sync_v5_primes_metadata_hash_view_for_server_batch_without_per_book_lookup(): void
     {
         [, $library] = $this->setupUserLibrary();
