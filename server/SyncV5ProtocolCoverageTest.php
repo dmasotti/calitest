@@ -1008,6 +1008,87 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $this->assertSame(0.0, (float) ($profile['loop_updates_files_payload_ms'] ?? -1));
     }
 
+    public function test_sync_v5_writebacks_metadata_hash_cache_for_updates_payload_books(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $books = $this->seedServerBatchBooksWithCacheState($library, 3, 'all_missing');
+
+        foreach ($books as $book) {
+            $this->assertNull($book->metadata_hash_cache);
+        }
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 10,
+            'client_books' => [
+                'b' => [
+                    '99999999-9999-9999-9999-999999999997' => ['m' => str_repeat('a', 64)],
+                ],
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+
+        foreach ($books as $book) {
+            $fresh = $book->fresh();
+            $this->assertNotNull($fresh->metadata_hash_cache, 'metadata_hash_cache should be persisted after updates_for_client hash computation');
+            $this->assertMatchesRegularExpression('/^v2:[0-9a-f]{64}:-?[0-9]+$/', (string) $fresh->metadata_hash_cache);
+            $this->assertSame(
+                'v2:' . $this->metadataHashForBook($fresh) . ':' . $fresh->last_modified->timestamp,
+                (string) $fresh->metadata_hash_cache
+            );
+        }
+    }
+
+    public function test_sync_v5_batches_metadata_hash_cache_writeback_into_single_books_update(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $this->seedServerBatchBooksWithCacheState($library, 3, 'all_missing');
+
+        \DB::flushQueryLog();
+        \DB::enableQueryLog();
+
+        try {
+            $response = $this->postJson('/api/sync/v5', [
+                'library_id' => (string) $library->id,
+                'calibre_library_uuid' => $library->calibre_library_id,
+                'cursor' => null,
+                'batch_size' => 10,
+                'client_books' => [
+                    'b' => [
+                        '99999999-9999-9999-9999-999999999995' => ['m' => str_repeat('b', 64)],
+                    ],
+                    'd' => [],
+                ],
+                'options' => [
+                    'sync_files_enabled' => false,
+                    'sync_covers_enabled' => false,
+                    'profile_sync_v5' => true,
+                ],
+            ]);
+        } finally {
+            $queries = \DB::getQueryLog();
+            \DB::disableQueryLog();
+        }
+
+        $response->assertStatus(200);
+        $this->assertSame(
+            1,
+            $this->countMetadataHashCacheWritebackQueries($queries),
+            'sync/v5 should batch metadata_hash_cache persistence into a single books update per library batch'
+        );
+    }
+
     public function test_sync_v5_treats_prefixed_and_unsorted_files_hashes_as_equivalent_when_content_matches(): void
     {
         [, $library] = $this->setupUserLibrary();
@@ -1171,6 +1252,20 @@ class SyncV5ProtocolCoverageTest extends TestCase
         return count(array_filter($queries, static function (array $entry): bool {
             $sql = strtolower((string) ($entry['query'] ?? ''));
             return str_contains($sql, 'books_hash_v2');
+        }));
+    }
+
+    private function countMetadataHashCacheWritebackQueries(array $queries): int
+    {
+        return count(array_filter($queries, static function (array $entry): bool {
+            $sql = strtolower(preg_replace('/\s+/', ' ', (string) ($entry['query'] ?? '')));
+
+            return (str_contains($sql, 'update books set')
+                    || str_contains($sql, 'update "books" set')
+                    || str_contains($sql, 'update `books` set'))
+                && (str_contains($sql, 'metadata_hash_cache')
+                    || str_contains($sql, '"metadata_hash_cache"')
+                    || str_contains($sql, '`metadata_hash_cache`'));
         }));
     }
 }
