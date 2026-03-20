@@ -503,6 +503,9 @@ class SyncV5ProtocolCoverageTest extends TestCase
                     'languages_map_ms',
                     'identifiers_map_ms',
                     'payload_base_prep_ms',
+                    'payload_base_text_ms',
+                    'payload_base_temporal_ms',
+                    'payload_base_scalar_ms',
                     'files_map_ms',
                     'all_server_books_ms',
                     'prime_client_set_hash_ms',
@@ -1419,9 +1422,19 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $bookdataMs = (float) ($profile['loop_updates_metadata_bookdata_ms'] ?? -1);
         $hashMs = (float) ($profile['loop_updates_metadata_hash_ms'] ?? -1);
         $payloadBasePrepMs = (float) ($profile['payload_base_prep_ms'] ?? -1);
+        $payloadBaseTextMs = (float) ($profile['payload_base_text_ms'] ?? -1);
+        $payloadBaseTemporalMs = (float) ($profile['payload_base_temporal_ms'] ?? -1);
+        $payloadBaseScalarMs = (float) ($profile['payload_base_scalar_ms'] ?? -1);
         $this->assertGreaterThanOrEqual(0.0, $payloadBasePrepMs);
+        $this->assertGreaterThanOrEqual(0.0, $payloadBaseTextMs);
+        $this->assertGreaterThanOrEqual(0.0, $payloadBaseTemporalMs);
+        $this->assertGreaterThanOrEqual(0.0, $payloadBaseScalarMs);
         $this->assertGreaterThanOrEqual(0.0, $bookdataMs);
         $this->assertGreaterThanOrEqual(0.0, $hashMs);
+        $this->assertGreaterThanOrEqual(
+            $payloadBaseTextMs + $payloadBaseTemporalMs + $payloadBaseScalarMs,
+            $payloadBasePrepMs
+        );
         $this->assertGreaterThanOrEqual($bookdataMs + $hashMs, $payloadMs);
         $this->assertSame(0.0, (float) ($profile['loop_updates_files_payload_ms'] ?? -1));
     }
