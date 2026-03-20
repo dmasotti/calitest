@@ -31,6 +31,7 @@ def test_prepare_config_rebinds_package_and_local_plugin_prefs(monkeypatch, tmp_
         assert created == ["plugins/sync_calimob"]
         assert cli.cfg.plugin_prefs is package_cfg.plugin_prefs
         assert isinstance(cli.cfg.plugin_prefs, FakeJSONConfig)
+        assert cli.cfg.plugin_prefs[package_cfg.STORE_PLUGIN]["restEndpoint"] == "http://caliserver.test/api"
     finally:
         cli.cfg.plugin_prefs = original_local_prefs
         package_cfg.plugin_prefs = original_package_prefs

@@ -235,7 +235,9 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 if [[ -x "$SCRIPT_DIR/../html/vendor/bin/phpunit" ]]; then
     PHPUNIT_DB_CONNECTION="${PHPUNIT_DB_CONNECTION:-mysql}"
-    PHPUNIT_DB_DATABASE="${PHPUNIT_DB_DATABASE:-${DB_DATABASE:-caliweb}_phpunit}"
+    BASE_DB_NAME="${DB_DATABASE:-caliweb}"
+    BASE_DB_NAME="${BASE_DB_NAME#test_}"
+    PHPUNIT_DB_DATABASE="${PHPUNIT_DB_DATABASE:-test_${BASE_DB_NAME}_phpunit}"
     PHPUNIT_DB_HOST="${PHPUNIT_DB_HOST:-${DB_HOST:-127.0.0.1}}"
     PHPUNIT_DB_PORT="${PHPUNIT_DB_PORT:-${DB_PORT:-3306}}"
     PHPUNIT_DB_USERNAME="${PHPUNIT_DB_USERNAME:-${DB_USERNAME:-root}}"
@@ -248,7 +250,7 @@ if [[ -x "$SCRIPT_DIR/../html/vendor/bin/phpunit" ]]; then
             $port = getenv("PHPUNIT_DB_PORT") ?: "3306";
             $user = getenv("PHPUNIT_DB_USERNAME") ?: "root";
             $pass = getenv("PHPUNIT_DB_PASSWORD") ?: "";
-            $db   = getenv("PHPUNIT_DB_DATABASE") ?: "caliweb_phpunit";
+            $db   = getenv("PHPUNIT_DB_DATABASE") ?: "test_caliweb_phpunit";
             $pdo = new PDO("mysql:host={$host};port={$port};charset=utf8mb4", $user, $pass, [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             ]);

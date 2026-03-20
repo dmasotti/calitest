@@ -35,6 +35,17 @@
     "updateISBN": "NEVER",
     "uploadTimeout": 120
   },
+  "LibraryMappings": {
+    "782613eb-e228-4f08-8747-d502386ca95f": {
+      "v5_client_resume": {
+        "client_cursor": 0,
+        "client_total": 15623,
+        "resume_sig": "15623|000064f3-aac6-44ec-8e6e-852981ae1170|0e2bad5d-ae54-4e2f-a86b-fab9a6c17414||0",
+        "server_cursor": null,
+        "updated_at": "2026-03-19T15:44:12.203318+00:00"
+      }
+    }
+  },
   "SchemaVersion": 1.68,
   "Users": {}
 }

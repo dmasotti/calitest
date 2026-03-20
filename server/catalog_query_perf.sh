@@ -7,7 +7,7 @@ HTML_DIR="$ROOT_DIR/html"
 PERF_DB_CONNECTION="${CALIMOB_PERF_DB_CONNECTION:-mysql}"
 PERF_DB_HOST="${CALIMOB_PERF_DB_HOST:-127.0.0.1}"
 PERF_DB_PORT="${CALIMOB_PERF_DB_PORT:-3306}"
-PERF_DB_DATABASE="${CALIMOB_PERF_DB_DATABASE:-caliweb_perf}"
+PERF_DB_DATABASE="${CALIMOB_PERF_DB_DATABASE:-test_caliweb_perf}"
 PERF_DB_USERNAME="${CALIMOB_PERF_DB_USERNAME:-root}"
 PERF_DB_PASSWORD="${CALIMOB_PERF_DB_PASSWORD:-}"
 
@@ -65,7 +65,7 @@ prepare_perf_db() {
       $port = getenv("DB_PORT") ?: "3306";
       $user = getenv("DB_USERNAME") ?: "root";
       $pass = getenv("DB_PASSWORD") ?: "";
-      $db   = getenv("DB_DATABASE") ?: "caliweb_perf";
+      $db   = getenv("DB_DATABASE") ?: "test_caliweb_perf";
       $pdo = new PDO("mysql:host={$host};port={$port};charset=utf8mb4", $user, $pass, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
       ]);
