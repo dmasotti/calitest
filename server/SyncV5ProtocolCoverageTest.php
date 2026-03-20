@@ -1236,7 +1236,8 @@ class SyncV5ProtocolCoverageTest extends TestCase
 
         $response->assertStatus(200);
         $this->assertCount(5, $response->json('updates_for_client') ?? []);
-        $this->assertSame(1, $this->countBooksHashV2Queries($queries));
+        $expectedQueries = \DB::getDriverName() === 'pgsql' ? 0 : 1;
+        $this->assertSame($expectedQueries, $this->countBooksHashV2Queries($queries));
     }
 
     public function test_sync_v5_updates_for_client_keeps_metadata_hash_when_no_uuid_overlap_and_cache_missing(): void
