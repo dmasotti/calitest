@@ -3332,6 +3332,35 @@ def test_v5_apply_updates_batch_skips_download_for_server_missing_files(monkeypa
     assert files_to_download == [(42, 'u-1', 'MOBI', 'sha256:c', 'hash_mismatch')]
 
 
+def test_v5_apply_updates_batch_metadata_only_accepts_updates_without_asset_payload(monkeypatch):
+    worker = _make_worker()
+    worker._sync_files_enabled = Mock(return_value=False)
+    worker._sync_covers_enabled = Mock(return_value=False)
+    worker._apply_update = Mock(return_value=(42, True))
+
+    summary = {'books_updated': 0, 'books_skipped': 0, 'books_synced': 0, 'errors': []}
+    updates = [{
+        'uuid': 'u-2',
+        'title': 'Metadata Only',
+        'authors': [],
+        'languages': [],
+        'tags': [],
+        'identifiers': {},
+        'metadata_hash': 'sha256:meta-only',
+        'last_modified': int(datetime(2026, 3, 20, 12, 0, tzinfo=timezone.utc).timestamp()),
+    }]
+
+    files_to_download, had_errors = worker._v5_apply_updates_batch(updates, 1, summary)
+
+    assert had_errors is False
+    assert files_to_download == []
+    worker._apply_update.assert_called_once()
+    kwargs = worker._apply_update.call_args.kwargs
+    assert kwargs['skip_cover'] is True
+    assert summary['books_updated'] == 1
+    assert summary['books_synced'] == 1
+
+
 def test_v5_push_missing_items_skips_file_upload_when_local_payload_unavailable():
     worker = _make_worker()
     worker.gui = object()

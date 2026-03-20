@@ -618,6 +618,62 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $this->assertSame(0.0, (float) ($response->json('profile.sync_v5.identifiers_map_ms') ?? -1));
     }
 
+    public function test_sync_v5_metadata_only_updates_omit_cover_and_file_payload_fields(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $book = UserBook::factory()->create([
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'uuid' => '45454545-4545-4545-4545-454545454545',
+            'title' => 'Metadata Only Payload Trim',
+            'path' => 'Metadata Only Payload Trim',
+            'last_modified' => Carbon::create(2026, 3, 20, 12, 0, 0, 'UTC'),
+            'has_cover' => true,
+            'cover_original_hash' => 'sha256:' . str_repeat('c', 64),
+            'cover_optimized_hash' => 'sha256:' . str_repeat('d', 64),
+            'cover_url' => 'https://example.test/covers/metadata-only.jpg',
+        ]);
+
+        BookFile::factory()->create([
+            'book' => $book->uuid,
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'format' => 'EPUB',
+            'file_hash' => 'sha256:' . str_repeat('e', 64),
+            'is_uploaded' => true,
+            'file_missing' => false,
+            'needs_file_upload' => false,
+            'storage_provider' => 'r2',
+            'storage_key' => 'books/metadata-only.epub',
+        ]);
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 25,
+            'client_books' => [
+                'b' => [],
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $item = $response->json('updates_for_client.0');
+        $this->assertIsArray($item);
+        $this->assertArrayNotHasKey('formats', $item);
+        $this->assertArrayNotHasKey('has_cover', $item);
+        $this->assertArrayNotHasKey('cover_hash', $item);
+        $this->assertArrayNotHasKey('cover_hash_optimized', $item);
+        $this->assertArrayNotHasKey('cover_url', $item);
+    }
+
     public function test_sync_v5_primes_metadata_hash_view_for_server_batch_without_per_book_lookup(): void
     {
         [, $library] = $this->setupUserLibrary();
