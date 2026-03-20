@@ -10,6 +10,7 @@ use App\Services\Sync\MetadataHasher;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -1550,6 +1551,49 @@ class SyncV5ProtocolCoverageTest extends TestCase
         }
     }
 
+    public function test_sync_v5_resets_hash_mismatch_cache_for_matched_client_set(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $books = $this->seedServerBatchBooksWithCacheState($library, 4, 'all_valid');
+        $clientBooks = [];
+        foreach ($books as $book) {
+            Cache::put("sync_hash_mismatch:{$library->id}:{$book->uuid}", 10, now()->addHour());
+            $clientBooks[$book->uuid] = ['m' => $this->metadataHashForBook($book)];
+        }
+
+        try {
+            $response = $this->postJson('/api/sync/v5', [
+                'library_id' => (string) $library->id,
+                'calibre_library_uuid' => $library->calibre_library_id,
+                'cursor' => null,
+                'batch_size' => 10,
+                'client_books' => [
+                    'b' => $clientBooks,
+                    'd' => [],
+                ],
+                'options' => [
+                    'sync_files_enabled' => false,
+                    'sync_covers_enabled' => false,
+                    'profile_sync_v5' => true,
+                ],
+            ]);
+        } finally {
+        }
+
+        $response->assertStatus(200);
+        $this->assertGreaterThanOrEqual(4, (int) ($response->json('skipped_hash') ?? 0));
+        $this->assertSame([], $response->json('missing_from_server') ?? []);
+        $this->assertGreaterThanOrEqual(0.0, (float) ($response->json('profile.sync_v5.loop_missing_cache_reset_ms') ?? -1));
+
+        foreach ($books as $book) {
+            $this->assertNull(
+                Cache::get("sync_hash_mismatch:{$library->id}:{$book->uuid}"),
+                'matched client-set books should clear pending mismatch loop cache keys after a successful hash match'
+            );
+        }
+    }
+
     public function test_sync_v5_treats_prefixed_and_unsorted_files_hashes_as_equivalent_when_content_matches(): void
     {
         [, $library] = $this->setupUserLibrary();
@@ -1729,4 +1773,5 @@ class SyncV5ProtocolCoverageTest extends TestCase
                     || str_contains($sql, '`metadata_hash_cache`'));
         }));
     }
+
 }
