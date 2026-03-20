@@ -674,6 +674,207 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $this->assertArrayNotHasKey('cover_url', $item);
     }
 
+    public function test_sync_v5_file_sync_keeps_formats_payload_for_server_updates(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $book = UserBook::factory()->create([
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'uuid' => '76767676-7676-7676-7676-767676767676',
+            'title' => 'Formats Payload',
+            'path' => 'Formats Payload',
+            'last_modified' => Carbon::create(2026, 3, 20, 12, 30, 0, 'UTC'),
+        ]);
+
+        DB::table('files_store')->insert([
+            'sha256' => str_repeat('c', 64),
+            'storage_key' => 'ebooks/formats-payload.epub',
+            'storage_provider' => 'r2',
+            'storage_url' => 'https://example.test/formats-payload.epub',
+            'ref_count' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        BookFile::factory()->create([
+            'book' => $book->uuid,
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'format' => 'EPUB',
+            'file_hash' => str_repeat('c', 64),
+            'is_uploaded' => true,
+            'file_missing' => false,
+            'needs_file_upload' => false,
+            'storage_provider' => 'r2',
+            'storage_key' => 'ebooks/formats-payload.epub',
+        ]);
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 25,
+            'client_books' => [
+                'b' => [],
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => true,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $item = $response->json('updates_for_client.0');
+        $this->assertIsArray($item['formats'] ?? null);
+        $this->assertCount(1, $item['formats'] ?? []);
+        $this->assertSame('EPUB', $item['formats'][0]['format'] ?? null);
+        $this->assertFalse((bool) ($item['formats'][0]['file_missing'] ?? true));
+        $this->assertFalse((bool) ($item['formats'][0]['needs_file_upload'] ?? true));
+    }
+
+    public function test_sync_v5_preserves_relation_payload_content_when_loading_metadata_updates(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $book = UserBook::factory()->create([
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'uuid' => '56565656-5656-5656-5656-565656565656',
+            'title' => 'Relation Payload Integrity',
+            'path' => 'Relation Payload Integrity',
+            'last_modified' => Carbon::create(2026, 3, 20, 13, 0, 0, 'UTC'),
+            'series_index' => 2.5,
+        ]);
+
+        $authorId = -101;
+        DB::table('books_authors')->insert([
+            'id' => $authorId,
+            'uuid' => 'author-one-uuid',
+            'name' => 'Author One',
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('books_authors_link')->insert([
+            'uuid' => 'author-link-uuid',
+            'book' => $book->uuid,
+            'author' => $authorId,
+            'position' => 0,
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+        ]);
+
+        $seriesId = -201;
+        DB::table('books_series')->insert([
+            'id' => $seriesId,
+            'uuid' => 'series-one-uuid',
+            'name' => 'Series One',
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('books_series_link')->insert([
+            'uuid' => 'series-link-uuid',
+            'book' => $book->uuid,
+            'series' => $seriesId,
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+        ]);
+
+        $tagId = -301;
+        DB::table('books_tags')->insert([
+            'id' => $tagId,
+            'uuid' => 'tag-one-uuid',
+            'name' => 'Tag One',
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('books_tags_link')->insert([
+            'uuid' => 'tag-link-uuid',
+            'book' => $book->uuid,
+            'tag' => $tagId,
+            'position' => 0,
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+        ]);
+
+        $publisherId = -401;
+        DB::table('books_publishers')->insert([
+            'id' => $publisherId,
+            'uuid' => 'publisher-one-uuid',
+            'name' => 'Publisher One',
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('books_publishers_link')->insert([
+            'uuid' => 'publisher-link-uuid',
+            'book' => $book->uuid,
+            'publisher' => $publisherId,
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+        ]);
+
+        DB::table('books_languages')->insert([
+            'uuid' => 'language-one-uuid',
+            'id' => 'eng',
+            'lang_code' => 'eng',
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('books_languages_link')->insert([
+            'uuid' => 'language-link-uuid',
+            'book' => $book->uuid,
+            'lang_code' => 'eng',
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+        ]);
+
+        DB::table('books_identifiers')->insert([
+            'book' => $book->uuid,
+            'type' => 'isbn',
+            'val' => '9780000000002',
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+        ]);
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 25,
+            'client_books' => [
+                'b' => [],
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+                'profile_sync_v5' => true,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $item = $response->json('updates_for_client.0');
+        $this->assertSame(['Author One'], $item['authors'] ?? null);
+        $this->assertSame('Series One', $item['series'] ?? null);
+        $this->assertSame(2.5, (float) ($item['series_index'] ?? 0));
+        $this->assertSame(['Tag One'], $item['tags'] ?? null);
+        $this->assertSame('Publisher One', $item['publisher'] ?? null);
+        $this->assertSame(['eng'], $item['languages'] ?? null);
+        $this->assertSame(['isbn' => '9780000000002'], $item['identifiers'] ?? null);
+    }
+
     public function test_sync_v5_primes_metadata_hash_view_for_server_batch_without_per_book_lookup(): void
     {
         [, $library] = $this->setupUserLibrary();
