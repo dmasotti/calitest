@@ -1145,6 +1145,60 @@ class SyncV5ProtocolCoverageTest extends TestCase
         );
     }
 
+    public function test_sync_v5_overlap_prime_writebacks_missing_metadata_hash_cache_for_client_set(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $baseTs = Carbon::create(2026, 3, 12, 9, 0, 0, 'UTC');
+        $clientBooks = [];
+
+        for ($i = 0; $i < 4; $i++) {
+            $book = UserBook::factory()->create([
+                'user_id' => $library->user_id,
+                'library_id' => (string) $library->id,
+                'uuid' => sprintf('ddddddd%d-dddd-dddd-dddd-ddddddddddd%d', $i, $i),
+                'title' => 'Overlap Prime Writeback ' . $i,
+                'path' => 'Overlap Prime Writeback ' . $i,
+                'last_modified' => $baseTs->copy()->addSeconds($i),
+                'metadata_hash_cache' => null,
+            ]);
+            $book->refresh();
+            $clientBooks[$book->uuid] = ['m' => $this->metadataHashForBook($book)];
+        }
+
+        $response = $this->postJson('/api/sync/v5', [
+            'library_id' => (string) $library->id,
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'cursor' => null,
+            'batch_size' => 10,
+            'client_books' => [
+                'b' => $clientBooks,
+                'd' => [],
+            ],
+            'options' => [
+                'sync_files_enabled' => false,
+                'sync_covers_enabled' => false,
+            ],
+        ]);
+
+        $response->assertStatus(200);
+        $this->assertSame([], $response->json('missing_from_server') ?? []);
+        $this->assertSame([], $response->json('updates_for_client') ?? []);
+
+        $freshBooks = UserBook::where('user_id', $library->user_id)
+            ->where('library_id', (string) $library->id)
+            ->orderBy('uuid')
+            ->get();
+
+        foreach ($freshBooks as $book) {
+            $this->assertNotNull(
+                $book->metadata_hash_cache,
+                'Overlap client-set prime should persist missing metadata_hash_cache after the first sync/v5 request'
+            );
+            $this->assertMatchesRegularExpression('/^v2:[0-9a-f]{64}:-?[0-9]+$/', (string) $book->metadata_hash_cache);
+        }
+    }
+
     public function test_sync_v5_treats_prefixed_and_unsorted_files_hashes_as_equivalent_when_content_matches(): void
     {
         [, $library] = $this->setupUserLibrary();
