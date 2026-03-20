@@ -630,6 +630,62 @@ class SyncV5ProtocolCoverageTest extends TestCase
         );
     }
 
+    public function test_sync_v5_uses_valid_metadata_hash_cache_even_if_default_timezone_is_not_utc(): void
+    {
+        [, $library] = $this->setupUserLibrary();
+
+        $baseTs = Carbon::create(2026, 3, 11, 10, 0, 0, 'UTC');
+        $rows = collect();
+
+        for ($i = 0; $i < 3; $i++) {
+            $book = UserBook::factory()->create([
+                'user_id' => $library->user_id,
+                'library_id' => (string) $library->id,
+                'uuid' => sprintf('ccccccc%d-cccc-cccc-cccc-ccccccccccc%d', $i, $i),
+                'title' => 'Timezone Cache Hit ' . $i,
+                'path' => 'Timezone Cache Hit ' . $i,
+                'last_modified' => $baseTs->copy()->addSeconds($i),
+            ]);
+            $book->refresh();
+            $hash = $this->metadataHashForBook($book);
+            $book->forceFill([
+                'metadata_hash_cache' => 'v2:' . $hash . ':' . $book->last_modified->timestamp,
+            ])->saveQuietly();
+            $rows->push((object) [
+                'uuid' => $book->uuid,
+                'last_modified' => (string) $book->last_modified,
+                'metadata_hash_cache' => (string) $book->metadata_hash_cache,
+            ]);
+        }
+
+        $originalTz = date_default_timezone_get();
+        date_default_timezone_set('Europe/Rome');
+        \DB::flushQueryLog();
+        \DB::enableQueryLog();
+
+        try {
+            $controller = app(\App\Http\Controllers\Api\SyncV5Controller::class);
+            $method = new \ReflectionMethod($controller, 'primeMetadataHashViewCacheFromRows');
+            $method->setAccessible(true);
+            $method->invoke($controller, $rows, (int) $library->user_id, (int) $library->id);
+        } finally {
+            $queries = \DB::getQueryLog();
+            \DB::disableQueryLog();
+            date_default_timezone_set($originalTz);
+        }
+
+        $booksHashQueries = array_values(array_filter($queries, static function (array $entry): bool {
+            $sql = strtolower((string) ($entry['query'] ?? ''));
+            return str_contains($sql, 'books_hash_v2');
+        }));
+
+        $this->assertCount(
+            0,
+            $booksHashQueries,
+            'sync/v5 should keep using valid metadata_hash_cache even when PHP default timezone is non-UTC'
+        );
+    }
+
     public function test_sync_v5_server_batch_prime_skips_reloading_books_when_server_page_cache_is_all_valid(): void
     {
         [, $library] = $this->setupUserLibrary();
