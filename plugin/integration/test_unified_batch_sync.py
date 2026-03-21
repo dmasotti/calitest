@@ -564,7 +564,7 @@ class TestCancellationCheckpoints(unittest.TestCase):
         
         # Cancel after 3 cover downloads
         download_count = [0]
-        def download_with_cancel(items, progress_callback=None, max_workers=1):
+        def download_with_cancel(items, progress_callback=None, max_workers=1, **kwargs):
             for _ in items:
                 download_count[0] += 1
                 if download_count[0] == 3:

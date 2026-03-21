@@ -29,9 +29,20 @@ def test_prepare_config_rebinds_package_and_local_plugin_prefs(monkeypatch, tmp_
 
         assert os.environ.get("CALIBRE_CONFIG_DIRECTORY")
         assert created == ["plugins/sync_calimob"]
-        assert cli.cfg.plugin_prefs is package_cfg.plugin_prefs
+        # cli.cfg.plugin_prefs must be the FakeJSONConfig with the seeded data
         assert isinstance(cli.cfg.plugin_prefs, FakeJSONConfig)
         assert cli.cfg.plugin_prefs[package_cfg.STORE_PLUGIN]["restEndpoint"] == "http://caliserver.test/api"
+        # The calibre_plugins.sync_calimob.config namespace must also be updated.
+        # In production cli.cfg IS calibre_plugins.sync_calimob.config; in the test
+        # harness they may be two separate module instances of the same file.
+        pkg_ns = sys.modules.get("calibre_plugins.sync_calimob.config")
+        if pkg_ns is not None:
+            assert isinstance(pkg_ns.plugin_prefs, FakeJSONConfig), (
+                "calibre_plugins.sync_calimob.config.plugin_prefs not updated by _prepare_config"
+            )
     finally:
         cli.cfg.plugin_prefs = original_local_prefs
         package_cfg.plugin_prefs = original_package_prefs
+        pkg_ns = sys.modules.get("calibre_plugins.sync_calimob.config")
+        if pkg_ns is not None and pkg_ns is not cli.cfg:
+            pkg_ns.plugin_prefs = original_package_prefs
