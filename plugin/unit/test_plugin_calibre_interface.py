@@ -185,6 +185,196 @@ class TestMenuRebuildOnLibraryChange:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# rebuild_menus() gating: sync items enabled/disabled by association
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _setup_rebuild_menus(monkeypatch, *, library_id="lib-uuid",
+                         calimob_library_id="77", sync_enabled=True,
+                         client_configured=True):
+    """Prepare an action object so that rebuild_menus() can run end-to-end.
+
+    Returns (act, created_actions) where created_actions is a list of
+    (menu_text, QAction-mock) tuples captured from create_menu_action_unique.
+    """
+    import calibre_plugins.sync_calimob.config as config_mod
+    import calibre_plugins.sync_calimob as parent_pkg
+
+    act = action_mod.SyncCalimobAction.__new__(action_mod.SyncCalimobAction)
+    db = SimpleNamespace(library_path="/tmp/test_library")
+    act.gui = SimpleNamespace(
+        current_db=db,
+        must_restart_before_config=False,
+        keyboard=SimpleNamespace(
+            finalize=Mock(),
+            shortcuts={},
+        ),
+    )
+    act.menu = MagicMock()  # QMenu mock
+    act.name = "sync_calimob"
+    act.qaction = MagicMock()
+    act._auto_sync_timer = None
+    act._auto_sync_busy = False
+    act._sync_status_icon_cache = {}
+
+    # Patch library_utils to return our library_id
+    _install_library_utils(monkeypatch, library_id=library_id)
+
+    # Patch config with real dict containing mappings
+    real_prefs = {
+        config_mod.STORE_PLUGIN: config_mod.DEFAULT_STORE_VALUES.copy(),
+    }
+    if library_id and calimob_library_id:
+        real_prefs[config_mod.STORE_LIBRARY_MAPPINGS] = {
+            library_id: {
+                config_mod.KEY_CALIMOB_LIBRARY_ID: calimob_library_id,
+                config_mod.KEY_SYNC_ENABLED: sync_enabled,
+            }
+        }
+    else:
+        real_prefs[config_mod.STORE_LIBRARY_MAPPINGS] = {}
+    monkeypatch.setattr(config_mod, "plugin_prefs", real_prefs)
+
+    # Patch RestApiClient
+    class _FakeClient:
+        token = "tok" if client_configured else ""
+        _raw_discovery_endpoint = "https://api.test" if client_configured else ""
+        def __init__(self, *a, **k): pass
+        def is_configured(self): return client_configured
+
+    rest_mod = types.ModuleType("calibre_plugins.sync_calimob.rest_client")
+    rest_mod.RestApiClient = _FakeClient
+    monkeypatch.setitem(sys.modules, "calibre_plugins.sync_calimob.rest_client", rest_mod)
+    monkeypatch.setattr(parent_pkg, "rest_client", rest_mod, raising=False)
+
+    # Patch unregister_menu_actions (no-op)
+    monkeypatch.setattr(action_mod, "unregister_menu_actions", lambda ia: None)
+
+    # Capture created menu actions
+    created_actions = []
+
+    def _fake_create_action(ia, parent_menu, menu_text, image=None, tooltip=None,
+                            shortcut=None, triggered=None, is_checked=None,
+                            shortcut_name=None, unique_name=None,
+                            favourites_menu_unique_name=None):
+        ac = MagicMock()
+        ac.calibre_shortcut_unique_name = menu_text
+        ac._enabled = True
+        ac.setEnabled = lambda v: setattr(ac, '_enabled', v)
+        created_actions.append((menu_text, ac))
+        return ac
+
+    monkeypatch.setattr(action_mod, "create_menu_action_unique", _fake_create_action)
+
+    return act, created_actions
+
+
+def _sync_actions_enabled(created_actions):
+    """Return dict of sync action name → enabled state."""
+    sync_labels = ["Sync with calimob...", "Full Sync with calimob...",
+                   "Sync in background"]
+    result = {}
+    for label, ac in created_actions:
+        for sl in sync_labels:
+            if sl.lower() in label.lower():
+                result[sl] = ac._enabled
+    return result
+
+
+class TestRebuildMenusGating:
+    """End-to-end tests: rebuild_menus() must enable/disable sync items
+    based on library association, sync_enabled flag, and client config."""
+
+    def test_associated_library_enables_sync_actions(self, monkeypatch):
+        act, actions = _setup_rebuild_menus(
+            monkeypatch,
+            library_id="lib-1", calimob_library_id="99",
+            sync_enabled=True, client_configured=True,
+        )
+        act.rebuild_menus()
+
+        enabled = _sync_actions_enabled(actions)
+        assert enabled, "no sync actions found in menu"
+        for label, state in enabled.items():
+            assert state is True, f"{label!r} should be ENABLED for associated library"
+
+    def test_non_associated_library_disables_sync_actions(self, monkeypatch):
+        act, actions = _setup_rebuild_menus(
+            monkeypatch,
+            library_id="lib-orphan", calimob_library_id=None,
+            sync_enabled=False, client_configured=True,
+        )
+        act.rebuild_menus()
+
+        enabled = _sync_actions_enabled(actions)
+        assert enabled, "no sync actions found in menu"
+        for label, state in enabled.items():
+            assert state is False, f"{label!r} should be DISABLED for non-associated library"
+
+    def test_sync_disabled_disables_sync_actions(self, monkeypatch):
+        act, actions = _setup_rebuild_menus(
+            monkeypatch,
+            library_id="lib-1", calimob_library_id="99",
+            sync_enabled=False, client_configured=True,
+        )
+        act.rebuild_menus()
+
+        enabled = _sync_actions_enabled(actions)
+        for label, state in enabled.items():
+            assert state is False, f"{label!r} should be DISABLED when sync_enabled=False"
+
+    def test_client_not_configured_disables_sync_actions(self, monkeypatch):
+        act, actions = _setup_rebuild_menus(
+            monkeypatch,
+            library_id="lib-1", calimob_library_id="99",
+            sync_enabled=True, client_configured=False,
+        )
+        act.rebuild_menus()
+
+        enabled = _sync_actions_enabled(actions)
+        for label, state in enabled.items():
+            assert state is False, f"{label!r} should be DISABLED when client not configured"
+
+    def test_library_switch_toggles_sync_actions(self, monkeypatch):
+        """Simulate switching from associated → non-associated library."""
+        import calibre_plugins.sync_calimob.config as config_mod
+
+        # First: associated library
+        act, actions1 = _setup_rebuild_menus(
+            monkeypatch,
+            library_id="lib-associated", calimob_library_id="10",
+            sync_enabled=True, client_configured=True,
+        )
+        act.rebuild_menus()
+        enabled1 = _sync_actions_enabled(actions1)
+        for label, state in enabled1.items():
+            assert state is True, f"BEFORE switch: {label!r} should be ENABLED"
+
+        # Switch: update library_id to one without mapping
+        _install_library_utils(monkeypatch, library_id="lib-not-mapped")
+        actions1.clear()
+
+        act.rebuild_menus()
+        enabled2 = _sync_actions_enabled(actions1)
+        for label, state in enabled2.items():
+            assert state is False, f"AFTER switch to non-mapped: {label!r} should be DISABLED"
+
+    def test_no_library_id_disables_sync_actions(self, monkeypatch):
+        """If library_id is None (e.g. metadata.db unreadable), sync must be disabled."""
+        act, actions = _setup_rebuild_menus(
+            monkeypatch,
+            library_id=None, calimob_library_id=None,
+            sync_enabled=False, client_configured=True,
+        )
+        # Override library_utils to return None
+        _install_library_utils(monkeypatch, library_id=None)
+        act.rebuild_menus()
+
+        enabled = _sync_actions_enabled(actions)
+        for label, state in enabled.items():
+            assert state is False, f"{label!r} should be DISABLED when library_id is None"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # clear_sync_cache()
 # ─────────────────────────────────────────────────────────────────────────────
 
