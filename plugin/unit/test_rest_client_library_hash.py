@@ -308,6 +308,62 @@ class TestRestClientLibraryHash:
         assert sleeps == [60]
         assert client.get.call_count == 2
 
+    def test_get_library_hash_calls_progress_callback_during_retry_wait(self, monkeypatch):
+        """During rebuild_pending retries, progress_callback must be called so
+        the user sees a status message instead of a frozen UI."""
+        client = rest_client.RestApiClient('http://test.com', 'token123')
+
+        client.get = Mock(side_effect=[
+            rest_client.RestApiError(
+                'Request failed with status 202',
+                status_code=202,
+                response_body={
+                    'rebuild_pending': True,
+                    'reason': 'stale_dimensions',
+                    'dimensions': ['metadata', 'covers', 'files'],
+                    'retry_after': 2,
+                },
+            ),
+            rest_client.RestApiError(
+                'Request failed with status 202',
+                status_code=202,
+                response_body={
+                    'rebuild_pending': True,
+                    'reason': 'stale_dimensions',
+                    'dimensions': ['metadata', 'covers', 'files'],
+                    'retry_after': 2,
+                },
+            ),
+            {
+                'library_metadata_hash': 'a' * 64,
+                'library_covers_hash': 'b' * 64,
+                'library_files_hash': 'c' * 64,
+                'total_books': 5000,
+                'last_modified': '2024-01-01T00:00:00Z',
+            },
+        ])
+
+        sleeps = []
+        monkeypatch.setattr(rest_client.time, 'sleep', lambda seconds: sleeps.append(seconds))
+
+        progress_messages = []
+        def progress_cb(msg, current=None, total=None):
+            progress_messages.append(msg)
+
+        result = client.get_library_hash(35, progress_callback=progress_cb)
+
+        assert result is not None
+        assert result['library_metadata_hash'] == 'a' * 64
+        # Progress callback must have been called at least once per retry
+        assert len(progress_messages) >= 2, (
+            "progress_callback should be called during each retry wait, got: %s" % progress_messages
+        )
+        # Messages should mention the wait/retry
+        assert any('rebuild' in m.lower() or 'waiting' in m.lower() or 'retry' in m.lower()
+                    for m in progress_messages), (
+            "progress messages should mention rebuild/waiting/retry: %s" % progress_messages
+        )
+
     def test_get_merkle_branches_500_error_returns_error_dict(self):
         client = rest_client.RestApiClient('http://test.com', 'token123')
         client.get = Mock(side_effect=rest_client.RestApiError('Merkle branches failed', status_code=500))
