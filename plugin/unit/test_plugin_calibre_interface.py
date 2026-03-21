@@ -159,6 +159,32 @@ class TestShutdown:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# library_changed() + about_to_show_menu()
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestMenuRebuildOnLibraryChange:
+    """Verify that switching library or opening menu triggers rebuild_menus()."""
+
+    def test_library_changed_calls_rebuild_menus(self):
+        act, db = _make_action()
+        act.rebuild_menus = Mock()
+        act.library_changed(db)
+        act.rebuild_menus.assert_called_once()
+
+    def test_about_to_show_menu_calls_rebuild_menus(self):
+        act, _ = _make_action()
+        act.rebuild_menus = Mock()
+        act.about_to_show_menu()
+        act.rebuild_menus.assert_called_once()
+
+    def test_library_changed_with_none_db_does_not_crash(self):
+        act, _ = _make_action()
+        act.rebuild_menus = Mock()
+        act.library_changed(None)
+        act.rebuild_menus.assert_called_once()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # clear_sync_cache()
 # ─────────────────────────────────────────────────────────────────────────────
 
