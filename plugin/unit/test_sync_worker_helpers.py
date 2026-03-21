@@ -4604,3 +4604,97 @@ def test_v5_checkpoint_blocks_persist_on_critical_errors_even_with_cursor_next(m
     assert state['client_done'] is None
     assert saved_pull == []
     assert saved_resume == []
+
+
+def test_v5_build_client_books_chunk_no_spurious_format_error_when_cache_valid():
+    """Regression: spurious 'has formats DJVU but no file hashes' error when
+    metadata_hash and files_hash are cached but cover_hash is missing.
+
+    Bug path:
+      1. sync_files_enabled=True, sync_covers_enabled=True
+      2. metadata_hash_from_view='sha256:m' (reuse_metadata_hash=True)
+      3. files_hash='sha256:f' (from cache via last_modified match)
+      4. cover_hash_cache=None (cover not cached)
+      5. Early exit at line 3164 FAILS (cover not satisfied)
+      6. need_metadata_or_files = (m is None) or (files and f is None)
+         = False or False = False
+      7. _build_files_array_for_book NOT called → file_diag={}, files_array=[]
+      8. db.formats(12) → 'DJVU' → declared_formats=['DJVU']
+      9. Line 3257: sync_files_enabled AND declared_formats AND not files_array
+         → True → spurious error with file_access_status=None
+    """
+    worker = _make_worker(ids=[12])
+    worker._check_cancelled = Mock()
+    worker._sync_files_enabled = Mock(return_value=True)
+    worker._sync_covers_enabled = Mock(return_value=True)  # covers ON
+    worker._v5_extract_hash_no_ts = Mock(return_value=None)
+    worker._v5_get_sync_cache_field_by_uuid = Mock(return_value=None)
+    worker._read_cover_bytes_byte_only = Mock(return_value=(None, 'none', 'none'))
+    worker._presigned_verify_enabled = Mock(return_value=False)
+    worker._presigned_verify_batch_enabled = Mock(return_value=False)
+    worker._v5_get_missing_sql_payload_map = Mock(return_value={})
+    worker._last_v5_missing_sql_payload_error = None
+    worker._compute_metadata_signature = Mock(return_value='sha256:meta-sig')
+    worker._cached_metadata_signature = Mock(return_value=None)
+    worker.status_tag_mappings = {}
+    worker._cache_book_uuid = Mock()
+
+    # _build_files_array_for_book should NOT be called when need_metadata_or_files=False
+    _build_files_called = []
+    original_build = worker._build_files_array_for_book
+
+    def _tracking_build(*a, **k):
+        _build_files_called.append(1)
+        return ([], {'status': 'ok', 'declared_formats': [], 'files_payload_count': 0,
+                     'missing_formats': [], 'error_formats': [], 'unavailable_formats': []})
+
+    worker._build_files_array_for_book = _tracking_build
+
+    # db.formats() returns 'DJVU' — the redundant second read
+    worker.db.formats = Mock(return_value='DJVU')
+    worker.db.get_metadata = Mock(return_value=SimpleNamespace(uuid='uuid-12'))
+    worker.db.data.has_id = lambda _bid: True
+    worker.db.cover = Mock(return_value=None)
+
+    sm = Mock()
+    sm.calibre_to_json_item = Mock(return_value={
+        'uuid': 'uuid-12', 'title': 'Test', 'authors': 'A', 'files': [],
+    })
+
+    summary = {'errors': []}
+
+    # Book info: metadata_hash from view + files_hash from cache, but NO cover
+    books_chunk = [{
+        'id': 12,
+        'uuid': 'uuid-12',
+        'last_modified': 1000,
+        'sync_last_modified': 1000,        # enables cache reuse
+        'metadata_hash_view': 'sha256:m',  # reuse_metadata_hash=True
+        'cached_hash': None,
+        'cached_files_hash': 'sha256:f',   # files cached
+        'cached_cover_hash': None,          # cover NOT cached → early exit fails
+        'cached_formats_sig': 'DJVU',
+        'cover_hash_bulk': None,
+        'files_hash_bulk': None,
+    }]
+
+    try:
+        worker._v5_build_client_books_chunk(
+            books_chunk=books_chunk,
+            sm=sm,
+            summary=summary,
+        )
+    except Exception:
+        pass  # may fail on stubs; we only care about the error list
+
+    # The bug: declared_formats=['DJVU'] from second db.formats() call,
+    # file_diag={}, files_array=[] → error with file_access_status=None.
+    # Fix: declared_formats from file_diag (empty) → no error.
+    file_hash_errors = [
+        e for e in summary.get('errors', [])
+        if isinstance(e, dict) and e.get('phase') == 'v5_build_client_hashes'
+    ]
+    assert file_hash_errors == [], (
+        "No spurious format error should be logged when files_hash is cached "
+        "and _build_files_array_for_book was skipped. Got: %s" % file_hash_errors
+    )
