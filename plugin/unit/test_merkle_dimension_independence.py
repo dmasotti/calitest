@@ -172,7 +172,12 @@ class TestDrilldownIndependentTryExcept:
     """Each dimension must have its own try/except — not shared."""
 
     def test_preflight_source_has_independent_error_handling(self):
-        """Verify sync_preflight.py wraps each drilldown in its own try/except."""
+        """Verify sync_preflight.py wraps each drilldown in its own try/except.
+
+        Each of the 3 drilldown calls (metadata, covers, files) must be
+        inside its own try/except block so that a failure in one does not
+        skip or reset the others.
+        """
         import os
         src_path = os.path.join(
             os.path.dirname(sync_worker.__file__), 'sync_preflight.py'
@@ -180,26 +185,27 @@ class TestDrilldownIndependentTryExcept:
         with open(src_path, 'r') as f:
             code = f.read()
 
-        # Find the drilldown section
-        meta_idx = code.find('_merkle_metadata_drilldown')
-        covers_idx = code.find('_merkle_covers_drilldown')
-        files_idx = code.find('_merkle_files_drilldown')
+        # Count how many 'except Exception' blocks exist between the first
+        # and last drilldown calls in the fast_path_preflight method.
+        # With independent handling, we need at least 3 (one per dimension).
+        preflight_start = code.find('def fast_path_preflight')
+        assert preflight_start > 0, "fast_path_preflight method not found"
+        preflight_section = code[preflight_start:]
 
-        assert meta_idx > 0, "metadata drilldown call not found"
-        assert covers_idx > 0, "covers drilldown call not found"
-        assert files_idx > 0, "files drilldown call not found"
+        # Find all drilldown calls within the method
+        meta_call = preflight_section.find('_merkle_metadata_drilldown(')
+        files_call = preflight_section.rfind('_merkle_files_drilldown(')
+        assert meta_call > 0 and files_call > 0, "drilldown calls not found"
 
-        # Between metadata and covers drilldown, there should be a try/except
-        # or the drilldown functions should handle errors internally
-        section_covers = code[covers_idx:covers_idx+200]
-        section_files = code[files_idx:files_idx+200]
+        # Include the try block BEFORE the first drilldown call (up to 300 chars)
+        range_start = max(0, meta_call - 300)
+        drilldown_section = preflight_section[range_start:files_call + 800]
+        except_count = drilldown_section.count('except Exception')
 
-        # At minimum, each drilldown should be in a context that catches errors
-        # The current code uses error_callback — verify it's called for each
-        assert 'error_callback' in section_covers or 'try' in code[covers_idx-100:covers_idx], \
-            "Covers drilldown has no error handling"
-        assert 'error_callback' in section_files or 'try' in code[files_idx-100:files_idx], \
-            "Files drilldown has no error handling"
+        assert except_count >= 3, (
+            f"Expected at least 3 'except Exception' blocks (one per dimension), "
+            f"found {except_count}. Each drilldown must have independent error handling."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
