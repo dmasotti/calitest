@@ -376,3 +376,99 @@ class TestNoRedundantRetry:
         # After fix: second attempt should NOT re-call metadata
         # (currently it does because preflight restarts from scratch)
         # This test documents the desired behavior
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. Behavioral RED tests: fast_path_preflight with files 504
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPreflightBehavioralFiles504:
+    """RED behavioral tests: call fast_path_preflight and verify the result
+    preserves metadata candidates when files drilldown fails."""
+
+    def _run_preflight_with_files_failure(self):
+        """Helper: run fast_path_preflight where metadata succeeds,
+        covers succeeds, files throws 504."""
+        import types
+
+        # Build a SyncPreflight with mock drilldowns
+        preflight = SyncPreflight(
+            library_id='lib-1',
+            client=Mock(),
+            mapping_table=Mock(),
+            cfg=Mock(),
+            sync_files_enabled_fn=Mock(return_value=True),
+            sync_covers_enabled_fn=Mock(return_value=True),
+            merkle_metadata_drilldown_fn=Mock(return_value=['uuid-1', 'uuid-2']),
+            merkle_covers_drilldown_fn=Mock(return_value=None),
+            merkle_files_drilldown_fn=Mock(side_effect=Exception("504 Gateway Timeout")),
+        )
+
+        # Mock sync_utils at module level for the duration of the call
+        mock_sync_utils = types.ModuleType('sync_utils')
+        mock_sync_utils.get_library_hash = Mock(return_value={
+            'library_metadata_hash': 'sha256:local-meta',
+            'library_covers_hash': 'sha256:local-covers',
+            'library_files_hash': 'sha256:local-files',
+            'total_books': 100,
+        })
+        mock_sync_utils.get_merkle_root = Mock(return_value={'root_hash': 'sha256:root'})
+
+        # Mock client to return mismatched hashes (force drilldown)
+        preflight._client.get_library_hash = Mock(return_value={
+            'library_metadata_hash': 'sha256:server-meta-DIFFERENT',
+            'library_covers_hash': 'sha256:local-covers',  # covers match
+            'library_files_hash': 'sha256:server-files-DIFFERENT',
+            'total_books': 100,
+        })
+
+        summary = {'errors': []}
+
+        # Patch sync_utils import inside fast_path_preflight
+        import sys
+        old_modules = {}
+        for name in ('sync_utils', 'calibre_plugins.sync_calimob.sync_utils'):
+            old_modules[name] = sys.modules.get(name)
+            sys.modules[name] = mock_sync_utils
+
+        try:
+            result = preflight.fast_path_preflight(
+                conn=Mock(), progress_callback=None,
+                summary=summary, ts_func=lambda: 'test',
+                debug_file=sys.stderr,
+            )
+        finally:
+            for name, old in old_modules.items():
+                if old is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = old
+
+        return result, summary
+
+    def test_files_504_preserves_metadata_candidates_in_result(self):
+        """RED: After files 504, result['merkle_candidates'] must contain
+        the metadata candidates ['uuid-1', 'uuid-2'], not None."""
+        result, summary = self._run_preflight_with_files_failure()
+
+        # Key assertion: candidates from metadata drilldown are preserved
+        assert result['merkle_candidates'] is not None, \
+            "merkle_candidates is None — files 504 discarded metadata candidates"
+        assert 'uuid-1' in result['merkle_candidates']
+        assert 'uuid-2' in result['merkle_candidates']
+
+    def test_files_504_does_not_return_done_true(self):
+        """Preflight should NOT say done=True when files failed."""
+        result, summary = self._run_preflight_with_files_failure()
+        assert result['done'] is False
+
+    def test_files_504_records_error_in_summary(self):
+        """Files 504 error must appear in summary['errors']."""
+        result, summary = self._run_preflight_with_files_failure()
+
+        # There should be at least one error about files/504
+        file_errors = [e for e in summary.get('errors', [])
+                       if '504' in str(e.get('error', ''))
+                       or 'files' in str(e.get('phase', '')).lower()]
+        assert len(file_errors) >= 1, \
+            f"No files 504 error recorded in summary: {summary['errors']}"
