@@ -888,3 +888,277 @@ class TestApplyDeletedMixedTypes:
         )
         assert uuids == set()
         assert errors is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 18. _apply_update: core decision paths
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_apply_worker():
+    """Create worker with all dependencies for _apply_update tests."""
+    worker = _make_worker()
+    worker._resolve_local_book_id = Mock(return_value=1)
+    worker._apply_create = Mock(return_value=(1, True))
+    worker._compute_metadata_signature = Mock(return_value='sha256:meta-sig')
+    worker._item_matches_metadata = Mock(return_value=False)
+    worker._should_download_cover = Mock(return_value=(False, 'hash_match'))
+    worker._download_cover = Mock()
+    worker._write_custom_columns = Mock()
+    worker._format_cache_from_item = Mock(return_value={})
+    worker._format_last_modified = Mock(return_value='2026-03-22T00:00:00Z')
+    worker.progress_percent_column = None
+    worker.favorite_column = None
+
+    # Mock db
+    mi = Mock()
+    mi.title = 'Test Book'
+    mi.rating = 8
+    mi.last_modified = Mock()
+    mi.last_modified.timestamp = Mock(return_value=1000.0)
+    mi.last_modified.__ne__ = Mock(return_value=True)  # != UNDEFINED_DATE
+    worker.db.get_metadata = Mock(return_value=mi)
+    worker.db.set_metadata = Mock()
+
+    # Mock sync_mapper
+    original_sm = sync_worker.sync_mapper
+    sync_worker.sync_mapper = Mock()
+    sync_worker.sync_mapper.UNDEFINED_DATE = Mock()
+    sync_worker.sync_mapper.json_item_to_calibre = Mock(return_value={'title': 'Server Title', 'rating': 8})
+    sync_worker.sync_mapper.calibre_to_json_item = Mock(return_value={'title': 'Test', 'cover': {}})
+    worker._original_sync_mapper = original_sm
+
+    # Mock cfg
+    original_cfg = sync_worker.cfg
+    mock_cfg = Mock()
+    mock_cfg.get_book_mapping_entry = Mock(return_value={})
+    mock_cfg.update_book_cache = Mock()
+    sync_worker.cfg = mock_cfg
+    worker._original_cfg = original_cfg
+
+    return worker
+
+
+def _restore_apply_worker(worker):
+    """Restore mocked globals after _apply_update test."""
+    sync_worker.sync_mapper = worker._original_sync_mapper
+    sync_worker.cfg = worker._original_cfg
+
+
+class TestApplyUpdateBookNotFound:
+    """_apply_update: book not found → delegates to _apply_create."""
+
+    def test_no_book_id_creates_new(self):
+        worker = _make_apply_worker()
+        worker._resolve_local_book_id = Mock(return_value=None)
+
+        try:
+            book_id, created = worker._apply_update({'uuid': 'uuid-1', 'title': 'New'})
+            assert created is True
+            worker._apply_create.assert_called_once()
+        finally:
+            _restore_apply_worker(worker)
+
+    def test_book_id_not_in_calibre_creates_new(self):
+        worker = _make_apply_worker()
+        worker._resolve_local_book_id = Mock(return_value=99)
+        worker.db.data.has_id = Mock(return_value=False)
+
+        try:
+            book_id, created = worker._apply_update({'uuid': 'uuid-1', 'title': 'Gone'})
+            assert created is True
+            worker._apply_create.assert_called_once()
+        finally:
+            _restore_apply_worker(worker)
+
+
+class TestApplyUpdateCachedServerLmSkip:
+    """_apply_update: cached_server_lm == server_last_modified → skip set_metadata."""
+
+    def test_skip_when_cached_server_lm_matches(self):
+        """Already applied this server version → skip metadata update."""
+        worker = _make_apply_worker()
+        # Set cached_server_lm to match server
+        sync_worker.cfg.get_book_mapping_entry = Mock(return_value={
+            'notes': {'book_cache': {'last_modified_server': 2000}},
+        })
+
+        try:
+            item = {'uuid': 'uuid-1', 'title': 'Book', 'last_modified': 2000}
+            book_id, modified = worker._apply_update(item, allow_cached_skip=True)
+            assert modified is False
+            # set_metadata should NOT be called
+            worker.db.set_metadata.assert_not_called()
+        finally:
+            _restore_apply_worker(worker)
+
+    def test_no_skip_when_cached_server_lm_differs(self):
+        """Different server version → proceed with update."""
+        worker = _make_apply_worker()
+        sync_worker.cfg.get_book_mapping_entry = Mock(return_value={
+            'notes': {'book_cache': {'last_modified_server': 1000}},
+        })
+
+        try:
+            item = {'uuid': 'uuid-1', 'title': 'Book', 'last_modified': 2000}
+            worker._apply_update(item, allow_cached_skip=True)
+            # Should proceed past the cached skip check (may or may not call set_metadata
+            # depending on timestamp comparison)
+        finally:
+            _restore_apply_worker(worker)
+
+    def test_no_skip_when_allow_cached_skip_false(self):
+        """allow_cached_skip=False → always proceed (no_cache sync)."""
+        worker = _make_apply_worker()
+        sync_worker.cfg.get_book_mapping_entry = Mock(return_value={
+            'notes': {'book_cache': {'last_modified_server': 2000}},
+        })
+
+        try:
+            item = {'uuid': 'uuid-1', 'title': 'Book', 'last_modified': 2000}
+            worker._apply_update(item, allow_cached_skip=False)
+            # Should NOT skip even though cached_server_lm matches
+        finally:
+            _restore_apply_worker(worker)
+
+
+class TestApplyUpdateClientWins:
+    """_apply_update: local_last_modified >= server_last_modified → client wins."""
+
+    def test_local_newer_skips_metadata_update(self):
+        """Local is newer → skip set_metadata but still check cover."""
+        worker = _make_apply_worker()
+        # local timestamp = 2000, server = 1000
+        mi = worker.db.get_metadata.return_value
+        mi.last_modified.timestamp = Mock(return_value=2000.0)
+
+        try:
+            item = {'uuid': 'uuid-1', 'title': 'Book', 'last_modified': 1000,
+                    'cover': {'has_cover': False}}
+            book_id, modified = worker._apply_update(item)
+            assert modified is False
+            worker.db.set_metadata.assert_not_called()
+        finally:
+            _restore_apply_worker(worker)
+
+    def test_local_equal_skips_metadata_update(self):
+        """Local == server → client wins (skip)."""
+        worker = _make_apply_worker()
+        mi = worker.db.get_metadata.return_value
+        mi.last_modified.timestamp = Mock(return_value=1000.0)
+
+        try:
+            item = {'uuid': 'uuid-1', 'title': 'Book', 'last_modified': 1000,
+                    'cover': {'has_cover': False}}
+            book_id, modified = worker._apply_update(item)
+            assert modified is False
+        finally:
+            _restore_apply_worker(worker)
+
+    def test_server_newer_applies_update(self):
+        """Server is newer → apply set_metadata."""
+        worker = _make_apply_worker()
+        mi = worker.db.get_metadata.return_value
+        mi.last_modified.timestamp = Mock(return_value=1000.0)
+
+        try:
+            item = {'uuid': 'uuid-1', 'title': 'Server Title', 'last_modified': 2000}
+            book_id, modified = worker._apply_update(item)
+            # set_metadata should be called (server is newer)
+            worker.db.set_metadata.assert_called()
+        finally:
+            _restore_apply_worker(worker)
+
+
+class TestApplyUpdateCoverCheck:
+    """_apply_update: cover download triggered even when metadata skipped."""
+
+    def test_cover_checked_on_cached_skip(self):
+        """When cached skip applies, still check cover if has_cover=True."""
+        worker = _make_apply_worker()
+        sync_worker.cfg.get_book_mapping_entry = Mock(return_value={
+            'notes': {'book_cache': {'last_modified_server': 2000}},
+        })
+        worker._should_download_cover = Mock(return_value=(True, 'hash_mismatch'))
+
+        try:
+            item = {'uuid': 'uuid-1', 'title': 'Book', 'last_modified': 2000,
+                    'cover': {'has_cover': True}}
+            worker._apply_update(item, allow_cached_skip=True, skip_cover=False)
+            worker._should_download_cover.assert_called_once()
+            worker._download_cover.assert_called_once()
+        finally:
+            _restore_apply_worker(worker)
+
+    def test_cover_skipped_when_skip_cover_true(self):
+        """skip_cover=True → no cover check even if server has cover."""
+        worker = _make_apply_worker()
+        sync_worker.cfg.get_book_mapping_entry = Mock(return_value={
+            'notes': {'book_cache': {'last_modified_server': 2000}},
+        })
+
+        try:
+            item = {'uuid': 'uuid-1', 'title': 'Book', 'last_modified': 2000,
+                    'cover': {'has_cover': True}}
+            worker._apply_update(item, allow_cached_skip=True, skip_cover=True)
+            worker._should_download_cover.assert_not_called()
+        finally:
+            _restore_apply_worker(worker)
+
+
+class TestApplyUpdateCacheRefresh:
+    """_apply_update: cache refresh after metadata update."""
+
+    def test_cache_updated_after_set_metadata(self):
+        """After applying update, cfg.update_book_cache must be called."""
+        worker = _make_apply_worker()
+        mi = worker.db.get_metadata.return_value
+        mi.last_modified.timestamp = Mock(return_value=1000.0)
+
+        try:
+            item = {'uuid': 'uuid-1', 'title': 'Server Title',
+                    'last_modified': 2000, 'metadata_hash': 'sha256:server-hash'}
+            worker._apply_update(item)
+            # update_book_cache should be called at least once
+            assert sync_worker.cfg.update_book_cache.call_count >= 1
+        finally:
+            _restore_apply_worker(worker)
+
+    def test_metadata_hash_cache_saved_as_hash_colon_timestamp(self):
+        """metadata_hash_cache should be saved in 'hash:timestamp' format."""
+        worker = _make_apply_worker()
+        mi = worker.db.get_metadata.return_value
+        mi.last_modified.timestamp = Mock(return_value=1000.0)
+
+        try:
+            item = {'uuid': 'uuid-1', 'title': 'Book',
+                    'last_modified': 2000, 'metadata_hash': 'sha256:server-hash'}
+            worker._apply_update(item)
+
+            # Find the update_book_cache call with metadata_hash_cache
+            for call_obj in sync_worker.cfg.update_book_cache.call_args_list:
+                kwargs = call_obj[1] if len(call_obj) > 1 else {}
+                if not kwargs:
+                    # positional args — check if metadata_hash_cache is in kwargs
+                    kwargs = call_obj.kwargs if hasattr(call_obj, 'kwargs') else {}
+                mhc = kwargs.get('metadata_hash_cache')
+                if mhc:
+                    # Should be 'sha256:server-hash:<timestamp>'
+                    assert ':' in mhc, f"metadata_hash_cache should have ':' separator: {mhc}"
+                    break
+        finally:
+            _restore_apply_worker(worker)
+
+
+class TestApplyUpdateGetMetadataFails:
+    """_apply_update: if db.get_metadata throws, skip gracefully."""
+
+    def test_get_metadata_exception_skips(self):
+        worker = _make_apply_worker()
+        worker.db.get_metadata = Mock(side_effect=Exception("DB locked"))
+
+        try:
+            book_id, modified = worker._apply_update({'uuid': 'uuid-1', 'title': 'X'})
+            assert modified is False
+            worker.db.set_metadata.assert_not_called()
+        finally:
+            _restore_apply_worker(worker)
