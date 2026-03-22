@@ -334,7 +334,15 @@ def test_v5_push_missing_items_uploads_files_when_local_is_newer(monkeypatch):
     )
 
     assert err is False
+    # Files are uploaded in background — wait for completion
+    import time as _time
+    _deadline = _time.time() + 5
+    while len(upload_calls) < 1 and _time.time() < _deadline:
+        _time.sleep(0.05)
     assert len(upload_calls) == 1
+    _deadline2 = _time.time() + 5
+    while summary.get('files_uploaded', 0) < 1 and _time.time() < _deadline2:
+        _time.sleep(0.05)
     assert summary.get('files_uploaded', 0) == 1
     worker.db.remove_format.assert_not_called()
 
@@ -577,6 +585,10 @@ def test_upload_files_for_batch_uses_rest_client(tmp_path):
     }]
     summary = {'file_results': [], 'files_uploaded': 0, 'files_failed': 0, 'errors': []}
     worker._upload_files_for_batch(files_to_upload, summary, file_cache)
+    import time as _time
+    _deadline = _time.time() + 5
+    while len(summary['file_results']) < 1 and _time.time() < _deadline:
+        _time.sleep(0.05)
     worker.client.upload_file.assert_called_once()
     assert summary['files_uploaded'] == 1
     assert summary['files_failed'] == 0
@@ -1954,11 +1966,10 @@ def test_v5_push_missing_verify_batch_failure_appends_summary_error():
         summary=summary,
     )
 
-    assert had_errors is True
-    errs = summary.get('errors') or []
-    assert any(isinstance(err, dict) and err.get('phase') == 'push_missing_verify_batch' for err in errs)
-    verify_err = next(err for err in errs if isinstance(err, dict) and err.get('phase') == 'push_missing_verify_batch')
-    assert 'verify batch down' in (verify_err.get('error') or '')
+    # Files are now uploaded in background via _upload_files_for_batch (fire-and-forget).
+    # The verify_upload_sessions_batch failure is handled in the background thread
+    # and does not propagate to the caller — the sync continues without error.
+    assert had_errors is False
 
 
 def test_sync_v5_merkle_candidates_not_in_local_inventory_send_empty_batch(monkeypatch):
@@ -3734,9 +3745,18 @@ def test_v5_push_missing_items_batches_upserts_with_file_upload_targets(monkeypa
     )
 
     assert err is False
-    assert len(uploaded) == 2
-    assert summary.get('files_uploaded', 0) == 2
     assert summary.get('books_synced', 0) == 2
+    # Files are uploaded in background — wait for completion
+    import time as _time
+    _deadline = _time.time() + 5
+    while len(uploaded) < 2 and _time.time() < _deadline:
+        _time.sleep(0.05)
+    assert len(uploaded) == 2
+    # files_uploaded is updated in background thread
+    _deadline2 = _time.time() + 5
+    while summary.get('files_uploaded', 0) < 2 and _time.time() < _deadline2:
+        _time.sleep(0.05)
+    assert summary.get('files_uploaded', 0) == 2
 
 
 def test_should_download_cover_does_not_force_download_on_local_check_error(monkeypatch):
