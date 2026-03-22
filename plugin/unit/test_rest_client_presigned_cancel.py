@@ -92,11 +92,10 @@ def _ensure_verify_enabled_pref_key(monkeypatch):
     return key_name
 
 
-def test_presigned_verify_polling_stops_when_cancel_callback_raises(monkeypatch):
+def test_presigned_flow_returns_immediately_after_complete_without_polling(monkeypatch):
+    """After start → PUT → complete, the presigned flow must return immediately
+    with pending_verify=True, without any polling loop or verify request."""
     client = _make_client()
-    monkeypatch.setenv("CALIMOB_PRESIGNED_VERIFY_WAIT_SECONDS", "120")
-    monkeypatch.setenv("CALIMOB_PRESIGNED_VERIFY_POLL_SECONDS", "0.01")
-    monkeypatch.setattr(rest_client.time, "sleep", lambda _secs: None)
 
     class _DummyResponse:
         headers = {"ETag": '"etag-1"'}
@@ -110,46 +109,39 @@ def test_presigned_verify_polling_stops_when_cancel_callback_raises(monkeypatch)
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    status_calls = {"count": 0}
+    request_log = []
 
     def _fake_request(method, endpoint, **kwargs):
+        request_log.append((method, endpoint))
         if method == "POST" and endpoint == "/sync/uploads/start":
             return ({"status": "200"}, {
-                "session_id": "session-cancel-1",
+                "session_id": "session-nopoll-1",
                 "status": "pending",
                 "upload_url": "https://upload.example.com/tmp-key",
                 "temp_object_key": "tmp-key",
+                "final_object_key": "ebooks/abc.epub",
+                "storage_provider": "r2",
             })
         if method == "POST" and endpoint == "/sync/uploads/complete":
             return ({"status": "200"}, {"status": "uploaded_unverified"})
-        if method == "POST" and endpoint == "/sync/uploads/verify":
-            return ({"status": "200"}, {"status": "verifying"})
-        if method == "GET" and endpoint == "/sync/uploads/session-cancel-1":
-            status_calls["count"] += 1
-            return ({"status": "200"}, {"status": "verifying"})
         raise AssertionError("Unexpected request: %s %s" % (method, endpoint))
 
-    cancel_calls = {"count": 0}
-
-    def _cancel_check():
-        cancel_calls["count"] += 1
-        if cancel_calls["count"] >= 2:
-            raise rest_client.RestApiError("cancelled by user")
-
     with patch.object(client, "_request", side_effect=_fake_request):
-        with pytest.raises(rest_client.RestApiError, match="cancelled by user"):
-            client._upload_file_via_presigned_flow(
-                upload_url="https://api.example.com/api/items/uuid/11111111-2222-3333-4444-555555555555/files/epub?library_id=9",
-                file_data=b"ebook binary",
-                file_hash="sha256:%s" % ("c" * 64),
-                file_name="book.epub",
-                urllib_request=Mock(Request=Mock(return_value=object()), urlopen=Mock(return_value=_DummyResponse())),
-                urllib_error=Mock(HTTPError=Exception),
-                cancel_check=_cancel_check,
-            )
+        result = client._upload_file_via_presigned_flow(
+            upload_url="https://api.example.com/api/items/uuid/11111111-2222-3333-4444-555555555555/files/epub?library_id=9",
+            file_data=b"ebook binary",
+            file_hash="sha256:%s" % ("c" * 64),
+            file_name="book.epub",
+            urllib_request=Mock(Request=Mock(return_value=object()), urlopen=Mock(return_value=_DummyResponse())),
+            urllib_error=Mock(HTTPError=Exception),
+        )
 
-    assert status_calls["count"] <= 1
-    assert cancel_calls["count"] >= 2
+    # Must return with pending_verify, no polling
+    assert result["status"] == "uploaded_unverified"
+    assert result["session_id"] == "session-nopoll-1"
+    assert result["pending_verify"] is True
+    # Only start + complete, no verify or GET polling
+    assert request_log == [("POST", "/sync/uploads/start"), ("POST", "/sync/uploads/complete")]
 
 
 def test_presigned_verify_batch_uses_plugin_toggle_when_env_unset(monkeypatch):
