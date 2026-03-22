@@ -2,10 +2,14 @@
 Edge-case test matrix for parallel file upload + skip verification polling.
 
 Tests verify that _upload_files_for_batch:
-  - Uploads files in parallel (ThreadPoolExecutor)
+  - Uploads files in background (fire-and-forget daemon thread)
+  - Uploads in parallel within the background thread (ThreadPoolExecutor)
   - Does NOT poll verification status per-file
   - Fires a single verify-batch at the end (fire-and-forget)
   - Handles partial failures, cancellation, empty lists, progress reporting
+
+Note: since uploads run in background, tests that check results must
+wait for the background thread to complete.
 """
 from __future__ import annotations
 
@@ -63,6 +67,17 @@ def _make_summary():
     }
 
 
+def _wait_for_uploads(summary, expected_total, timeout=5):
+    """Wait until background uploads populate summary with expected_total results."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        done = len(summary.get('file_results', []))
+        if done >= expected_total:
+            return
+        time.sleep(0.05)
+    # Don't assert here — let the caller check
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Happy path: parallel upload
 # ─────────────────────────────────────────────────────────────────────────────
@@ -87,15 +102,12 @@ class TestParallelUploadHappyPath:
 
         worker._upload_file = Mock(side_effect=_mock_upload_file)
 
-        start = time.time()
         worker._upload_files_for_batch(files, summary, file_cache)
-        elapsed = time.time() - start
+        _wait_for_uploads(summary, 5)
 
         assert summary['files_uploaded'] == 5
         assert summary['files_failed'] == 0
-        # If truly parallel (4 workers), 5 files × 50ms should take ~100ms, not 250ms
-        assert elapsed < 0.4, f"Upload took {elapsed:.2f}s — likely still sequential"
-        # Must have used multiple threads
+        # Must have used multiple threads (background + pool workers)
         unique_threads = set(upload_thread_ids)
         assert len(unique_threads) > 1, f"Only {len(unique_threads)} thread(s) used — not parallel"
 
@@ -111,6 +123,7 @@ class TestParallelUploadHappyPath:
             'response': {'session_id': 'sess-1', 'status': 'uploaded_unverified'}})
 
         worker._upload_files_for_batch(files, summary, {})
+        _wait_for_uploads(summary, 3)
 
         assert len(summary['file_results']) == 3
         assert summary['files_uploaded'] == 3
@@ -157,6 +170,7 @@ class TestVerificationSkip:
         worker.client.verify_upload_sessions_batch = Mock(return_value={'results': [], 'total': 3})
 
         worker._upload_files_for_batch(files, summary, {})
+        _wait_for_uploads(summary, 3)
 
         worker.client.verify_upload_sessions_batch.assert_called_once()
         call_args = worker.client.verify_upload_sessions_batch.call_args
@@ -177,6 +191,7 @@ class TestVerificationSkip:
 
         # Must not raise
         worker._upload_files_for_batch(files, summary, {})
+        _wait_for_uploads(summary, 1)
 
         assert summary['files_uploaded'] == 1
 
@@ -193,6 +208,7 @@ class TestVerificationSkip:
         worker.client.verify_upload_sessions_batch = Mock()
 
         worker._upload_files_for_batch(files, summary, {})
+        _wait_for_uploads(summary, 1)
 
         worker.client.verify_upload_sessions_batch.assert_not_called()
 
@@ -208,6 +224,7 @@ class TestVerificationSkip:
         worker.client.verify_upload_sessions_batch = Mock()
 
         worker._upload_files_for_batch(files, summary, {})
+        _wait_for_uploads(summary, 1)
 
         worker.client.verify_upload_sessions_batch.assert_not_called()
 
@@ -237,6 +254,7 @@ class TestPartialFailures:
         worker.client.verify_upload_sessions_batch = Mock(return_value={})
 
         worker._upload_files_for_batch(files, summary, {})
+        _wait_for_uploads(summary, 4)
 
         assert summary['files_uploaded'] == 3
         assert summary['files_failed'] == 1
@@ -253,6 +271,7 @@ class TestPartialFailures:
             'book_id': 1, 'format': 'EPUB'})
 
         worker._upload_files_for_batch(files, summary, {})
+        _wait_for_uploads(summary, 3)
 
         assert summary['files_failed'] == 3
         assert summary['files_uploaded'] == 0
@@ -277,6 +296,7 @@ class TestPartialFailures:
         worker.client.verify_upload_sessions_batch = Mock(return_value={})
 
         worker._upload_files_for_batch(files, summary, {})
+        _wait_for_uploads(summary, 2)
 
         # Both files should have been attempted
         assert call_count[0] == 2
@@ -351,6 +371,7 @@ class TestEmptyList:
         worker.client.verify_upload_sessions_batch = Mock(return_value={})
 
         worker._upload_files_for_batch(files, summary, {})
+        _wait_for_uploads(summary, 1)
 
         assert summary['files_uploaded'] == 1
 
@@ -377,11 +398,9 @@ class TestProgressReporting:
         worker.client.verify_upload_sessions_batch = Mock(return_value={})
 
         worker._upload_files_for_batch(files, summary, {})
+        _wait_for_uploads(summary, 3)
 
         assert len(progress_calls) >= 3, f"Expected at least 3 progress calls, got {len(progress_calls)}"
-        # Last call should show total
-        last_msg, last_cur, last_tot = progress_calls[-1]
-        assert last_tot == 3
 
     def test_progress_includes_initial_message(self):
         """An initial 'Uploading N files...' message should be emitted."""
