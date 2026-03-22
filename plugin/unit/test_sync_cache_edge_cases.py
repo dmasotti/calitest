@@ -694,3 +694,357 @@ class TestCacheCallSiteIntegrity:
         # We know there should be multiple call sites
         assert len(call_sites) >= 5, \
             f"Expected at least 5 cfg.update_book_cache calls, got {len(call_sites)}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 13. SQL injection guard: _v5_get_sync_cache_field_by_uuid
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFieldNameSqlInjection:
+    """_v5_get_sync_cache_field_by_uuid uses % substitution for field_name.
+    Verify that only known column names are passed in production."""
+
+    def test_valid_field_names_work(self, tmp_path):
+        """Known column names should return values without error."""
+        library_path = _create_library_with_sync_table(tmp_path)
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {
+            'uuid': 'uuid-1', 'cover_hash': 'sha256:c', 'files_hash': 'sha256:f',
+        })
+        worker = _make_worker()
+
+        for field in ('cover_hash', 'files_hash', 'metadata_hash_cache',
+                      'formats_sig', 'last_modified'):
+            # Should not raise
+            worker._v5_get_sync_cache_field_by_uuid(library_path, 'uuid-1', field)
+
+    def test_all_production_call_sites_use_known_fields(self):
+        """AST check: all _v5_get_sync_cache_field_by_uuid calls pass
+        a string literal as field_name (not user input)."""
+        import ast
+
+        src_path = os.path.join(os.path.dirname(sync_worker.__file__), 'sync_worker.py')
+        with open(src_path, 'r') as f:
+            source = f.read()
+        tree = ast.parse(source)
+
+        known_fields = {
+            'cover_hash', 'files_hash', 'metadata_hash_cache',
+            'formats_sig', 'last_modified', 'last_modified_server',
+        }
+        violations = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                func = node.func
+                if (isinstance(func, ast.Attribute)
+                        and func.attr == '_v5_get_sync_cache_field_by_uuid'):
+                    # 3rd positional arg is field_name
+                    if len(node.args) >= 3:
+                        field_arg = node.args[2]
+                        if isinstance(field_arg, ast.Constant) and isinstance(field_arg.value, str):
+                            if field_arg.value not in known_fields:
+                                violations.append((node.lineno, field_arg.value))
+                        elif not isinstance(field_arg, ast.Constant):
+                            violations.append((node.lineno, '<non-literal>'))
+
+        assert not violations, (
+            f"_v5_get_sync_cache_field_by_uuid called with unexpected field names: {violations}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 14. Malformed DB detection and auto-rebuild
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestMalformedDbDetection:
+    """_is_sqlite_malformed_error must detect all known malformed error variants."""
+
+    def test_detects_standard_malformed_message(self):
+        worker = _make_worker()
+        exc = Exception("database disk image is malformed")
+        assert worker._is_sqlite_malformed_error(exc) is True
+
+    def test_detects_short_malformed_message(self):
+        worker = _make_worker()
+        exc = Exception("disk image is malformed")
+        assert worker._is_sqlite_malformed_error(exc) is True
+
+    def test_case_insensitive(self):
+        worker = _make_worker()
+        exc = Exception("DATABASE DISK IMAGE IS MALFORMED")
+        assert worker._is_sqlite_malformed_error(exc) is True
+
+    def test_embedded_in_longer_message(self):
+        worker = _make_worker()
+        exc = Exception("sqlite3.OperationalError: database disk image is malformed (calimob_books_sync)")
+        assert worker._is_sqlite_malformed_error(exc) is True
+
+    def test_non_malformed_errors(self):
+        worker = _make_worker()
+        assert worker._is_sqlite_malformed_error(Exception("table not found")) is False
+        assert worker._is_sqlite_malformed_error(Exception("connection refused")) is False
+        assert worker._is_sqlite_malformed_error(Exception("")) is False
+
+    def test_none_exception(self):
+        worker = _make_worker()
+        assert worker._is_sqlite_malformed_error(None) is False
+
+
+class TestAutoRebuildSyncCache:
+    """_try_auto_rebuild_sync_cache_after_malformed recovery path."""
+
+    def test_rebuilds_on_first_attempt(self, tmp_path):
+        library_path = _create_library_with_sync_table(tmp_path)
+        # Insert data that will be lost after rebuild
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {'uuid': 'uuid-1'})
+
+        worker = _make_worker()
+        summary = {'errors': []}
+        result = worker._try_auto_rebuild_sync_cache_after_malformed(library_path, summary)
+
+        assert result is True
+        assert summary.get('auto_cache_rebuild_attempted') is True
+        assert summary.get('auto_cache_rebuild_succeeded') is True
+
+    def test_does_not_retry_twice(self, tmp_path):
+        library_path = _create_library_with_sync_table(tmp_path)
+        worker = _make_worker()
+        summary = {'errors': []}
+
+        # First attempt succeeds
+        worker._try_auto_rebuild_sync_cache_after_malformed(library_path, summary)
+        # Second attempt should be blocked
+        result = worker._try_auto_rebuild_sync_cache_after_malformed(library_path, summary)
+
+        assert result is False
+
+    def test_returns_false_without_library_path(self):
+        worker = _make_worker()
+        assert worker._try_auto_rebuild_sync_cache_after_malformed(None) is False
+        assert worker._try_auto_rebuild_sync_cache_after_malformed('') is False
+
+    def test_rebuild_failure_recorded_in_summary(self, tmp_path):
+        worker = _make_worker()
+        summary = {'errors': []}
+        # Non-existent path → force_rebuild_table will fail
+        result = worker._try_auto_rebuild_sync_cache_after_malformed(
+            '/nonexistent/path', summary
+        )
+        assert result is False
+        assert summary.get('auto_cache_rebuild_succeeded') is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 15. Cache delete/mark entries
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCacheDeleteMark:
+    """Deletion marking in calimob_books_sync must be idempotent."""
+
+    def test_mark_entry_as_deleted(self, tmp_path):
+        library_path = _create_library_with_sync_table(tmp_path)
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {
+            'uuid': 'uuid-1', 'is_deleted': 0,
+        })
+
+        # Mark as deleted
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {
+            'uuid': 'uuid-1', 'is_deleted': 1, 'deleted_at': '2026-03-22T00:00:00Z',
+        })
+
+        conn = sqlite3.connect(os.path.join(library_path, 'metadata.db'))
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute(
+                "SELECT is_deleted, deleted_at FROM calimob_books_sync WHERE calibre_book_id=1"
+            ).fetchone()
+            assert row['is_deleted'] == 1
+            assert row['deleted_at'] is not None
+        finally:
+            conn.close()
+
+    def test_double_delete_idempotent(self, tmp_path):
+        """Marking an already-deleted entry as deleted again should not crash."""
+        library_path = _create_library_with_sync_table(tmp_path)
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {
+            'uuid': 'uuid-1', 'is_deleted': 1, 'deleted_at': '2026-03-22T00:00:00Z',
+        })
+        # Second delete should not raise
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {
+            'uuid': 'uuid-1', 'is_deleted': 1, 'deleted_at': '2026-03-22T01:00:00Z',
+        })
+
+        conn = sqlite3.connect(os.path.join(library_path, 'metadata.db'))
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute(
+                "SELECT is_deleted, deleted_at FROM calimob_books_sync WHERE calibre_book_id=1"
+            ).fetchone()
+            assert row['is_deleted'] == 1
+            # Last write wins
+            assert '01:00:00' in row['deleted_at']
+        finally:
+            conn.close()
+
+    def test_deleted_entries_excluded_from_candidates(self, tmp_path):
+        """get_deleted_book_entries only returns non-deleted entries missing from books."""
+        library_path = _create_library_with_sync_table(tmp_path)
+        # Entry for book that no longer exists in books table
+        mapping_table.upsert_entry(library_path, 'lib-1', 10, {
+            'uuid': 'uuid-10', 'is_deleted': 0,
+        })
+        # Entry already marked deleted — should NOT appear again
+        mapping_table.upsert_entry(library_path, 'lib-1', 11, {
+            'uuid': 'uuid-11', 'is_deleted': 1,
+        })
+
+        deleted = mapping_table.get_deleted_book_entries(library_path, 'lib-1')
+        uuids = [entry[1] for entry in deleted]
+        assert 'uuid-10' in uuids
+        assert 'uuid-11' not in uuids  # already deleted, excluded
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 16. get_book_hashes: cache read with corrupted format
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGetBookHashesCorruptedFormat:
+    """get_book_hashes must handle corrupted cache values gracefully."""
+
+    def test_metadata_hash_without_colon(self, tmp_path):
+        """If metadata_hash_cache has no ':' separator, rsplit still works."""
+        library_path = _create_library_with_sync_table(tmp_path)
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {
+            'uuid': 'uuid-1', 'metadata_hash_cache': 'just-a-hash',
+            'last_modified': 1000,
+        })
+
+        from calibre_plugins.sync_calimob import config as cfg
+        db = _make_db_mock(library_path)
+        result = cfg.get_book_hashes('lib-1', 1, 1000, db=db)
+        # rsplit(':', 1) on 'just-a-hash' → ['just-a-hash'] → parts[0] = 'just-a-hash'
+        assert result['metadata_hash'] == 'just-a-hash'
+
+    def test_cache_invalid_returns_none_gracefully(self, tmp_path):
+        """If cache last_modified doesn't match, hashes are None (recalculated elsewhere)."""
+        library_path = _create_library_with_sync_table(tmp_path)
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {
+            'uuid': 'uuid-1', 'metadata_hash_cache': 'sha256:meta:1000',
+            'last_modified': 1000,
+        })
+
+        from calibre_plugins.sync_calimob import config as cfg
+        db = _make_db_mock(library_path)
+        # book_last_modified=2000 != cached 1000 → cache invalid
+        result = cfg.get_book_hashes('lib-1', 1, 2000, db=db)
+        assert result['metadata_hash'] is None  # cache miss
+
+    def test_db_none_returns_empty_hashes(self):
+        """When db=None, get_book_hashes returns all None."""
+        from calibre_plugins.sync_calimob import config as cfg
+        result = cfg.get_book_hashes('lib-1', 1, 1000, db=None)
+        assert result == {'metadata_hash': None, 'cover_hash': None, 'files_hash': None}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 17. upsert_entry: INSERT vs UPDATE semantics
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUpsertEntrySemantics:
+    """upsert_entry must INSERT on first call, UPDATE on subsequent calls."""
+
+    def test_insert_then_update(self, tmp_path):
+        library_path = _create_library_with_sync_table(tmp_path)
+
+        # First call: INSERT
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {
+            'uuid': 'uuid-1', 'cover_hash': 'sha256:first',
+        })
+
+        # Second call: UPDATE (same book_id)
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {
+            'cover_hash': 'sha256:second',
+        })
+
+        conn = sqlite3.connect(os.path.join(library_path, 'metadata.db'))
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                "SELECT cover_hash FROM calimob_books_sync WHERE calibre_book_id=1"
+            ).fetchall()
+            # Must be exactly 1 row (upsert, not double insert)
+            assert len(rows) == 1
+            assert rows[0]['cover_hash'] == 'sha256:second'
+        finally:
+            conn.close()
+
+    def test_preserves_created_at_on_update(self, tmp_path):
+        """UPDATE must not overwrite created_at."""
+        library_path = _create_library_with_sync_table(tmp_path)
+
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {
+            'uuid': 'uuid-1', 'cover_hash': 'sha256:first',
+        })
+
+        conn = sqlite3.connect(os.path.join(library_path, 'metadata.db'))
+        conn.row_factory = sqlite3.Row
+        try:
+            row1 = conn.execute(
+                "SELECT created_at FROM calimob_books_sync WHERE calibre_book_id=1"
+            ).fetchone()
+            created_at_original = row1['created_at']
+        finally:
+            conn.close()
+
+        # Update
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {
+            'cover_hash': 'sha256:second',
+        })
+
+        conn = sqlite3.connect(os.path.join(library_path, 'metadata.db'))
+        conn.row_factory = sqlite3.Row
+        try:
+            row2 = conn.execute(
+                "SELECT created_at FROM calimob_books_sync WHERE calibre_book_id=1"
+            ).fetchone()
+            assert row2['created_at'] == created_at_original
+        finally:
+            conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 18. fetch_entries_bulk chunking
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFetchEntriesBulkChunking:
+    """fetch_entries_bulk must handle large ID sets via chunking."""
+
+    def test_empty_ids_returns_empty(self, tmp_path):
+        library_path = _create_library_with_sync_table(tmp_path)
+        result = mapping_table.fetch_entries_bulk(library_path, 'lib-1', [])
+        assert result == {}
+
+    def test_bulk_fetch_returns_all(self, tmp_path):
+        library_path = _create_library_with_sync_table(tmp_path)
+        for i in range(1, 11):
+            mapping_table.upsert_entry(library_path, 'lib-1', i, {
+                'uuid': f'uuid-{i}', 'cover_hash': f'sha256:c{i}',
+            })
+
+        result = mapping_table.fetch_entries_bulk(
+            library_path, 'lib-1', list(range(1, 11))
+        )
+        assert len(result) == 10
+        for i in range(1, 11):
+            assert i in result
+
+    def test_missing_ids_not_in_result(self, tmp_path):
+        library_path = _create_library_with_sync_table(tmp_path)
+        mapping_table.upsert_entry(library_path, 'lib-1', 1, {'uuid': 'uuid-1'})
+
+        result = mapping_table.fetch_entries_bulk(
+            library_path, 'lib-1', [1, 2, 3]  # 2 and 3 don't exist
+        )
+        assert 1 in result
+        assert 2 not in result
+        assert 3 not in result
