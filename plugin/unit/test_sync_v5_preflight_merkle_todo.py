@@ -10,11 +10,16 @@ import importlib.util
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[3] / "sync_calimob"
 SYNC_WORKER = PLUGIN_ROOT / "sync_worker.py"
+SYNC_PREFLIGHT = PLUGIN_ROOT / "sync_preflight.py"
 REST_CLIENT = PLUGIN_ROOT / "rest_client.py"
 
 
 def _read_sync_worker() -> str:
-    return SYNC_WORKER.read_text(encoding="utf-8")
+    """Read sync_worker.py + sync_preflight.py (preflight logic was extracted)."""
+    code = SYNC_WORKER.read_text(encoding="utf-8")
+    if SYNC_PREFLIGHT.exists():
+        code += "\n" + SYNC_PREFLIGHT.read_text(encoding="utf-8")
+    return code
 
 
 def _load_rest_client_module():

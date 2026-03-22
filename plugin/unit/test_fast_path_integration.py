@@ -12,35 +12,34 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../..', 'sync_calimob'))
 
 
+def _read_preflight_code():
+    """Read sync_worker.py + sync_preflight.py (preflight logic was extracted)."""
+    base = os.path.join(os.path.dirname(__file__), '../../..', 'sync_calimob')
+    code = ''
+    for fname in ('sync_worker.py', 'sync_preflight.py'):
+        fpath = os.path.join(base, fname)
+        if os.path.exists(fpath):
+            with open(fpath, 'r') as f:
+                code += f.read() + '\n'
+    return code
+
+
 class TestFastPathLibraryUUID:
     """Test that library_uuid is correctly obtained from self.library_id."""
     
     def test_library_uuid_source_in_code(self):
         """
-        Verify sync_worker.py uses self.library_id for library_uuid.
-        
+        Verify preflight uses self.library_id / self._library_id for library_uuid.
+
         This is a regression test for the bug where cfg.get_library_uuid(self.db)
         was called but the function didn't exist.
         """
-        # Read sync_worker.py
-        sync_worker_path = os.path.join(
-            os.path.dirname(__file__), 
-            '../../..', 
-            'sync_calimob', 
-            'sync_worker.py'
-        )
-        
-        with open(sync_worker_path, 'r') as f:
-            code = f.read()
-        
-        # Find fast path section
-        assert 'Fast path: check library hash before full sync' in code, \
-            "Fast path code not found"
-        
-        # Verify library_uuid is set from self.library_id
-        assert 'library_uuid = self.library_id' in code, \
+        code = _read_preflight_code()
+
+        # Verify library_uuid is set from library_id (may be self.library_id or self._library_id)
+        assert 'library_uuid = self.library_id' in code or 'library_uuid = self._library_id' in code, \
             "CRITICAL: library_uuid must be self.library_id, not queried from DB"
-        
+
         # Verify the bug is NOT present
         assert 'cfg.get_library_uuid' not in code, \
             "BUG: cfg.get_library_uuid doesn't exist, use self.library_id"
@@ -67,17 +66,8 @@ class TestFastPathLibraryUUID:
     
     def test_fast_path_calls_get_library_hash_with_library_uuid(self):
         """Verify fast path calls sync_utils.get_library_hash(conn, library_uuid)."""
-        sync_worker_path = os.path.join(
-            os.path.dirname(__file__), 
-            '../../..', 
-            'sync_calimob', 
-            'sync_worker.py'
-        )
-        
-        with open(sync_worker_path, 'r') as f:
-            code = f.read()
-        
-        # Verify get_library_hash is called with library_uuid
+        code = _read_preflight_code()
+
         assert 'sync_utils.get_library_hash(conn, library_uuid)' in code, \
             "Fast path must call sync_utils.get_library_hash(conn, library_uuid)"
     
@@ -106,17 +96,8 @@ class TestFastPathLogic:
     
     def test_fast_path_compares_hashes(self):
         """Verify fast path compares local and server split hashes."""
-        sync_worker_path = os.path.join(
-            os.path.dirname(__file__), 
-            '../../..', 
-            'sync_calimob', 
-            'sync_worker.py'
-        )
-        
-        with open(sync_worker_path, 'r') as f:
-            code = f.read()
-        
-        # Verify split-hash comparison logic
+        code = _read_preflight_code()
+
         assert 'metadata_match' in code, \
             "Fast path must compute metadata_match"
         assert 'covers_match' in code, \
@@ -154,20 +135,11 @@ class TestFastPathLogic:
     
     def test_fast_path_handles_exceptions(self):
         """Verify fast path has exception handling."""
-        sync_worker_path = os.path.join(
-            os.path.dirname(__file__), 
-            '../../..', 
-            'sync_calimob', 
-            'sync_worker.py'
-        )
-        
-        with open(sync_worker_path, 'r') as f:
-            code = f.read()
-        
-        # Verify exception handling
+        code = _read_preflight_code()
+
         assert 'except Exception' in code, \
             "Fast path must have exception handling"
-        
+
         assert 'continuing with normal sync' in code.lower(), \
             "Fast path must log that it's falling back to normal sync"
 
@@ -196,23 +168,20 @@ class TestFastPathDocumentation:
     
     def test_fast_path_has_debug_logging(self):
         """Verify fast path has debug logging for troubleshooting."""
-        sync_worker_path = os.path.join(
-            os.path.dirname(__file__), 
-            '../../..', 
-            'sync_calimob', 
-            'sync_worker.py'
+        # After extraction, fast path logic lives in sync_preflight.py
+        preflight_path = os.path.join(
+            os.path.dirname(__file__),
+            '../../..',
+            'sync_calimob',
+            'sync_preflight.py'
         )
-        
-        with open(sync_worker_path, 'r') as f:
-            code = f.read()
-        
-        # Logging lives in _v5_fast_path_preflight helper.
-        helper_start = code.find('def _v5_fast_path_preflight')
-        helper_section = code[helper_start:helper_start + 9000]
 
-        assert 'calimob_debug' in helper_section, \
+        with open(preflight_path, 'r') as f:
+            code = f.read()
+
+        assert 'calimob_debug' in code, \
             "Fast path must have debug logging"
-        assert 'Fast path:' in helper_section, \
+        assert 'Fast path:' in code, \
             "Fast path logs should be prefixed with 'Fast path:'"
 
 
