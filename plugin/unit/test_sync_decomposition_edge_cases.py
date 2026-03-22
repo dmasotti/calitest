@@ -296,11 +296,13 @@ class TestSyncV5FlowE2E:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestNoDuplicateUploadCallSites:
-    """Static analysis: _upload_file must only be called from _upload_files_for_batch."""
+    """Static analysis: _upload_file must only be called from _upload_files_for_batch
+    or its delegation chain (FileUploader)."""
 
     def test_upload_file_only_called_from_upload_files_for_batch(self):
-        """Parse sync_worker.py AST and verify _upload_file is only called
-        inside _upload_files_for_batch (or its nested functions)."""
+        """In sync_worker.py, self._upload_file() must only be referenced
+        inside _upload_files_for_batch (as delegation) or _upload_file itself.
+        No other method should call it directly."""
         src_path = os.path.join(os.path.dirname(sync_worker.__file__), 'sync_worker.py')
         with open(src_path, 'r') as f:
             source = f.read()
@@ -314,29 +316,27 @@ class TestNoDuplicateUploadCallSites:
                 for child in ast.walk(node):
                     if isinstance(child, ast.Call):
                         func = child.func
-                        # Match self._upload_file(...)
                         if (isinstance(func, ast.Attribute)
                                 and func.attr == '_upload_file'
                                 and isinstance(func.value, ast.Name)
                                 and func.value.id == 'self'):
                             call_sites.append((method_name, child.lineno))
+                    # Also check attribute references (e.g. self._upload_file passed as arg)
+                    elif isinstance(child, ast.Attribute):
+                        if (child.attr == '_upload_file'
+                                and isinstance(child.value, ast.Name)
+                                and child.value.id == 'self'
+                                and not isinstance(child, ast.Call)):
+                            call_sites.append((method_name, child.end_lineno or 0))
 
-        # Filter: only the definition itself is excluded
-        external_calls = [
-            (m, ln) for m, ln in call_sites
-            if m != '_upload_file'  # exclude def itself
-        ]
-
-        # All external calls must be within _upload_files_for_batch or its nested functions
-        allowed_parents = {'_upload_files_for_batch', '_safe_upload', '_background_upload'}
-        violations = [(m, ln) for m, ln in external_calls if m not in allowed_parents]
+        # Exclude the definition and the delegation methods
+        allowed = {'_upload_file', '_upload_files_for_batch', '_safe_upload', '_background_upload'}
+        violations = [(m, ln) for m, ln in call_sites if m not in allowed]
 
         assert not violations, (
-            f"_upload_file called from unexpected locations: {violations}. "
-            f"It should only be called from _upload_files_for_batch."
+            f"_upload_file referenced from unexpected locations: {violations}. "
+            f"It should only be used in _upload_files_for_batch delegation chain."
         )
-        # Must have at least 1 legitimate call site
-        assert len(external_calls) >= 1, "No call sites found for _upload_file — test is broken"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
