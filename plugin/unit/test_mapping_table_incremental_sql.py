@@ -122,6 +122,72 @@ def test_force_rebuild_drops_legacy_columns(tmp_path):
     assert 'last_modified_server' in cols
 
 
+def test_ensure_table_adds_missing_columns_via_alter(tmp_path):
+    """Regression: old schema without last_modified/files_hash/formats_sig
+    causes 'no such column: sync.last_modified' SQL error at runtime.
+
+    _ensure_table must ALTER TABLE ADD COLUMN for each missing column
+    instead of raising RuntimeError (which ensure_table swallows silently).
+    """
+    library_root = tmp_path / 'library'
+    library_root.mkdir()
+    db_path = library_root / 'metadata.db'
+    conn = sqlite3.connect(str(db_path))
+    try:
+        # Create a minimal old-schema table WITHOUT the newer columns
+        conn.execute(
+            """
+            CREATE TABLE calimob_books_sync (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              library_uuid TEXT NOT NULL,
+              calibre_book_id INTEGER NOT NULL,
+              uuid TEXT,
+              title TEXT,
+              cover_hash TEXT,
+              created_at TEXT,
+              modified_at TEXT,
+              last_synced_at TEXT,
+              version TEXT,
+              deleted_at TEXT,
+              UNIQUE(library_uuid, uuid),
+              UNIQUE(library_uuid, calibre_book_id)
+            )
+            """
+        )
+        # Insert a row to verify data is preserved after migration
+        conn.execute(
+            "INSERT INTO calimob_books_sync (library_uuid, calibre_book_id, uuid, title) "
+            "VALUES ('lib-1', 1, 'uuid-1', 'Old Book')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # _ensure_table must succeed (add missing columns), NOT raise
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        mapping_table._ensure_table(conn)
+        conn.commit()
+
+        # Verify all expected columns are now present
+        cols = {r['name'] for r in conn.execute("PRAGMA table_info(calimob_books_sync)").fetchall()}
+        for expected in mapping_table._EXPECTED_COLUMNS:
+            assert expected in cols, f"Column {expected!r} missing after _ensure_table migration"
+
+        # Verify existing data is preserved
+        row = conn.execute(
+            "SELECT title, last_modified, files_hash, formats_sig FROM calimob_books_sync WHERE uuid='uuid-1'"
+        ).fetchone()
+        assert row is not None, "Existing row lost after migration"
+        assert row['title'] == 'Old Book'
+        assert row['last_modified'] is None  # newly added column, default NULL
+        assert row['files_hash'] is None
+        assert row['formats_sig'] is None
+    finally:
+        conn.close()
+
+
 
 
 
