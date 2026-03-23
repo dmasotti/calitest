@@ -80,13 +80,12 @@ class TestThreadLocalHttpInstance:
         with open(src_path, 'r') as f:
             code = f.read()
 
-        # Find the _request method
+        # Find the _request method (full body, up to next def)
         request_start = code.find('def _request(self')
         assert request_start > 0
-        request_section = code[request_start:request_start + 3000]
+        next_def = code.find('\n    def ', request_start + 1)
+        request_section = code[request_start:next_def]
 
-        # Should NOT use self.http directly for the actual request
-        # Should use a thread-local getter or per-request Http
         has_thread_safe = (
             '_get_http' in request_section
             or '_thread_local' in request_section
