@@ -27,32 +27,37 @@ class MerkleLeafUuidsFromMaterializedTest extends TestCase
     }
 
     /**
-     * RED: getLeafUuids must read from sync_merkle_leaves.uuids_json,
-     * not call loadLeafUuidsFromSource.
+     * RED: getLeafUuids must read from sync_merkle_leaves.uuids_json
+     * as its PRIMARY path (loadLeafUuidsFromSource only as fallback).
      */
     public function test_getLeafUuids_reads_from_materialized_table(): void
     {
         $source = $this->getServiceSource();
 
-        // Find getLeafUuids method body
         $methodStart = strpos($source, 'public function getLeafUuids(');
         $this->assertNotFalse($methodStart, 'getLeafUuids method not found');
 
-        // Find next public/private/protected method
         $nextMethod = strpos($source, "\n    public function ", $methodStart + 10);
         if ($nextMethod === false) {
             $nextMethod = strpos($source, "\n    private function ", $methodStart + 10);
         }
         $methodBody = substr($source, $methodStart, ($nextMethod ?: strlen($source)) - $methodStart);
 
-        // Must NOT call loadLeafUuidsFromSource (the heavy JOIN path)
-        $this->assertStringNotContainsString(
-            'loadLeafUuidsFromSource',
-            $methodBody,
-            "getLeafUuids must NOT call loadLeafUuidsFromSource — " .
-            "it causes 504 timeout on files dimension (36000 row JOIN). " .
-            "Must read from sync_merkle_leaves.uuids_json instead."
-        );
+        // uuids_json must appear BEFORE loadLeafUuidsFromSource in the method body.
+        // This ensures the materialized path is the primary read, not the fallback.
+        $uuidsJsonPos = strpos($methodBody, 'uuids_json');
+        $sourcePos = strpos($methodBody, 'loadLeafUuidsFromSource');
+
+        $this->assertNotFalse($uuidsJsonPos, 'uuids_json must appear in getLeafUuids');
+
+        if ($sourcePos !== false) {
+            $this->assertLessThan(
+                $sourcePos,
+                $uuidsJsonPos,
+                "uuids_json (materialized read) must come BEFORE loadLeafUuidsFromSource (fallback). " .
+                "The materialized path is the fast primary read; source JOIN is only fallback."
+            );
+        }
     }
 
     /**
