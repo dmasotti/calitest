@@ -175,10 +175,14 @@ if 'PyQt5' not in sys.modules:
     def _stub_class(name):
         return type(name, (_QtStubBase,), {})
 
+    _QTextEditStub = _stub_class('QTextEdit')
+    _QTextEditStub.LineWrapMode = types.SimpleNamespace(NoWrap=0)
+    _QTextEditStub.NoWrap = 0
+
     qt_module = types.SimpleNamespace(
         QSizePolicy=types.SimpleNamespace(Policy=policy_namespace, Minimum=1, Maximum=2,
                                           Expanding=3, Preferred=4, Ignored=5),
-        QTextEdit=types.SimpleNamespace(LineWrapMode=types.SimpleNamespace(NoWrap=0), NoWrap=0),
+        QTextEdit=_QTextEditStub,
         Qt=types.SimpleNamespace(DropAction=types.SimpleNamespace(CopyAction=1, MoveAction=2),
                                  CopyAction=1, MoveAction=2),
     )
