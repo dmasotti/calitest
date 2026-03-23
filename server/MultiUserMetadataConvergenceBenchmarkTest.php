@@ -31,7 +31,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260310,
             'max_passes' => 4,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
         ], function (array $event) use (&$events): void {
             $events[] = $event;
         });
@@ -105,7 +105,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260311,
             'max_passes' => 2,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
         ]);
 
         $libraryId = (int) ($stats['user_results'][0]['library_id'] ?? 0);
@@ -133,7 +133,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260312,
             'max_passes' => 2,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
         ];
 
         $first = app(MultiUserMetadataConvergenceBenchmarkService::class)->run($config);
@@ -159,7 +159,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260312,
             'max_passes' => 1,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
         ]);
 
         $this->assertTrue($stats['user_results'][0]['converged']);
@@ -177,7 +177,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260313,
             'max_passes' => 4,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
             'sync_covers_enabled' => true,
             'sync_files_enabled' => true,
             'asset_profile' => 'mixed',
@@ -247,7 +247,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260314,
             'max_passes' => 4,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
             'state_weights' => ['same' => 1.0, 'upload_missing' => 0.0, 'download_missing' => 0.0],
             'sync_covers_enabled' => true,
             'sync_files_enabled' => false,
@@ -272,7 +272,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260315,
             'max_passes' => 4,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
             'state_weights' => ['same' => 1.0, 'upload_missing' => 0.0, 'download_missing' => 0.0],
             'sync_covers_enabled' => false,
             'sync_files_enabled' => true,
@@ -297,7 +297,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260316,
             'max_passes' => 3,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
             'sync_covers_enabled' => true,
             'sync_files_enabled' => true,
             'asset_profile' => 'none',
@@ -321,7 +321,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260317,
             'max_passes' => 3,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
             'state_weights' => ['same' => 1.0, 'upload_missing' => 0.0, 'download_missing' => 0.0],
             'sync_covers_enabled' => false,
             'sync_files_enabled' => false,
@@ -346,7 +346,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260318,
             'max_passes' => 4,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
             'sync_covers_enabled' => true,
             'sync_files_enabled' => true,
             'asset_profile' => 'mixed',
@@ -391,7 +391,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260320,
             'max_passes' => 4,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
             'sync_covers_enabled' => true,
             'sync_files_enabled' => true,
             'asset_profile' => 'mixed',
@@ -441,7 +441,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260319,
             'max_passes' => 4,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
             'state_weights' => ['same' => 1.0, 'upload_missing' => 0.0, 'download_missing' => 0.0],
             'sync_covers_enabled' => false,
             'sync_files_enabled' => true,
@@ -467,7 +467,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260321,
             'max_passes' => 4,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
             'state_weights' => ['same' => 1.0, 'upload_missing' => 0.0, 'download_missing' => 0.0],
             'sync_covers_enabled' => true,
             'sync_files_enabled' => false,
@@ -490,7 +490,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
             'seed' => 20260322,
             'max_passes' => 4,
             'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => DB::getDriverName() === 'pgsql',
+            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
             'state_weights' => ['same' => 1.0, 'upload_missing' => 0.0, 'download_missing' => 0.0],
             'sync_covers_enabled' => false,
             'sync_files_enabled' => true,
