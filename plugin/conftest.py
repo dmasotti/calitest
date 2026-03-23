@@ -165,7 +165,7 @@ if 'PyQt5' not in sys.modules:
             # Signal-like attributes (clicked, linkActivated, etc.)
             if name in ('clicked', 'linkActivated', 'toggled', 'currentIndexChanged',
                         'textChanged', 'valueChanged', 'activated', 'pressed',
-                        'released', 'returnPressed'):
+                        'released', 'returnPressed', 'completeChanged'):
                 sig = _QtStubSignal()
                 object.__setattr__(self, name, sig)
                 return sig
@@ -305,12 +305,15 @@ if _wizard_root.is_dir():
     wizard_pkg = types.ModuleType('calibre_plugins.sync_calimob.wizard')
     wizard_pkg.__path__ = [str(_wizard_root)]
     sys.modules['calibre_plugins.sync_calimob.wizard'] = wizard_pkg
+    # Set as attribute on parent package so `from calibre_plugins.sync_calimob.wizard...` works
+    sys.modules['calibre_plugins.sync_calimob'].wizard = wizard_pkg
 
     _pages_root = _wizard_root / 'pages'
     if _pages_root.is_dir():
         pages_pkg = types.ModuleType('calibre_plugins.sync_calimob.wizard.pages')
         pages_pkg.__path__ = [str(_pages_root)]
         sys.modules['calibre_plugins.sync_calimob.wizard.pages'] = pages_pkg
+        wizard_pkg.pages = pages_pkg
 
     # Load wizard leaf modules on demand via _load_plugin_module-style helper
     def _load_wizard_module(dotted_name, file_path):
