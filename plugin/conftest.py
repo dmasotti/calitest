@@ -151,8 +151,29 @@ if 'PyQt5' not in sys.modules:
         Ignored=5,
     )
 
+    class _QtStubSignal:
+        """Fake Qt signal that supports .connect() / .emit() / .disconnect()."""
+        def connect(self, *a, **kw): pass
+        def disconnect(self, *a, **kw): pass
+        def emit(self, *a, **kw): pass
+
+    class _QtStubBase:
+        """Base for all Qt widget stubs — silently absorbs any call."""
+        def __init__(self, *a, **kw):
+            pass
+        def __getattr__(self, name):
+            # Signal-like attributes (clicked, linkActivated, etc.)
+            if name in ('clicked', 'linkActivated', 'toggled', 'currentIndexChanged',
+                        'textChanged', 'valueChanged', 'activated', 'pressed',
+                        'released', 'returnPressed'):
+                sig = _QtStubSignal()
+                object.__setattr__(self, name, sig)
+                return sig
+            # Return a no-op callable for any unknown method/attribute
+            return lambda *a, **kw: None
+
     def _stub_class(name):
-        return type(name, (), {})
+        return type(name, (_QtStubBase,), {})
 
     qt_module = types.SimpleNamespace(
         QSizePolicy=types.SimpleNamespace(Policy=policy_namespace, Minimum=1, Maximum=2,
@@ -167,12 +188,20 @@ if 'PyQt5' not in sys.modules:
                  'QInputDialog', 'QAbstractItemView', 'QToolButton', 'QSpacerItem',
                  'QModelIndex', 'QFileDialog', 'QTimer', 'QFrame', 'QScrollArea',
                  'QListWidget', 'QProgressBar', 'QApplication', 'QTextBrowser', 'QSize',
-                 'QFont', 'QDateTime', 'QStyledItemDelegate', 'QUrl', 'QSpinBox']:
+                 'QFont', 'QDateTime', 'QStyledItemDelegate', 'QUrl', 'QSpinBox',
+                 'QWizard', 'QWizardPage', 'QRadioButton', 'QButtonGroup']:
         setattr(qt_module, attr, _stub_class(attr))
     # Some plugin modules import from PyQt5.Qt and expect these symbols explicitly.
     if not hasattr(qt_module, 'QMenu'):
         qt_module.QMenu = _stub_class('QMenu')
     qt_module.QByteArray = type('QByteArray', (), {})
+    # QWizard needs style/option constants for wizard pages
+    qt_module.QWizard.ModernStyle = 0
+    qt_module.QWizard.NoBackButtonOnStartPage = 1
+    qt_module.QWizard.NoCancelButton = 2
+    # QLineEdit echo mode
+    qt_module.QLineEdit.Password = 2
+    qt_module.QLineEdit.Normal = 0
     pyqt5.Qt = qt_module
     pyqt5.QtCore = qt_module
     pyqt5.QtWidgets = qt_module
@@ -269,6 +298,35 @@ else:
     sys.modules['calibre_plugins.sync_calimob.config'] = cfg_module
 
 sys.modules['calibre_plugins.sync_calimob.cfg'] = cfg_module
+
+# Register wizard subpackages so unit tests can import wizard pages
+_wizard_root = plugin_root / 'wizard'
+if _wizard_root.is_dir():
+    wizard_pkg = types.ModuleType('calibre_plugins.sync_calimob.wizard')
+    wizard_pkg.__path__ = [str(_wizard_root)]
+    sys.modules['calibre_plugins.sync_calimob.wizard'] = wizard_pkg
+
+    _pages_root = _wizard_root / 'pages'
+    if _pages_root.is_dir():
+        pages_pkg = types.ModuleType('calibre_plugins.sync_calimob.wizard.pages')
+        pages_pkg.__path__ = [str(_pages_root)]
+        sys.modules['calibre_plugins.sync_calimob.wizard.pages'] = pages_pkg
+
+    # Load wizard leaf modules on demand via _load_plugin_module-style helper
+    def _load_wizard_module(dotted_name, file_path):
+        fqn = f'calibre_plugins.sync_calimob.{dotted_name}'
+        if fqn in sys.modules:
+            return sys.modules[fqn]
+        p = Path(file_path)
+        if p.exists():
+            spec = importlib.util.spec_from_file_location(fqn, str(p))
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules[fqn] = mod
+            spec.loader.exec_module(mod)
+            return mod
+        return None
+
+    _load_wizard_module('wizard.styles', _wizard_root / 'styles.py')
 
 # Add sync_calimob to path
 plugin_path = Path(__file__).parent.parent.parent / 'sync_calimob'
