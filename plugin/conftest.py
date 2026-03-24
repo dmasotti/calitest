@@ -242,10 +242,14 @@ if 'qt.core' not in sys.modules:
 else:
     qt_core = sys.modules.get('qt.core')
 
-# Ensure qt.core also exposes QSpinBox
+# Ensure qt.core also exposes QSpinBox and wizard-related stubs
 try:
-    if qt_core is not None and not hasattr(qt_core, 'QSpinBox'):
-        qt_core.QSpinBox = getattr(sys.modules.get('PyQt5.Qt'), 'QSpinBox', type('QSpinBox', (), {}))
+    _pyqt_qt = sys.modules.get('PyQt5.Qt')
+    if qt_core is not None and _pyqt_qt is not None:
+        for _extra in ('QSpinBox', 'QWizard', 'QWizardPage', 'QRadioButton',
+                       'QButtonGroup', 'QTextEdit'):
+            if not hasattr(qt_core, _extra):
+                setattr(qt_core, _extra, getattr(_pyqt_qt, _extra, type(_extra, (), {})))
 except Exception:
     pass
 
