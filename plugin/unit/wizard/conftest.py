@@ -41,7 +41,8 @@ _ALL_NEEDED = {
     'QWizard', 'QWizardPage', 'QRadioButton', 'QButtonGroup',
     'QVBoxLayout', 'QHBoxLayout', 'QLabel', 'QLineEdit', 'QPushButton',
     'QComboBox', 'QFrame', 'QSpacerItem', 'QProgressBar', 'QTextEdit',
-    'QWidget', 'QThread', 'QObject',
+    'QWidget', 'QThread', 'QObject', 'QStackedWidget',
+    'QTimer', 'QDesktopServices', 'QUrl',
 }
 
 def _needs_replacement(obj):
