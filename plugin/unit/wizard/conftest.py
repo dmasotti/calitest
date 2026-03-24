@@ -41,7 +41,7 @@ _ALL_NEEDED = {
     'QWizard', 'QWizardPage', 'QRadioButton', 'QButtonGroup',
     'QVBoxLayout', 'QHBoxLayout', 'QLabel', 'QLineEdit', 'QPushButton',
     'QComboBox', 'QFrame', 'QSpacerItem', 'QProgressBar', 'QTextEdit',
-    'QWidget',
+    'QWidget', 'QThread', 'QObject',
 }
 
 def _needs_replacement(obj):
@@ -113,6 +113,15 @@ def _repair_qt_stubs():
         if qte is not None and not hasattr(qte, 'NoWrap'):
             qte.NoWrap = 0
             qte.LineWrapMode = type('LineWrapMode', (), {'NoWrap': 0})
+        # pyqtSignal stub
+        if not hasattr(mod, 'pyqtSignal'):
+            def _fake_signal(*args, **kwargs):
+                class _Sig:
+                    def connect(self, *a, **kw): pass
+                    def disconnect(self, *a, **kw): pass
+                    def emit(self, *a, **kw): pass
+                return _Sig()
+            setattr(mod, 'pyqtSignal', _fake_signal)
 
     # Evict cached (broken) imports of wizard page modules so they re-import cleanly
     for key in list(sys.modules):

@@ -52,6 +52,8 @@ class TestLibraryPage:
         """Empty library list should be handled gracefully."""
         page = self._make_page()
         page.library_combo = Mock()
+        page.library_name_label = Mock()
+        page.book_count_label = Mock()
 
         mock_client = MagicMock()
         mock_client.get_libraries.return_value = []
@@ -84,6 +86,7 @@ class TestLibraryPage:
         ]
         page._selected_library = page._libraries[0]
         page.library_combo = Mock()
+        page.library_combo.isVisible = Mock(return_value=False)
         page.library_combo.currentIndex = Mock(return_value=0)
 
         with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mock_prefs:
@@ -93,3 +96,29 @@ class TestLibraryPage:
             page._on_confirm()
 
         assert page._confirmed is True
+
+    def test_select_library_shows_book_count(self):
+        """_select_library should display server book count."""
+        page = self._make_page()
+        page.library_name_label = Mock()
+        page.book_count_label = Mock()
+        page._select_library({'id': 'x', 'name': 'Test Lib', 'book_count': 500})
+        page.library_name_label.setText.assert_called_with('Test Lib')
+        page.book_count_label.setText.assert_called()
+
+    def test_select_library_fallback_local_count(self):
+        """When server has no book_count, fallback to local Calibre count."""
+        page = self._make_page()
+        page.library_name_label = Mock()
+        page.book_count_label = Mock()
+        with patch.object(page, '_get_local_book_count', return_value=2000):
+            page._select_library({'id': 'x', 'name': 'Test Lib'})
+        page.book_count_label.setText.assert_called()
+
+    def test_advanced_link_opens_config(self):
+        """Advanced link should close wizard and open config dialog."""
+        mock_action = Mock()
+        mock_action.show_configuration = Mock()
+        page = self._make_page(plugin_action=mock_action)
+        page._on_advanced('#')
+        mock_action.show_configuration.assert_called_once()
