@@ -220,8 +220,13 @@ def _setup_rebuild_menus(monkeypatch, *, library_id="lib-uuid",
     _install_library_utils(monkeypatch, library_id=library_id)
 
     # Patch config with real dict containing mappings
+    store_vals = config_mod.DEFAULT_STORE_VALUES.copy()
+    if client_configured:
+        store_vals[config_mod.KEY_REST_ENDPOINT] = 'https://api.test'
+        store_vals[config_mod.KEY_REST_TOKEN] = 'test-token'
+        store_vals[config_mod.KEY_DEVICE_TOKEN_STATUS] = 'authorized'
     real_prefs = {
-        config_mod.STORE_PLUGIN: config_mod.DEFAULT_STORE_VALUES.copy(),
+        config_mod.STORE_PLUGIN: store_vals,
     }
     if library_id and calimob_library_id:
         real_prefs[config_mod.STORE_LIBRARY_MAPPINGS] = {
@@ -297,7 +302,8 @@ class TestRebuildMenusGating:
         for label, state in enabled.items():
             assert state is True, f"{label!r} should be ENABLED for associated library"
 
-    def test_non_associated_library_disables_sync_actions(self, monkeypatch):
+    def test_non_associated_library_shows_minimal_menu(self, monkeypatch):
+        """When library is not associated, show minimal menu (wizard + customize + help only)."""
         act, actions = _setup_rebuild_menus(
             monkeypatch,
             library_id="lib-orphan", calimob_library_id=None,
@@ -305,10 +311,12 @@ class TestRebuildMenusGating:
         )
         act.rebuild_menus()
 
+        # Sync actions should NOT be present at all (minimal menu)
         enabled = _sync_actions_enabled(actions)
-        assert enabled, "no sync actions found in menu"
-        for label, state in enabled.items():
-            assert state is False, f"{label!r} should be DISABLED for non-associated library"
+        assert not enabled, "sync actions should not appear in minimal menu"
+        # Wizard should be present
+        labels = [label for label, _ in actions]
+        assert any('wizard' in l.lower() for l in labels), "Setup Wizard should be in minimal menu"
 
     def test_sync_disabled_disables_sync_actions(self, monkeypatch):
         act, actions = _setup_rebuild_menus(

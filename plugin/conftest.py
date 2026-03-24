@@ -206,6 +206,10 @@ if 'PyQt5' not in sys.modules:
     # QLineEdit echo mode
     qt_module.QLineEdit.Password = 2
     qt_module.QLineEdit.Normal = 0
+    # QToolButton popup modes
+    qt_module.QToolButton.InstantPopup = 0
+    qt_module.QToolButton.MenuButtonPopup = 1
+    qt_module.QToolButton.DelayedPopup = 2
     pyqt5.Qt = qt_module
     pyqt5.QtCore = qt_module
     pyqt5.QtWidgets = qt_module
