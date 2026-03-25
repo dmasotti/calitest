@@ -55,8 +55,13 @@ class TestLoginPage:
         page = self._make_page()
         assert page._endpoint == 'https://coral-shark-984693.hostingersite.com'
 
-    def test_next_id_returns_library_page(self):
+    def test_next_id_blocked_when_not_logged_in(self):
         page = self._make_page()
+        assert page.nextId() == -1  # Blocked — must login first
+
+    def test_next_id_returns_library_after_login(self):
+        page = self._make_page()
+        page._login_success = True
         assert page.nextId() == 2  # PageLibrary
 
     def test_switch_tab_changes_stack(self):
