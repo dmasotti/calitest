@@ -108,11 +108,8 @@ class TestWizardFlowExpiredToken:
                 page.book_count_label = Mock()
                 page._load_libraries()
 
-        # Should have navigated back (not restarted which causes loop)
-        # The wizard.restart() was the bug — should use wizard.back() or
-        # navigate directly to login page
-        assert mock_wizard.restart.called or mock_wizard.back.called, \
-            "Should navigate away from Library page on auth failure"
+        # Should navigate directly to login page (not restart which loops)
+        mock_wizard._set_page.assert_called_with(1)
 
 
 class TestWizardFlowComplete:
