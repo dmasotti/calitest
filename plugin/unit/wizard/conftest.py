@@ -43,6 +43,7 @@ _ALL_NEEDED = {
     'QComboBox', 'QFrame', 'QSpacerItem', 'QProgressBar', 'QTextEdit',
     'QWidget', 'QThread', 'QObject', 'QStackedWidget',
     'QTimer', 'QDesktopServices', 'QUrl',
+    'QPainter', 'QColor', 'QBrush', 'QPixmap',
 }
 
 def _needs_replacement(obj):
