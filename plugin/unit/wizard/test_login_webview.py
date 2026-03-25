@@ -28,11 +28,17 @@ class TestLoginPageWebView:
         page = self._make_page()
         assert hasattr(page, '_open_browser_link')
 
-    def test_auth_url_includes_locale(self):
-        """Auth URL should include Calibre's locale."""
+    def test_auth_url_includes_embed_param(self):
+        """Auth URL should include embed=plugin for compact server view."""
         page = self._make_page()
         url = page._build_auth_url()
-        assert '/locale/' in url or 'device_token=' in url
+        assert 'embed=plugin' in url
+
+    def test_auth_url_includes_lang(self):
+        """Auth URL should include lang parameter."""
+        page = self._make_page()
+        url = page._build_auth_url()
+        assert 'lang=' in url
 
     def test_next_id_blocked_when_not_authenticated(self):
         """nextId should return -1 until auth succeeds."""
