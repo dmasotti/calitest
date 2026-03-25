@@ -43,7 +43,8 @@ _ALL_NEEDED = {
     'QComboBox', 'QFrame', 'QSpacerItem', 'QProgressBar', 'QTextEdit',
     'QWidget', 'QThread', 'QObject', 'QStackedWidget',
     'QTimer', 'QDesktopServices', 'QUrl',
-    'QPainter', 'QColor', 'QBrush', 'QPixmap',
+    'QPainter', 'QColor', 'QBrush', 'QPixmap', 'QPalette',
+    'QSlider',
 }
 
 def _needs_replacement(obj):
@@ -115,6 +116,11 @@ def _repair_qt_stubs():
         if qte is not None and not hasattr(qte, 'NoWrap'):
             qte.NoWrap = 0
             qte.LineWrapMode = type('LineWrapMode', (), {'NoWrap': 0})
+        # QPalette color role constants
+        qpal = getattr(mod, 'QPalette', None)
+        if qpal is not None and not hasattr(qpal, 'WindowText'):
+            qpal.WindowText = 0
+
         # pyqtSignal stub
         if not hasattr(mod, 'pyqtSignal'):
             def _fake_signal(*args, **kwargs):

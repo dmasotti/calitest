@@ -17,52 +17,37 @@ class TestLibraryPageCreateLibrary:
         assert callable(page._on_create_library)
 
     def test_create_library_calls_api(self):
-        """_on_create_library should call client.create_library."""
+        """_on_create_library_confirm should call client.create_library."""
         page = self._make_page()
         page._libraries = []
         page.library_combo = Mock()
         page.library_name_label = Mock()
         page.book_count_label = Mock()
         page.error_label = Mock()
+        page.create_name_input = Mock()
+        page.create_name_input.text = Mock(return_value='My New Library')
+        page.create_confirm_btn = Mock()
 
         mock_client = MagicMock()
         mock_client.create_library.return_value = {
             'id': 'new-lib-1', 'name': 'My New Library', 'book_count': 0,
         }
 
-        # Mock QInputDialog at the module level where it's imported
-        mock_dlg = MagicMock()
-        mock_dlg.getText.return_value = ('My New Library', True)
-        qt_core = sys.modules.get('qt.core')
-        orig = getattr(qt_core, 'QInputDialog', None)
-        setattr(qt_core, 'QInputDialog', mock_dlg)
-        try:
-            with patch.object(page, '_make_client', return_value=mock_client):
-                page._on_create_library('#')
-        finally:
-            if orig is not None:
-                setattr(qt_core, 'QInputDialog', orig)
+        with patch.object(page, '_make_client', return_value=mock_client):
+            page._on_create_library_confirm()
 
         mock_client.create_library.assert_called_once()
         assert len(page._libraries) == 1
         assert page._libraries[0]['name'] == 'My New Library'
 
-    def test_create_library_cancelled_does_nothing(self):
-        """If user cancels, no API call."""
+    def test_create_library_empty_name_does_nothing(self):
+        """Empty name should not call API."""
         page = self._make_page()
         page._libraries = []
+        page.create_name_input = Mock()
+        page.create_name_input.text = Mock(return_value='')
 
-        mock_dlg = MagicMock()
-        mock_dlg.getText.return_value = ('', False)
-        qt_core = sys.modules.get('qt.core')
-        orig = getattr(qt_core, 'QInputDialog', None)
-        setattr(qt_core, 'QInputDialog', mock_dlg)
-        try:
-            page._on_create_library('#')
-        finally:
-            if orig is not None:
-                setattr(qt_core, 'QInputDialog', orig)
-
+        page._on_create_library_confirm()
         assert len(page._libraries) == 0
 
     def test_create_library_api_error_shows_message(self):
@@ -70,24 +55,27 @@ class TestLibraryPageCreateLibrary:
         page = self._make_page()
         page._libraries = []
         page.error_label = Mock()
+        page.create_name_input = Mock()
+        page.create_name_input.text = Mock(return_value='Test')
+        page.create_confirm_btn = Mock()
 
         from calibre_plugins.sync_calimob.rest_client import RestApiError
         mock_client = MagicMock()
         mock_client.create_library.side_effect = RestApiError('Server error')
 
-        mock_dlg = MagicMock()
-        mock_dlg.getText.return_value = ('Test', True)
-        qt_core = sys.modules.get('qt.core')
-        orig = getattr(qt_core, 'QInputDialog', None)
-        setattr(qt_core, 'QInputDialog', mock_dlg)
-        try:
-            with patch.object(page, '_make_client', return_value=mock_client):
-                page._on_create_library('#')
-        finally:
-            if orig is not None:
-                setattr(qt_core, 'QInputDialog', orig)
+        with patch.object(page, '_make_client', return_value=mock_client):
+            page._on_create_library_confirm()
 
         assert len(page._libraries) == 0
+
+    def test_show_create_makes_input_visible(self):
+        """Clicking 'Create a new library' should show the input row."""
+        page = self._make_page()
+        page.create_name_input = Mock()
+        page.create_confirm_btn = Mock()
+        page._on_show_create('#')
+        page.create_name_input.setVisible.assert_called_with(True)
+        page.create_confirm_btn.setVisible.assert_called_with(True)
 
 
 class TestLibraryPageUUIDFilter:
