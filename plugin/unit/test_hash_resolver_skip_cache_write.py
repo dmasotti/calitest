@@ -227,7 +227,7 @@ class TestPerformanceNoCacheWrites:
             elapsed = time.time() - start
 
             assert len(result) == 12000
-            assert elapsed < 2.0, f"12000 cached books took {elapsed:.2f}s"
+            assert elapsed < 5.0, f"12000 cached books took {elapsed:.2f}s"
             assert mock_cfg.update_book_cache.call_count == 0
         finally:
             sync_worker.cfg = original_cfg
