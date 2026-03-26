@@ -736,16 +736,16 @@ class TestCachePersistenceInvariant:
     hashes to cfg.update_book_cache. Without this, the cache stays empty and
     every sync falls back to per-book I/O."""
 
-    def test_update_book_cache_called_for_every_book(self):
-        """cfg.update_book_cache must be called once per book in the chunk."""
+    def test_update_book_cache_called_only_for_cache_miss(self):
+        """cfg.update_book_cache called only for books with cache miss.
+        Books 1+2 have can_reuse_cache=True (skip write). Book 3 has no cache (write)."""
         worker = _make_worker()
         books = [
             _make_book_info(1, cached_cover_hash='sha256:c1:1000', cached_files_hash='sha256:f1:1000'),
             _make_book_info(2, cached_cover_hash='sha256:c2:1000', cached_files_hash='sha256:f2:1000'),
-            _make_book_info(3),  # needs fallback
+            _make_book_info(3, last_modified=2000, sync_last_modified=1000),  # cache miss → write
         ]
 
-        # cfg is a module-level var in sync_worker, patch it directly
         original_cfg = sync_worker.cfg
         mock_cfg = Mock()
         mock_cfg.update_book_cache = Mock()
@@ -753,9 +753,9 @@ class TestCachePersistenceInvariant:
         try:
             _run_chunk(worker, books)
 
-            # Must be called 3 times (once per book)
-            assert mock_cfg.update_book_cache.call_count == 3, \
-                f"Expected 3 calls, got {mock_cfg.update_book_cache.call_count}"
+            # Only book 3 (cache miss) triggers a write
+            assert mock_cfg.update_book_cache.call_count == 1, \
+                f"Expected 1 call (only cache miss), got {mock_cfg.update_book_cache.call_count}"
         finally:
             sync_worker.cfg = original_cfg
 
@@ -804,11 +804,13 @@ class TestCachePersistenceInvariant:
             sync_worker.cfg = original_cfg
 
     def test_cache_called_even_when_cover_is_none(self):
-        """When cover is None, update_book_cache must still be called
-        (so the fast path knows 'I checked and there's no cover')."""
+        """When cover is None and book has cache miss, update_book_cache
+        must still be called (so the fast path knows 'no cover')."""
         worker = _make_worker()
         worker._read_cover_bytes_byte_only = Mock(return_value=(None, 'none', 'none'))
-        books = [_make_book_info(1, cached_files_hash='sha256:f1:1000')]
+        # Use last_modified != sync_last_modified to force cache miss
+        books = [_make_book_info(1, cached_files_hash='sha256:f1:1000',
+                                last_modified=2000, sync_last_modified=1000)]
 
         sm = Mock()
         sm.calibre_to_json_item = Mock(side_effect=AssertionError("no json_item"))
