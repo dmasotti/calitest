@@ -133,26 +133,25 @@ class TestUploadsDeferredDuringSyncLoop:
             code = f.read()
 
         sync_v5_start = code.find('def sync_v5(self')
-        sync_v5_section = code[sync_v5_start:sync_v5_start + 8000]
+        # sync_v5 can be long — find next top-level def
+        next_def = code.find('\n    def ', sync_v5_start + 20)
+        sync_v5_section = code[sync_v5_start:next_def if next_def > 0 else sync_v5_start + 15000]
 
-        finalize_pos = sync_v5_section.find('_v5_finalize_sync_cursor_state')
-        upload_pos = sync_v5_section.find('_upload_files_for_batch')
-
-        if upload_pos < 0:
-            # Maybe uses a different name for deferred upload execution
-            upload_pos = sync_v5_section.find('_execute_deferred_uploads')
-            if upload_pos < 0:
-                upload_pos = sync_v5_section.find('_run_deferred_uploads')
-                if upload_pos < 0:
-                    upload_pos = sync_v5_section.find('upload_batch')
+        finalize_pos = sync_v5_section.find('finalize_sync_cursor_state')
+        deferred_upload_pos = sync_v5_section.find('deferred_file_uploads')
 
         assert finalize_pos > 0, "finalize_sync_cursor_state not found in sync_v5"
+        assert deferred_upload_pos > 0, "deferred_file_uploads not found in sync_v5"
 
-        if upload_pos > 0:
-            assert upload_pos > finalize_pos, (
-                "Uploads must happen AFTER finalize_cursor_state. "
-                f"finalize at pos {finalize_pos}, upload at pos {upload_pos}"
-            )
+        # Find the LAST occurrence of deferred_file_uploads (the execution point)
+        last_deferred = sync_v5_section.rfind('_upload_files_for_batch')
+        if last_deferred < 0:
+            last_deferred = sync_v5_section.rfind('deferred_file_uploads')
+
+        assert last_deferred > finalize_pos, (
+            "Deferred uploads must execute AFTER finalize_cursor_state. "
+            f"finalize at pos {finalize_pos}, upload at pos {last_deferred}"
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
