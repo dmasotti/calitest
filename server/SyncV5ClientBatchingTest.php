@@ -76,7 +76,6 @@ class SyncV5ClientBatchingTest extends TestCase
             'title' => 'Chunked Client Book',
             'path' => 'Chunked Client Book',
             'last_modified' => $lastModified,
-            'metadata_hash_cache' => 'v2:abc123def456:' . $lastModified->timestamp,
         ]);
 
         $response = $this->postJson('/api/sync/v5', [

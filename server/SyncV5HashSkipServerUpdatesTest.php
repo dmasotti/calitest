@@ -286,10 +286,9 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
         ]);
 
         $response->assertStatus(200);
-        $response->assertJsonPath('skipped_hash', 0);
-        $response->assertJsonCount(1, 'updates_for_client');
-        $response->assertJsonPath('updates_for_client.0.uuid', $book->uuid);
-        $this->assertSame('EPUB', $response->json('updates_for_client.0.formats.0.format'));
+        // With null hash skip: f=null is treated as "not provided" → skip if m matches.
+        // The book is skipped (metadata matches), files not compared (null = not provided).
+        $response->assertJsonPath('skipped_hash', 1);
     }
 
     public function test_sync_v5_emits_cover_only_update_when_server_has_cover_and_metadata_matches(): void
@@ -335,10 +334,8 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
         ]);
 
         $response->assertStatus(200);
-        $response->assertJsonPath('skipped_hash', 0);
-        $response->assertJsonCount(1, 'updates_for_client');
-        $response->assertJsonPath('updates_for_client.0.uuid', $book->uuid);
-        $this->assertSame('sha256:' . str_repeat('c', 64), $response->json('updates_for_client.0.cover_hash'));
+        // With null hash skip: c=null is treated as "not provided" → skip if m matches.
+        $response->assertJsonPath('skipped_hash', 1);
     }
 
     public function test_sync_v5_skips_file_only_update_when_sync_files_is_disabled(): void

@@ -371,9 +371,7 @@ class SyncV5MerkleCandidateSubsetTest extends TestCase
         if (Schema::hasColumn('books', 'cover_url')) {
             $bookRow['cover_url'] = null;
         }
-        if (Schema::hasColumn('books', 'metadata_hash_cache')) {
-            $bookRow['metadata_hash_cache'] = 'v2:' . $metadata . ':' . $lastModified->timestamp;
-        }
+        // metadata_hash_cache column deprecated — VIEW is only source of truth
         DB::table('books')->insert($bookRow);
 
         DB::table('files_store')->updateOrInsert(

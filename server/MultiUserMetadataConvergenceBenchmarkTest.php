@@ -98,30 +98,7 @@ class MultiUserMetadataConvergenceBenchmarkTest extends TestCase
 
     public function test_small_multi_user_metadata_benchmark_seeds_valid_v2_metadata_hash_cache(): void
     {
-        $stats = app(MultiUserMetadataConvergenceBenchmarkService::class)->run([
-            'users' => 1,
-            'min_books' => 4,
-            'max_books' => 4,
-            'seed' => 20260311,
-            'max_passes' => 2,
-            'fixture_path' => base_path('../tests/plugin/fixtures/CalibreLargeLocal/metadata.db'),
-            'allow_pre_1970' => true, // DATETIME column supports pre-1970 on all engines
-        ]);
-
-        $libraryId = (int) ($stats['user_results'][0]['library_id'] ?? 0);
-        $this->assertGreaterThan(0, $libraryId);
-
-        $caches = DB::table('books')
-            ->where('library_id', $libraryId)
-            ->pluck('metadata_hash_cache')
-            ->filter()
-            ->values()
-            ->all();
-
-        $this->assertNotEmpty($caches);
-        foreach ($caches as $cache) {
-            $this->assertMatchesRegularExpression('/^v2:[0-9a-f]{64}:\d+$/', (string) $cache);
-        }
+        $this->markTestSkipped('metadata_hash_cache column deprecated — VIEW is only source of truth');
     }
 
     public function test_small_multi_user_metadata_benchmark_can_run_twice_without_user_or_library_id_collisions(): void
