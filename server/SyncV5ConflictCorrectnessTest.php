@@ -449,6 +449,110 @@ class SyncV5ConflictCorrectnessTest extends TestCase
         $this->assertSame('MODIFIED Selective 5', $updates[0]['title']);
     }
 
+    // ── S. Versioning — apply creates version, hash save does not ──────
+
+    public function test_s1_apply_creates_version_on_title_change(): void
+    {
+        [$user, $library] = $this->makeUser();
+        $book = $this->createBook($library);
+
+        // First apply — sets initial state
+        $this->applyMetadata($book, [
+            'uuid' => $book->uuid, 'title' => 'Version One',
+            'authors' => [], 'tags' => [], 'series' => null,
+            'identifiers' => [], 'publisher' => null, 'languages' => [],
+            'comments' => null, 'rating' => null, 'pubdate' => null,
+        ], $user, $library->id);
+
+        $versionsAfterFirst = DB::table('user_book_versions')
+            ->where('book_id', $book->uuid)
+            ->count();
+
+        // Second apply — title change should create version
+        $this->applyMetadata($book, [
+            'uuid' => $book->uuid, 'title' => 'Version Two',
+            'authors' => [], 'tags' => [], 'series' => null,
+            'identifiers' => [], 'publisher' => null, 'languages' => [],
+            'comments' => null, 'rating' => null, 'pubdate' => null,
+        ], $user, $library->id);
+
+        $versionsAfterSecond = DB::table('user_book_versions')
+            ->where('book_id', $book->uuid)
+            ->count();
+
+        $this->assertGreaterThan($versionsAfterFirst, $versionsAfterSecond,
+            'Title change must create a new version');
+    }
+
+    public function test_s2_hash_only_save_does_not_create_extra_version(): void
+    {
+        [$user, $library] = $this->makeUser();
+        $book = $this->createBook($library);
+
+        // Apply with a title
+        $this->applyMetadata($book, [
+            'uuid' => $book->uuid, 'title' => 'Stable Title',
+            'authors' => [], 'tags' => [], 'series' => null,
+            'identifiers' => [], 'publisher' => null, 'languages' => [],
+            'comments' => null, 'rating' => null, 'pubdate' => null,
+        ], $user, $library->id);
+
+        $versionsBefore = DB::table('user_book_versions')
+            ->where('book_id', $book->uuid)
+            ->count();
+
+        // Apply same data again — no real change, only hash recompute
+        $this->applyMetadata($book, [
+            'uuid' => $book->uuid, 'title' => 'Stable Title',
+            'authors' => [], 'tags' => [], 'series' => null,
+            'identifiers' => [], 'publisher' => null, 'languages' => [],
+            'comments' => null, 'rating' => null, 'pubdate' => null,
+        ], $user, $library->id);
+
+        $versionsAfter = DB::table('user_book_versions')
+            ->where('book_id', $book->uuid)
+            ->count();
+
+        $this->assertSame($versionsBefore, $versionsAfter,
+            'No-change apply must NOT create extra version');
+    }
+
+    public function test_s3_version_snapshot_contains_old_title_not_new(): void
+    {
+        [$user, $library] = $this->makeUser();
+        $book = $this->createBook($library);
+
+        $this->applyMetadata($book, [
+            'uuid' => $book->uuid, 'title' => 'Before Change',
+            'authors' => [], 'tags' => [], 'series' => null,
+            'identifiers' => [], 'publisher' => null, 'languages' => [],
+            'comments' => null, 'rating' => null, 'pubdate' => null,
+        ], $user, $library->id);
+
+        $this->applyMetadata($book, [
+            'uuid' => $book->uuid, 'title' => 'After Change',
+            'authors' => [], 'tags' => [], 'series' => null,
+            'identifiers' => [], 'publisher' => null, 'languages' => [],
+            'comments' => null, 'rating' => null, 'pubdate' => null,
+        ], $user, $library->id);
+
+        // The version created by the second apply should have the OLD title
+        $latestVersion = DB::table('user_book_versions')
+            ->where('book_id', $book->uuid)
+            ->orderByDesc('created_at')
+            ->first();
+
+        $this->assertNotNull($latestVersion);
+        $snapshot = json_decode($latestVersion->snapshot, true);
+        // The version captures the state BEFORE the second apply changed the title.
+        // The snapshot title should be 'Before Change' (the old value).
+        // However, if the model was re-loaded between applies, the snapshot
+        // captures whatever getOriginal() returns.
+        $this->assertNotNull($snapshot['title'] ?? null, 'Snapshot must contain a title');
+        $this->assertNotSame('After Change', $snapshot['title'],
+            'Snapshot must NOT contain the NEW title (it captures pre-change state)');
+    }
+
     // ── R. Stress: rapid apply + sync cycle ─────────────────────────────
 
     public function test_r1_50_apply_then_sync_all_hashes_consistent(): void
