@@ -351,8 +351,10 @@ class SyncV5SemanticsTest extends TestCase
         $this->assertNull($book->description);
     }
 
-    public function test_repair_no_cache_does_not_mutate_legacy_metadata_hash_cache(): void
+    public function test_repair_no_cache_sync_works_without_metadata_hash_cache(): void
     {
+        // metadata_hash_cache column dropped — VIEW is only source of truth.
+        // This test verifies that sync works without the cache column.
         [, $library] = $this->setupUserLibrary();
 
         $book = UserBook::create([
@@ -364,7 +366,6 @@ class SyncV5SemanticsTest extends TestCase
             'path' => 'Repair Cache Refresh',
             'description' => null,
             'last_modified' => now(),
-            'metadata_hash_cache' => 'v2:deadbeef:' . now()->timestamp,
         ]);
 
         $repair = $this->postJson('/api/sync/v5', [
@@ -382,10 +383,8 @@ class SyncV5SemanticsTest extends TestCase
         ]);
 
         $repair->assertStatus(200);
-        $book->refresh();
-        $cacheAfterRepair = (string) $book->metadata_hash_cache;
-        $this->assertStringContainsString('deadbeef', $cacheAfterRepair);
 
+        // Second sync also works
         $normal = $this->postJson('/api/sync/v5', [
             'library_id' => (string) $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
@@ -401,8 +400,6 @@ class SyncV5SemanticsTest extends TestCase
         ]);
 
         $normal->assertStatus(200);
-        $book->refresh();
-        $this->assertSame($cacheAfterRepair, (string) $book->metadata_hash_cache);
     }
 
     private function metadataHashFromView(int $userId, int $libraryId, string $uuid): string
