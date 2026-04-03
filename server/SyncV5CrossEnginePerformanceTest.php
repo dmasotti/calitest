@@ -50,6 +50,19 @@ class SyncV5CrossEnginePerformanceTest extends TestCase
         foreach (array_chunk($rows, 500) as $chunk) {
             DB::table('books')->insert($chunk);
         }
+        // Populate metadata_hash on-write column from VIEW (simulates applyBookMetadata)
+        if (Schema::hasTable('books_hash_v2')) {
+            $viewHashes = DB::table('books_hash_v2')
+                ->where('user_id', $library->user_id)
+                ->where('library_id', $library->id)
+                ->whereIn('uuid', $uuids)
+                ->pluck('metadata_hash', 'uuid');
+            foreach ($viewHashes as $uuid => $hash) {
+                DB::table('books')->where('uuid', $uuid)
+                    ->where('user_id', $library->user_id)
+                    ->update(['metadata_hash_cache' => strtolower((string) $hash)]);
+            }
+        }
         return $uuids;
     }
 
