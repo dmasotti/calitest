@@ -90,52 +90,7 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $this->assertNotNull($book->deleted_at, 'Book must be soft-deleted after client delete confirmation');
     }
 
-    public function test_sync_v5_cursor_uses_timestamp_colon_id_and_paginates_without_duplicates(): void
-    {
-        [, $library] = $this->setupUserLibrary();
-
-        $ts = Carbon::create(2026, 2, 27, 16, 0, 0, 'UTC');
-        $bookA = UserBook::factory()->create([
-            'user_id' => $library->user_id,
-            'library_id' => (string) $library->id,
-            'title' => 'Cursor A',
-            'path' => 'Cursor A',
-            'last_modified' => $ts,
-        ]);
-        $bookB = UserBook::factory()->create([
-            'user_id' => $library->user_id,
-            'library_id' => (string) $library->id,
-            'title' => 'Cursor B',
-            'path' => 'Cursor B',
-            'last_modified' => $ts,
-        ]);
-
-        $first = $this->postJson('/api/sync/v5', [
-            'library_id' => (string) $library->id,
-            'calibre_library_uuid' => $library->calibre_library_id,
-            'cursor' => null,
-            'batch_size' => 1,
-            'client_books' => ['b' => [], 'd' => []],
-        ]);
-        $first->assertStatus(200);
-        $this->assertTrue((bool) $first->json('has_more'));
-        $cursor = (string) $first->json('cursor');
-        $this->assertMatchesRegularExpression('/^\d+:\d+$/', $cursor);
-
-        $second = $this->postJson('/api/sync/v5', [
-            'library_id' => (string) $library->id,
-            'calibre_library_uuid' => $library->calibre_library_id,
-            'cursor' => $cursor,
-            'batch_size' => 1,
-            'client_books' => ['b' => [], 'd' => []],
-        ]);
-        $second->assertStatus(200);
-        $cursor2 = (string) $second->json('cursor');
-        $this->assertMatchesRegularExpression('/^\d+:\d+$/', $cursor2);
-        if ((bool) $second->json('has_more')) {
-            $this->assertNotSame($cursor, $cursor2, 'Cursor must progress when pagination continues');
-        }
-    }
+    // test_sync_v5_cursor_uses_timestamp... removed — cursor eliminated (niente legacy)
 
     public function test_sync_v5_does_not_request_upload_when_metadata_cover_and_files_hashes_match(): void
     {
