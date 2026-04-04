@@ -229,8 +229,68 @@ class TestCalculateCoverHash:
         """Test that different data produces different hash."""
         cover_data1 = b'fake_cover_image_data_1'
         cover_data2 = b'fake_cover_image_data_2'
-        
+
         hash1 = sync_mapper.calculate_cover_hash(cover_data1)
         hash2 = sync_mapper.calculate_cover_hash(cover_data2)
-        
+
         assert hash1 != hash2
+
+
+class TestPubdateIsoContract:
+    """Test pubdate ISO date string contract (2026-04-04).
+
+    Wire format must be "YYYY-MM-DD" string, not unix timestamp.
+    """
+
+    def test_push_pubdate_as_iso_date_string(self, mock_calibre_metadata):
+        """calibre_to_json_item must send pubdate as 'YYYY-MM-DD'."""
+        from datetime import datetime, timezone
+        mock_calibre_metadata.pubdate = datetime(1991, 4, 15, 4, 0, 0, tzinfo=timezone.utc)
+        item = sync_mapper.calibre_to_json_item(1, mock_calibre_metadata, 'lib-1')
+        assert item['pubdate'] == '1991-04-15', f"Expected ISO date string, got {item['pubdate']!r}"
+
+    def test_push_null_pubdate(self, mock_calibre_metadata):
+        """Null pubdate must stay null."""
+        mock_calibre_metadata.pubdate = None
+        item = sync_mapper.calibre_to_json_item(1, mock_calibre_metadata, 'lib-1')
+        assert item['pubdate'] is None
+
+    def test_push_sentinel_pubdate_becomes_null(self, mock_calibre_metadata):
+        """Calibre sentinel 0101-01-01 must become null."""
+        from datetime import datetime, timezone
+        mock_calibre_metadata.pubdate = datetime(101, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        item = sync_mapper.calibre_to_json_item(1, mock_calibre_metadata, 'lib-1')
+        assert item['pubdate'] is None
+
+    def test_push_pre_1970_pubdate_preserved(self, mock_calibre_metadata):
+        """Pre-1970 dates must be preserved as ISO date strings."""
+        from datetime import datetime, timezone
+        mock_calibre_metadata.pubdate = datetime(1850, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
+        item = sync_mapper.calibre_to_json_item(1, mock_calibre_metadata, 'lib-1')
+        assert item['pubdate'] == '1850-06-15'
+
+    def test_receive_iso_date_string(self):
+        """json_item_to_calibre must parse 'YYYY-MM-DD' pubdate."""
+        from datetime import datetime, timezone
+        item = {'pubdate': '2021-10-16', 'title': 'Test'}
+        result = sync_mapper.json_item_to_calibre(item, None)
+        assert result['pubdate'] is not None
+        assert result['pubdate'].year == 2021
+        assert result['pubdate'].month == 10
+        assert result['pubdate'].day == 16
+
+    def test_receive_null_pubdate(self):
+        """Null pubdate must produce UNDEFINED_DATE."""
+        item = {'pubdate': None, 'title': 'Test'}
+        result = sync_mapper.json_item_to_calibre(item, None)
+        # UNDEFINED_DATE is the Calibre sentinel for "no date"
+        assert result['pubdate'] == sync_mapper.UNDEFINED_DATE
+
+    def test_receive_pre_1970_iso_date(self):
+        """Pre-1970 ISO dates must be parsed correctly."""
+        item = {'pubdate': '1850-06-15', 'title': 'Test'}
+        result = sync_mapper.json_item_to_calibre(item, None)
+        assert result['pubdate'] is not None
+        assert result['pubdate'].year == 1850
+        assert result['pubdate'].month == 6
+        assert result['pubdate'].day == 15
