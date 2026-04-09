@@ -36,7 +36,7 @@ SCRAMBLE_PCT = 0.10
 
 # Add sync_calimob to path for hash UDFs
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'sync_calimob'))
-from mapping_table import sha256_udf, json_quote_ascii_udf
+from mapping_table import sha256_udf
 
 PASS = 0
 FAIL = 0
@@ -72,8 +72,27 @@ def sql(query):
     return data
 
 
+def sync_push(body):
+    """POST /api/sync (push changes) and return parsed response + timing."""
+    start = time.time()
+    r = subprocess.run([
+        'curl', '-s',
+        '-H', f'Authorization: Bearer {TOKEN}',
+        '-H', 'Accept: application/json',
+        '-H', 'Content-Type: application/json',
+        '-d', json.dumps(body),
+        f'{BASE_URL}/api/sync'
+    ], capture_output=True, text=True, timeout=120)
+    elapsed_ms = int((time.time() - start) * 1000)
+    try:
+        data = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        data = {'error': 'invalid JSON', 'raw': r.stdout[:500]}
+    return data, elapsed_ms
+
+
 def sync_v5(body):
-    """POST /api/sync/v5 and return parsed response + timing."""
+    """POST /api/sync/v5 (pull) and return parsed response + timing."""
     start = time.time()
     r = subprocess.run([
         'curl', '-s',
@@ -146,36 +165,51 @@ def main():
         log(f"\n[2] Copying {NUM_BOOKS} books from library {SOURCE_LIB_ID}...")
         t0 = time.time()
 
-        # Get source UUIDs
-        source_books = sql(
-            f"SELECT uuid, title, author_sort, series_index, pubdate, description, rating, has_cover "
-            f"FROM books WHERE user_id = 1 AND library_id = {SOURCE_LIB_ID} AND deleted_at IS NULL "
+        # Get source books with full metadata from hash VIEW
+        source_rows = sql(
+            f"SELECT uuid, hash_payload FROM books_hash_v2 "
+            f"WHERE user_id = 1 AND library_id = {SOURCE_LIB_ID} "
             f"ORDER BY uuid LIMIT {NUM_BOOKS}"
         )['rows']
-        log(f"  Fetched {len(source_books)} source books")
+        log(f"  Fetched {len(source_rows)} source books")
 
-        # Insert copies — skip description (too complex for SQL string escaping)
-        # Copy only scalar fields that affect the metadata hash
+        # Seed via sync API in batches (not individual SQL INSERTs)
+        BATCH_SIZE = 50
         inserted = 0
-        for i, book in enumerate(source_books):
-            try:
-                title = (book['title'] or 'Unknown').replace("'", "''").replace("\\", "\\\\")
-                author = (book['author_sort'] or 'Unknown').replace("'", "''").replace("\\", "\\\\")
-                pubdate_val = f"'{book['pubdate']}'" if book['pubdate'] else 'NULL'
-                rating_val = str(int(book['rating'])) if book['rating'] is not None else 'NULL'
-                si = book['series_index'] if book['series_index'] else 1.0
-
-                result = sql(
-                    f"INSERT INTO books (id, uuid, user_id, library_id, title, path, author_sort, "
-                    f"series_index, pubdate, rating, has_cover, last_modified, created_at, updated_at) "
-                    f"VALUES ({100000+i}, '{book['uuid']}', 1, {lib_id}, '{title}', "
-                    f"'path-{i}', '{author}', {si}, "
-                    f"{pubdate_val}, {rating_val}, {int(book['has_cover'] or 0)}, NOW(), NOW(), NOW())"
-                )
-                inserted += 1
-            except Exception as e:
-                log(f"  WARN: Failed to insert book {i}: {e}")
-        log(f"  Inserted {inserted}/{len(source_books)} books")
+        for batch_start in range(0, len(source_rows), BATCH_SIZE):
+            batch = source_rows[batch_start:batch_start + BATCH_SIZE]
+            changes = []
+            for row in batch:
+                payload = json.loads(row['hash_payload'])
+                meta = payload.get('metadata', {})
+                item = {
+                    'id': 100000 + batch_start + len(changes),
+                    'uuid': meta.get('uuid'),
+                    'title': meta.get('title'),
+                    'authors': meta.get('authors', []),
+                    'series': meta.get('series'),
+                    'tags': meta.get('tags', []),
+                    'identifiers': meta.get('identifiers', {}),
+                    'publisher': meta.get('publisher'),
+                    'pubdate': meta.get('pubdate'),
+                    'languages': meta.get('languages', []),
+                    'rating': meta.get('rating'),
+                    'description': meta.get('description'),
+                    'files': [],
+                }
+                idem = hashlib.sha256(json.dumps({'op': 'upsert', 'item': item}, sort_keys=True, separators=(',', ':'), default=str).encode()).hexdigest()
+                changes.append({'op': 'upsert', 'idempotency_key': idem, 'client_change_id': idem, 'item': item})
+            resp, ms = sync_push({
+                'library_id': str(lib_id),
+                'calibre_library_uuid': test_lib_uuid,
+                'client_cursor': None,
+                'changes': changes,
+                'options': {'dry_run': False, 'no_cache': True},
+            })
+            results = resp.get('results', [])
+            ok = sum(1 for r in results if (r.get('status') or '').lower() in ('ok', 'created', 'applied', 'noop', 'merged'))
+            inserted += ok
+        log(f"  Seeded {inserted}/{len(source_rows)} books via sync API")
 
         copy_ms = int((time.time() - t0) * 1000)
         count = sql(f"SELECT COUNT(*) as c FROM books WHERE user_id = 1 AND library_id = {lib_id} AND deleted_at IS NULL")['rows'][0]['c']
@@ -230,13 +264,24 @@ def main():
         remaining = [u for u in uuids if u not in server_scramble_uuids]
         client_scramble_uuids = random.sample(remaining, min(scramble_count, len(remaining)))
 
-        log(f"\n[5] Scrambling {scramble_count} books on SERVER...")
+        log(f"\n[5] Scrambling {scramble_count} books on SERVER via sync...")
         t0 = time.time()
+        scramble_changes = []
         for i, u in enumerate(server_scramble_uuids):
             new_title = f"SERVER_SCRAMBLED_{i}_{random.randint(1000,9999)}"
-            sql(f"UPDATE books SET title = '{new_title}' WHERE uuid = '{u}' AND user_id = 1 AND library_id = {lib_id}")
+            item = {'uuid': u, 'title': new_title, 'files': []}
+            idem = hashlib.sha256(json.dumps({'op': 'upsert', 'item': item}, sort_keys=True, separators=(',', ':'), default=str).encode()).hexdigest()
+            scramble_changes.append({'op': 'upsert', 'idempotency_key': idem, 'client_change_id': idem, 'item': item})
+        sresp, sms = sync_push({
+            'library_id': str(lib_id),
+            'calibre_library_uuid': test_lib_uuid,
+            'client_cursor': None,
+            'changes': scramble_changes,
+            'options': {'dry_run': False, 'no_cache': True},
+        })
+        scramble_ok = sum(1 for r in (sresp.get('results') or []) if (r.get('status') or '').lower() in ('ok', 'created', 'applied', 'noop', 'merged'))
         scramble_server_ms = int((time.time() - t0) * 1000)
-        log(f"  Scrambled {scramble_count} server books in {scramble_server_ms}ms")
+        log(f"  Scrambled {scramble_ok}/{scramble_count} server books in {scramble_server_ms}ms")
 
         # ── Step 6: Re-fetch server hashes after scramble ────────────
         log("\n[6] Re-fetching server hashes after scramble...")

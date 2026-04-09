@@ -55,7 +55,7 @@ def _run_in_process(library_path, library_uuid, calimob_lib_id, plugin_dir, clea
     return results, "(in-process sync)"
 
 
-def _run_subprocess(library_path, library_uuid, calimob_lib_id, plugin_dir, calibre_debug_path, clear_cache, debug_show_stderr):
+def _run_subprocess(library_path, library_uuid, calimob_lib_id, plugin_dir, calibre_debug_path, clear_cache, debug_show_stderr, timeout=120):
     """Run sync via calibre-debug -e script; parse stdout and return (results, output)."""
     if clear_cache:
         subprocess.run([
@@ -80,9 +80,18 @@ def _run_subprocess(library_path, library_uuid, calimob_lib_id, plugin_dir, cali
                 pass
 
     script = (
-        "import sys\nsys.path.insert(0, %r)\n"
+        "import os, sys\nsys.path.insert(0, %r)\n"
         "from sync_worker import SyncWorker\nfrom calibre.library import db\n"
         "database = db(%r)\nworker = SyncWorker(None, database, %r, %r)\n"
+        "# Override REST endpoint/token from env (for integration tests)\n"
+        "env_api_url = os.getenv('CALIMOB_TEST_API_URL', '')\n"
+        "env_token = os.getenv('CALIMOB_TEST_TOKEN', '')\n"
+        "if env_api_url and env_token:\n"
+        "    base = env_api_url.replace('/api', '').rstrip('/')\n"
+        "    worker.client._raw_discovery_endpoint = base\n"
+        "    worker.client._discovery_url = ''\n"
+        "    worker.client.token = env_token\n"
+        "    worker.client._endpoint = base\n"
         "summary = worker.sync_v5()\n"
         "print('RESULT_START')\n"
         "print('synced=', summary['books_synced'])\n"
@@ -103,7 +112,7 @@ def _run_subprocess(library_path, library_uuid, calimob_lib_id, plugin_dir, cali
             [calibre_debug_path, '-e', script_path],
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=timeout
         )
         if result.returncode != 0 or debug_show_stderr:
             if result.stderr:
@@ -139,6 +148,7 @@ def run_sync_v5(
     clear_cache=False,
     in_process=None,
     debug_show_stderr=False,
+    timeout=120,
 ):
     """
     Run sync_v5 and return (results_dict, output_string).
@@ -159,5 +169,5 @@ def run_sync_v5(
         return _run_in_process(library_path, library_uuid, calimob_lib_id, plugin_dir, clear_cache)
     return _run_subprocess(
         library_path, library_uuid, calimob_lib_id, plugin_dir,
-        calibre_debug_path, clear_cache, debug_show_stderr
+        calibre_debug_path, clear_cache, debug_show_stderr, timeout=timeout
     )
