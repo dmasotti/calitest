@@ -178,7 +178,7 @@ def main():
     # The first sync will auto-create the library on server if it doesn't exist.
     # We need a calimob_lib_id — get or create it.
     lib_rows = sql_api(
-        f"SELECT id FROM libraries WHERE calibre_library_id = '{library_uuid}' AND user_id = (SELECT id FROM users WHERE email = 'local-sync@test.local' LIMIT 1)"
+        f"SELECT id FROM libraries WHERE calibre_library_id = '{library_uuid}' AND user_id = (SELECT id FROM users ORDER BY id LIMIT 1)"
     ).get('rows', [])
     if lib_rows:
         calimob_lib_id = lib_rows[0]['id']
@@ -189,7 +189,7 @@ def main():
     else:
         sql_api(
             f"INSERT INTO libraries (calibre_library_id, user_id, name, created_at, updated_at) "
-            f"VALUES ('{library_uuid}', (SELECT id FROM users WHERE email = 'local-sync@test.local' LIMIT 1), 'E2E Large Scramble', NOW(), NOW())"
+            f"VALUES ('{library_uuid}', (SELECT id FROM users ORDER BY id LIMIT 1), 'E2E Large Scramble', NOW(), NOW())"
         )
         lib_rows = sql_api(
             f"SELECT id FROM libraries WHERE calibre_library_id = '{library_uuid}'"
