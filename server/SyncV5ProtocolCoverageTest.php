@@ -499,9 +499,14 @@ class SyncV5ProtocolCoverageTest extends TestCase
         ]);
 
         DB::table('books_identifiers')->insert([
+            'uuid' => 'identifier-isbn-uuid-1',
             'book' => $book->uuid,
             'type' => 'isbn',
             'val' => '9780000000001',
+            'user_id' => $library->user_id,
+            'library_id' => (string) $library->id,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         $response = $this->postJson('/api/sync/v5', [
@@ -587,8 +592,9 @@ class SyncV5ProtocolCoverageTest extends TestCase
             'path' => 'Metadata Only Payload Trim',
             'last_modified' => Carbon::create(2026, 3, 20, 12, 0, 0, 'UTC'),
             'has_cover' => true,
-            'cover_original_hash' => 'sha256:' . str_repeat('c', 64),
-            'cover_optimized_hash' => 'sha256:' . str_repeat('d', 64),
+            // cover hash columns are varchar(64) — keep within 64 chars
+            'cover_original_hash' => str_repeat('c', 64),
+            'cover_optimized_hash' => str_repeat('d', 64),
             'cover_url' => 'https://example.test/covers/metadata-only.jpg',
         ]);
 
@@ -597,7 +603,8 @@ class SyncV5ProtocolCoverageTest extends TestCase
             'user_id' => $library->user_id,
             'library_id' => (string) $library->id,
             'format' => 'EPUB',
-            'file_hash' => 'sha256:' . str_repeat('e', 64),
+            // file_hash column is varchar(64) — keep within 64 chars
+            'file_hash' => str_repeat('e', 64),
             'is_uploaded' => true,
             'file_missing' => false,
             'needs_file_upload' => false,
@@ -780,29 +787,34 @@ class SyncV5ProtocolCoverageTest extends TestCase
             'library_id' => (string) $library->id,
         ]);
 
-        DB::table('books_languages')->insert([
+        // books_languages.id is int (auto). lang_code in books_languages_link is
+        // an int FK to books_languages.id (NOT the text code).
+        $languageId = (int) DB::table('books_languages')->insertGetId([
             'uuid' => 'language-one-uuid',
-            'id' => 'eng',
             'lang_code' => 'eng',
             'user_id' => $library->user_id,
             'library_id' => (string) $library->id,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        DB::table('books_languages')->where('idx', $languageId)->update(['id' => $languageId]);
         DB::table('books_languages_link')->insert([
             'uuid' => 'language-link-uuid',
             'book' => $book->uuid,
-            'lang_code' => 'eng',
+            'lang_code' => $languageId,
             'user_id' => $library->user_id,
             'library_id' => (string) $library->id,
         ]);
 
         DB::table('books_identifiers')->insert([
+            'uuid' => 'identifier-isbn-uuid-2',
             'book' => $book->uuid,
             'type' => 'isbn',
             'val' => '9780000000002',
             'user_id' => $library->user_id,
             'library_id' => (string) $library->id,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         $response = $this->postJson('/api/sync/v5', [
