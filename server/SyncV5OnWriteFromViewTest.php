@@ -45,6 +45,10 @@ class SyncV5OnWriteFromViewTest extends TestCase
 
     private function viewHash(UserBook $book): ?string
     {
+        // The books_hash_v2 VIEW was materialized into books.metadata_hash_cache
+        // and is no longer required. Returns null when the VIEW is absent so that
+        // tests can still assert the column hash; parity assertions only run when
+        // the VIEW exists.
         if (!Schema::hasTable('books_hash_v2')) {
             return null;
         }
@@ -144,11 +148,17 @@ class SyncV5OnWriteFromViewTest extends TestCase
         ];
 
         $this->applyAndRefresh($book, array_merge($base, ['tags' => [['name' => 'Tag1']]]), $user, $lib->id);
+        $hash1 = $book->metadata_hash;
         $this->applyAndRefresh($book, array_merge($base, ['tags' => [['name' => 'Tag1'], ['name' => 'Tag2']]]), $user, $lib->id);
+        $hash2 = $book->metadata_hash;
+
+        // Column hash must always be set; tag change must change the hash.
+        $this->assertNotNull($hash2, 'Column hash must be set after tag change');
+        $this->assertNotSame($hash1, $hash2, 'Adding a tag must change the column hash');
 
         $viewHash = $this->viewHash($book);
         if ($viewHash !== null) {
-            $this->assertSame($viewHash, $book->metadata_hash);
+            $this->assertSame($viewHash, $hash2);
         }
     }
 
@@ -167,6 +177,9 @@ class SyncV5OnWriteFromViewTest extends TestCase
             'comments' => null, 'rating' => null,
             'pubdate' => '1966-12-31 23:00:00',
         ], $user, $lib->id);
+
+        // Column hash must be set even for pre-1970 pubdate (no NULL).
+        $this->assertNotNull($book->metadata_hash, 'Column hash must be set for pre-1970 pubdate');
 
         $viewHash = $this->viewHash($book);
         if ($viewHash !== null) {
@@ -190,6 +203,9 @@ class SyncV5OnWriteFromViewTest extends TestCase
             'pubdate' => '0101-01-01 00:00:00',
         ], $user, $lib->id);
 
+        // Column hash must be set even for sentinel 0101 date.
+        $this->assertNotNull($book->metadata_hash, 'Column hash must be set for sentinel pubdate');
+
         $viewHash = $this->viewHash($book);
         if ($viewHash !== null) {
             $this->assertSame($viewHash, $book->metadata_hash);
@@ -211,6 +227,9 @@ class SyncV5OnWriteFromViewTest extends TestCase
             'publisher' => null, 'languages' => [],
             'comments' => null, 'rating' => null, 'pubdate' => null,
         ], $user, $lib->id);
+
+        // Column hash must be set with multiple authors.
+        $this->assertNotNull($book->metadata_hash, 'Column hash must be set with multiple authors');
 
         $viewHash = $this->viewHash($book);
         if ($viewHash !== null) {
