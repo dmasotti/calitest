@@ -109,7 +109,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
     {
         $library = Library::factory()->create();
 
-        $response = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=0');
+        $response = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=0');
 
         $response->assertStatus(401);
     }
@@ -151,7 +151,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
     {
         $library = $this->actingUserWithLibrary();
 
-        $response = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=-1');
+        $response = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=-1');
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['branch_id']);
@@ -178,7 +178,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
     {
         $library = $this->actingUserWithLibrary();
 
-        $response = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=0');
+        $response = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=0');
 
         $response->assertOk();
         $response->assertJsonStructure([
@@ -195,7 +195,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
     {
         $library = $this->actingUserWithLibrary();
 
-        $response = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=7');
+        $response = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=7');
 
         $response->assertOk()
             ->assertJsonPath('branch_id', 7)
@@ -217,7 +217,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
     {
         $library = $this->actingUserWithLibrary();
 
-        $response = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=15');
+        $response = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=15');
 
         $response->assertOk()
             ->assertJsonPath('branch_id', 15)
@@ -312,7 +312,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
 
         // As user A we must never see UUIDs from user B library.
         Sanctum::actingAs(User::query()->findOrFail($userA));
-        $leavesA = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $libraryA->id . '&dimension=metadata&branch_id=10');
+        $leavesA = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $libraryA->id . '&dimension=metadata&include_uuids=1&branch_id=10');
         $leavesA->assertOk();
         $allUuidsA = [];
         foreach (($leavesA->json('leaves') ?? []) as $leaf) {
@@ -339,7 +339,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         $branchesBefore->assertOk();
         $branchMapBefore = $this->toBranchMap($branchesBefore->json('branches') ?? []);
 
-        $leavesA_before = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=10');
+        $leavesA_before = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=10');
         $leavesA_before->assertOk();
         $leafMapBefore = $this->toLeafMap($leavesA_before->json('leaves') ?? []);
 
@@ -368,7 +368,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         $this->assertArrayHasKey(11, $branchMapAfter);
         $this->assertSame($branchMapBefore[11], $branchMapAfter[11], 'Branch "b" must not change');
 
-        $leavesA_after = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=10');
+        $leavesA_after = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=10');
         $leavesA_after->assertOk();
         $leafMapAfter = $this->toLeafMap($leavesA_after->json('leaves') ?? []);
 
@@ -383,7 +383,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         $this->assertEquals([$bookAb], $leafMapAfter[171]['uuids']);
         $this->assertEquals([$bookAa], $leafMapAfter[170]['uuids']);
         $this->assertEquals([$bookBa], $this->toLeafMap(
-            $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=11')
+            $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=11')
                 ->assertOk()
                 ->json('leaves') ?? []
         )[186]['uuids']); // ba
@@ -497,7 +497,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         $this->rebuildMerkle($library, ['metadata']);
 
         $leaves = $this->toLeafMap(
-            $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=10')
+            $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=10')
                 ->assertOk()
                 ->json('leaves') ?? []
         );
@@ -580,7 +580,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         $userId = (int) $library->user_id;
         $bookAa = $this->seedBook($library, $userId, 'aa000000-0000-4000-8000-000000000061', 'A1');
 
-        $leaves = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=10');
+        $leaves = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=10');
         $leaves->assertOk();
 
         $all = [];
@@ -706,7 +706,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         $this->assertArrayHasKey(15, $branches, 'UUID starting with f* must map to branch_id=15');
 
         $leaves = $this->toLeafMap(
-            $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=15')
+            $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=15')
                 ->assertOk()
                 ->json('leaves') ?? []
         );
@@ -720,11 +720,11 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         $userId = (int) $library->user_id;
         $this->seedBook($library, $userId, 'aa000000-0000-4000-8000-000000000111', 'A1');
 
-        $branchA = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=10');
+        $branchA = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=10');
         $branchA->assertOk();
         $this->assertGreaterThan(0, (int) ($branchA->json('leaf_count') ?? 0));
 
-        $branchF = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=15');
+        $branchF = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=15');
         $branchF->assertOk()
             ->assertJsonPath('leaf_count', 0)
             ->assertJsonPath('leaves', []);
@@ -780,7 +780,7 @@ class SyncV5PreflightAndMerkleDrilldownTodoTest extends TestCase
         );
 
         // sanity: alive UUID still present in merkle leaves
-        $leaves = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&branch_id=10');
+        $leaves = $this->getJson('/api/sync/v5/merkle/leaves?library_id=' . $library->id . '&dimension=metadata&include_uuids=1&branch_id=10');
         $leaves->assertOk();
         $all = [];
         foreach (($leaves->json('leaves') ?? []) as $leaf) {
