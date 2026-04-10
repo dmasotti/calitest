@@ -287,11 +287,13 @@ def main():
 
     # ── Cleanup ──
     shutil.rmtree(tmp_dir, ignore_errors=True)
-    # Cleanup server library
-    if calimob_lib_id:
+    # Cleanup server library (skipped if E2E_KEEP_LIBRARY=1 — useful for post-mortem inspection)
+    if calimob_lib_id and not os.getenv('E2E_KEEP_LIBRARY'):
         log(f"Cleaning up server library {calimob_lib_id}...")
         sql_api(f"DELETE FROM books WHERE library_id = {calimob_lib_id}")
         sql_api(f"DELETE FROM libraries WHERE id = {calimob_lib_id}")
+    elif calimob_lib_id:
+        log(f"E2E_KEEP_LIBRARY=1 → leaving server library {calimob_lib_id} intact for post-mortem")
 
     # Save log
     log_path = os.path.join(os.path.dirname(__file__), 'e2e_large_scramble_real.log')

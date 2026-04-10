@@ -788,8 +788,10 @@ class SyncV5ProtocolCoverageTest extends TestCase
         ]);
 
         // books_languages.id is int (auto). lang_code in books_languages_link is
-        // an int FK to books_languages.id (NOT the text code).
-        $languageId = (int) DB::table('books_languages')->insertGetId([
+        // an int FK to books_languages.id (NOT the text code). On PG the
+        // sequence is on `idx`, not `id`, so insertGetId() with default
+        // sequence returns 0 — explicitly fetch the row after insert instead.
+        DB::table('books_languages')->insert([
             'uuid' => 'language-one-uuid',
             'lang_code' => 'eng',
             'user_id' => $library->user_id,
@@ -797,6 +799,10 @@ class SyncV5ProtocolCoverageTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $insertedLang = DB::table('books_languages')
+            ->where('uuid', 'language-one-uuid')
+            ->first();
+        $languageId = (int) $insertedLang->idx;
         DB::table('books_languages')->where('idx', $languageId)->update(['id' => $languageId]);
         DB::table('books_languages_link')->insert([
             'uuid' => 'language-link-uuid',
