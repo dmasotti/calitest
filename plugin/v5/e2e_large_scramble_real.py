@@ -175,10 +175,26 @@ def main():
 
     # ── Step 3: Register library on server ──
     log("\n[3] Registering library on server...")
-    # The first sync will auto-create the library on server if it doesn't exist.
-    # We need a calimob_lib_id — get or create it.
+    # The library must be owned by the SAME user as the API token, not the
+    # first user in the table (which on multi-user dev DBs is a stale bench
+    # user that doesn't own the API token). Resolve the token user via the
+    # bootstrap-created library (CALIMOB_TEST_CALIMOB_LIB_ID).
+    bootstrap_lib_id = os.getenv('CALIMOB_TEST_CALIMOB_LIB_ID', '')
+    token_user_id = None
+    if bootstrap_lib_id:
+        token_user_rows = sql_api(
+            f"SELECT user_id FROM libraries WHERE id = {int(bootstrap_lib_id)} LIMIT 1"
+        ).get('rows', [])
+        if token_user_rows:
+            token_user_id = int(token_user_rows[0]['user_id'])
+    if token_user_id is None:
+        log("  FATAL: cannot resolve token user via CALIMOB_TEST_CALIMOB_LIB_ID")
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        sys.exit(1)
+    log(f"  Token user_id={token_user_id}")
+
     lib_rows = sql_api(
-        f"SELECT id FROM libraries WHERE calibre_library_id = '{library_uuid}' AND user_id = (SELECT id FROM users ORDER BY id LIMIT 1)"
+        f"SELECT id FROM libraries WHERE calibre_library_id = '{library_uuid}' AND user_id = {token_user_id}"
     ).get('rows', [])
     if lib_rows:
         calimob_lib_id = lib_rows[0]['id']
@@ -189,10 +205,10 @@ def main():
     else:
         sql_api(
             f"INSERT INTO libraries (calibre_library_id, user_id, name, created_at, updated_at) "
-            f"VALUES ('{library_uuid}', (SELECT id FROM users ORDER BY id LIMIT 1), 'E2E Large Scramble', NOW(), NOW())"
+            f"VALUES ('{library_uuid}', {token_user_id}, 'E2E Large Scramble', NOW(), NOW())"
         )
         lib_rows = sql_api(
-            f"SELECT id FROM libraries WHERE calibre_library_id = '{library_uuid}'"
+            f"SELECT id FROM libraries WHERE calibre_library_id = '{library_uuid}' AND user_id = {token_user_id}"
         ).get('rows', [])
         calimob_lib_id = lib_rows[0]['id']
         log(f"  Created library: {calimob_lib_id}")
