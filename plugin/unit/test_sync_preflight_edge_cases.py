@@ -126,7 +126,7 @@ class TestCollectAndFilterCandidates:
         ))
 
         result = worker._v5_collect_and_filter_candidates(
-            cursor_timestamp=None, sync_library_path='/tmp',
+            sync_library_path='/tmp',
             merkle_candidates=None, summary={},
             ts_func=_ts, debug_file=sys.stderr,
         )
@@ -144,7 +144,7 @@ class TestCollectAndFilterCandidates:
         ))
 
         result = worker._v5_collect_and_filter_candidates(
-            cursor_timestamp=None, sync_library_path='/tmp',
+            sync_library_path='/tmp',
             merkle_candidates=['uuid-1', 'uuid-3'],  # only 2 of 3
             summary={}, ts_func=_ts, debug_file=sys.stderr,
         )
@@ -164,7 +164,7 @@ class TestCollectAndFilterCandidates:
         ))
 
         result = worker._v5_collect_and_filter_candidates(
-            cursor_timestamp=None, sync_library_path='/tmp',
+            sync_library_path='/tmp',
             merkle_candidates=['uuid-del-1'],  # only 1 matches
             summary={}, ts_func=_ts, debug_file=sys.stderr,
         )
@@ -177,7 +177,7 @@ class TestCollectAndFilterCandidates:
         worker._v5_collect_client_books_candidates = Mock(return_value=([], {}, []))
 
         result = worker._v5_collect_and_filter_candidates(
-            cursor_timestamp=None, sync_library_path='/tmp',
+            sync_library_path='/tmp',
             merkle_candidates=None, summary={},
             ts_func=_ts, debug_file=sys.stderr,
         )
@@ -196,7 +196,7 @@ class TestCollectAndFilterCandidates:
         summary = {}
 
         worker._v5_collect_and_filter_candidates(
-            cursor_timestamp=None, sync_library_path='/tmp',
+            sync_library_path='/tmp',
             merkle_candidates=None, summary=summary,
             ts_func=_ts, debug_file=sys.stderr,
         )
@@ -215,18 +215,16 @@ class TestCheckpointBatchState:
         """With cursor_next, cursor is saved and loop continues."""
         worker = _make_worker()
         worker.save_pull_cursor = Mock()
-        worker._v5_save_resume_state = Mock()
 
         result = worker._v5_checkpoint_batch_state(
             cursor_next='cursor-2', batch_had_errors=False,
-            cursor='cursor-1', resume_sig='sig-1',
+            cursor='cursor-1',
             client_cursor=50, client_total=100,
         )
 
         assert result['cursor'] == 'cursor-2'
         assert result['has_more'] is None  # signals "keep looping"
         worker.save_pull_cursor.assert_called_once_with('cursor-2')
-        worker._v5_save_resume_state.assert_called_once()
 
     def test_no_cursor_next_terminates_loop(self):
         """Without cursor_next, loop terminates."""
@@ -235,7 +233,7 @@ class TestCheckpointBatchState:
 
         result = worker._v5_checkpoint_batch_state(
             cursor_next=None, batch_had_errors=False,
-            cursor='cursor-1', resume_sig='sig-1',
+            cursor='cursor-1',
             client_cursor=100, client_total=100,
         )
 
@@ -247,29 +245,26 @@ class TestCheckpointBatchState:
         """With critical errors, cursor is NOT saved."""
         worker = _make_worker()
         worker.save_pull_cursor = Mock()
-        worker._v5_save_resume_state = Mock()
 
         result = worker._v5_checkpoint_batch_state(
             cursor_next='cursor-2', batch_had_errors=True,
             batch_has_critical_errors=True,
-            cursor='cursor-1', resume_sig='sig-1',
+            cursor='cursor-1',
             client_cursor=50, client_total=100,
         )
 
         assert result['cursor'] == 'cursor-2'
         worker.save_pull_cursor.assert_not_called()
-        worker._v5_save_resume_state.assert_not_called()
 
     def test_non_critical_errors_still_save(self):
         """With batch_had_errors=True but critical=False, cursor IS saved."""
         worker = _make_worker()
         worker.save_pull_cursor = Mock()
-        worker._v5_save_resume_state = Mock()
 
         worker._v5_checkpoint_batch_state(
             cursor_next='cursor-2', batch_had_errors=True,
             batch_has_critical_errors=False,
-            cursor='cursor-1', resume_sig='sig-1',
+            cursor='cursor-1',
             client_cursor=50, client_total=100,
         )
 
@@ -284,10 +279,9 @@ class TestFinalizeSyncCursorState:
     """Final cursor save and resume state cleanup."""
 
     def test_saves_cursor_on_success(self):
-        """If no errors, cursor is saved and resume state cleared."""
+        """If no errors, cursor is saved."""
         worker = _make_worker()
         worker.save_cursor = Mock()
-        worker._v5_clear_resume_state = Mock()
 
         worker._v5_finalize_sync_cursor_state(
             cursor='final-cursor', summary={'errors': []},
@@ -295,13 +289,11 @@ class TestFinalizeSyncCursorState:
         )
 
         worker.save_cursor.assert_called_once_with('final-cursor')
-        worker._v5_clear_resume_state.assert_called_once()
 
     def test_skips_save_when_errors_present(self):
         """If errors in summary, cursor is NOT saved."""
         worker = _make_worker()
         worker.save_cursor = Mock()
-        worker._v5_clear_resume_state = Mock()
 
         worker._v5_finalize_sync_cursor_state(
             cursor='final-cursor',
@@ -310,13 +302,11 @@ class TestFinalizeSyncCursorState:
         )
 
         worker.save_cursor.assert_not_called()
-        worker._v5_clear_resume_state.assert_not_called()
 
     def test_skips_save_when_cursor_is_none(self):
         """If cursor is None, nothing is saved."""
         worker = _make_worker()
         worker.save_cursor = Mock()
-        worker._v5_clear_resume_state = Mock()
 
         worker._v5_finalize_sync_cursor_state(
             cursor=None, summary={'errors': []},
@@ -329,7 +319,6 @@ class TestFinalizeSyncCursorState:
         """Empty errors list [] is truthy but treated as no errors."""
         worker = _make_worker()
         worker.save_cursor = Mock()
-        worker._v5_clear_resume_state = Mock()
 
         worker._v5_finalize_sync_cursor_state(
             cursor='cursor-ok', summary={'errors': []},

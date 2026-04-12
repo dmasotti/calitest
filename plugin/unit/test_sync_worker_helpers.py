@@ -710,9 +710,7 @@ def test_sync_v5_sends_client_inventory_in_chunks(monkeypatch):
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -795,9 +793,7 @@ def test_sync_v5_accumulates_skipped_hash_count_from_server(monkeypatch):
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -862,9 +858,7 @@ def test_sync_v5_streaming_hash_build_is_chunked(monkeypatch):
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -927,9 +921,7 @@ def test_sync_v5_passes_resource_toggles_to_server(monkeypatch):
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -1345,9 +1337,7 @@ def test_sync_v5_does_not_call_merkle_drilldown_when_fast_path_hashes_match(monk
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
     monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
     monkeypatch.setattr(
@@ -1474,9 +1464,7 @@ def test_sync_v5_filters_deleted_books_with_merkle_candidates(monkeypatch):
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -1555,9 +1543,7 @@ def test_sync_v5_uses_merkle_candidates_to_reduce_client_payload(monkeypatch):
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -1648,9 +1634,7 @@ def test_sync_v5_sends_sorted_metadata_candidate_uuids(monkeypatch):
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -1732,9 +1716,7 @@ def test_sync_v5_does_not_send_metadata_candidate_filter_when_merkle_returns_emp
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -2008,9 +1990,7 @@ def test_sync_v5_merkle_candidates_not_in_local_inventory_send_empty_batch(monke
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -2089,9 +2069,7 @@ def test_sync_v5_merkle_candidates_are_deduplicated_before_client_call(monkeypat
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -2212,9 +2190,7 @@ def test_sync_v5_fast_path_with_files_enabled_and_files_mismatch_forces_sync(mon
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -2462,9 +2438,7 @@ def test_sync_v5_merkle_edge_deleted_sent_only_in_first_batch(monkeypatch):
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -2543,9 +2517,7 @@ def test_sync_v5_merkle_edge_server_hash_unavailable_skips_drilldown(monkeypatch
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -2619,9 +2591,7 @@ def test_sync_v5_merkle_edge_local_hash_unavailable_skips_drilldown(monkeypatch)
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -2689,9 +2659,7 @@ def test_sync_v5_merkle_edge_candidates_all_filtered_still_send_sorted_candidate
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -2800,9 +2768,7 @@ def test_sync_v5_fast_path_cover_enabled_and_matching_allows_short_circuit(monke
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     fake_sync_utils = SimpleNamespace(
         get_library_hash=lambda _conn, _lib_uuid: {
             'library_metadata_hash': 'meta-same',
@@ -2875,9 +2841,7 @@ def test_sync_v5_calls_covers_and_files_merkle_hooks_on_mismatch(monkeypatch):
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
+
     monkeypatch.setattr(
         worker,
         '_v5_collect_client_books_candidates',
@@ -2972,82 +2936,6 @@ def test_sync_v5_does_not_call_covers_files_hooks_when_resources_disabled(monkey
     assert summary.get('fast_path_used') is True
     assert hook_calls == {'meta': 0, 'covers': 0, 'files': 0}
     assert worker.client.sync_calls == 0
-
-
-def test_sync_v5_resume_state_restores_client_cursor(monkeypatch):
-    worker = _make_worker()
-    worker.gui = None
-    worker.calimob_library_id = 8
-    worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
-    worker.status_tag_mappings = {}
-
-    calls = []
-    class FakeClient:
-        def sync_v5(self, **kwargs):
-            calls.append(kwargs)
-            return {
-                'updates_for_client': [],
-                'missing_from_server': [],
-                'deleted_on_server': [],
-                'cursor': '100:1',
-                'has_more': False,
-                'client_cursor_next': 3,
-                'client_done': True,
-                'skipped_hash': 0,
-            }
-    worker.client = FakeClient()
-
-    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
-    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
-    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
-    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
-
-    monkeypatch.setattr(
-        worker,
-        '_v5_collect_client_books_candidates',
-        lambda **kwargs: (
-            [],
-            {'u1': 1, 'u2': 2, 'u3': 3},
-            [
-                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
-                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
-                {'id': 3, 'uuid': 'u3', 'last_modified': 30},
-            ],
-        ),
-    )
-    monkeypatch.setattr(
-        worker,
-        '_v5_build_client_books_chunk',
-        lambda books_chunk, **kwargs: {
-            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
-            for b in books_chunk
-        },
-    )
-    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
-    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
-    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
-    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
-    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
-
-    saved_resume = []
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: saved_resume.append(dict(state)))
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: {
-        'resume_sig': worker._v5_build_resume_signature(
-            [('u1', {'id': 1}, 10), ('u2', {'id': 2}, 20), ('u3', {'id': 3}, 30)],
-            None,
-            False
-        ),
-        'client_cursor': 2,
-        'client_total': 3,
-        'server_cursor': '100:1',
-    })
-
-    worker.sync_v5()
-
-    assert calls[0]['client_cursor'] == 2
-    assert set(calls[0]['client_books']['b'].keys()) == {'u3'}
-    assert saved_resume, "resume state should be persisted during run"
 
 
 def test_v5_push_missing_items_uploads_cover_on_mismatch(monkeypatch):
@@ -4288,278 +4176,16 @@ def test_read_cover_bytes_byte_only_reports_unavailable_for_non_bytes():
     assert status == 'unavailable'
 
 
-def test_sync_v5_resume_incompatible_signature_starts_from_zero(monkeypatch):
-    worker = _make_worker()
-    worker.gui = None
-    worker.calimob_library_id = 8
-    worker.library_id = 'lib-123'
-    worker.status_tag_mappings = {}
-
-    calls = []
-    class FakeClient:
-        def sync_v5(self, **kwargs):
-            calls.append(kwargs)
-            return {
-                'updates_for_client': [],
-                'missing_from_server': [],
-                'deleted_on_server': [],
-                'cursor': '100:1',
-                'has_more': False,
-                'client_cursor_next': 2,
-                'client_done': True,
-                'skipped_hash': 0,
-            }
-    worker.client = FakeClient()
-
-    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
-    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
-    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
-    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: {
-        'resume_sig': 'different-signature',
-        'client_cursor': 2,
-        'client_total': 3,
-        'server_cursor': '100:1',
-    })
-    monkeypatch.setattr(
-        worker,
-        '_v5_collect_client_books_candidates',
-        lambda **kwargs: (
-            ['d1'],
-            {'u1': 1, 'u2': 2, 'u3': 3},
-            [
-                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
-                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
-                {'id': 3, 'uuid': 'u3', 'last_modified': 30},
-            ],
-        ),
-    )
-    monkeypatch.setattr(
-        worker,
-        '_v5_build_client_books_chunk',
-        lambda books_chunk, **kwargs: {
-            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
-            for b in books_chunk
-        },
-    )
-    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
-    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
-    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
-    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
-    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
-
-    worker.sync_v5()
-
-    assert calls[0]['client_cursor'] == 0
-    assert calls[0]['client_books']['d'] == ['d1']
-
-
-def test_sync_v5_resume_sends_deleted_only_first_batch_even_after_restore(monkeypatch):
-    worker = _make_worker()
-    worker.gui = None
-    worker.calimob_library_id = 8
-    worker.library_id = 'lib-123'
-    worker.status_tag_mappings = {}
-
-    calls = []
-    class FakeClient:
-        def sync_v5(self, **kwargs):
-            calls.append(kwargs)
-            return {
-                'updates_for_client': [],
-                'missing_from_server': [],
-                'deleted_on_server': [],
-                'cursor': '100:1',
-                'has_more': False,
-                'client_cursor_next': 3,
-                'client_done': True,
-                'skipped_hash': 0,
-            }
-    worker.client = FakeClient()
-
-    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
-    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
-    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
-    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: None)
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: None)
-    monkeypatch.setattr(
-        worker,
-        '_v5_collect_client_books_candidates',
-        lambda **kwargs: (
-            ['d1'],
-            {'u1': 1, 'u2': 2, 'u3': 3},
-            [
-                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
-                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
-                {'id': 3, 'uuid': 'u3', 'last_modified': 30},
-            ],
-        ),
-    )
-    monkeypatch.setattr(
-        worker,
-        '_v5_build_client_books_chunk',
-        lambda books_chunk, **kwargs: {
-            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
-            for b in books_chunk
-        },
-    )
-    resume_sig = worker._v5_build_resume_signature(
-        [('u1', {'id': 1}, 10), ('u2', {'id': 2}, 20), ('u3', {'id': 3}, 30)],
-        None,
-        False
-    )
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: {
-        'resume_sig': resume_sig,
-        'client_cursor': 2,
-        'client_total': 3,
-        'server_cursor': '100:1',
-    })
-    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
-    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
-    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
-    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
-    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
-
-    worker.sync_v5()
-
-    assert calls[0]['client_cursor'] == 2
-    assert calls[0]['client_books']['d'] == []
-
-
-def test_sync_v5_resume_state_saved_each_successful_batch_and_cleared_on_success(monkeypatch):
-    worker = _make_worker()
-    worker.gui = None
-    worker.calimob_library_id = 8
-    worker.library_id = 'lib-123'
-    worker.status_tag_mappings = {}
-    worker.client = Mock()
-    worker.client.sync_v5 = Mock(side_effect=[
-        {
-            'updates_for_client': [],
-            'missing_from_server': [],
-            'deleted_on_server': [],
-            'cursor': '100:1',
-            'has_more': False,
-            'client_cursor_next': 2,
-            'client_done': False,
-            'skipped_hash': 0,
-        },
-        {
-            'updates_for_client': [],
-            'missing_from_server': [],
-            'deleted_on_server': [],
-            'cursor': '100:1',
-            'has_more': False,
-            'client_cursor_next': 3,
-            'client_done': True,
-            'skipped_hash': 0,
-        },
-    ])
-
-    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
-    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
-    monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
-    monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(
-        worker,
-        '_v5_collect_client_books_candidates',
-        lambda **kwargs: (
-            ['d1'],
-            {'u1': 1, 'u2': 2, 'u3': 3},
-            [
-                {'id': 1, 'uuid': 'u1', 'last_modified': 10},
-                {'id': 2, 'uuid': 'u2', 'last_modified': 20},
-                {'id': 3, 'uuid': 'u3', 'last_modified': 30},
-            ],
-        ),
-    )
-    monkeypatch.setattr(
-        worker,
-        '_v5_build_client_books_chunk',
-        lambda books_chunk, **kwargs: {
-            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
-            for b in books_chunk
-        },
-    )
-    monkeypatch.setattr(worker, '_v5_apply_deleted_on_server', lambda **kwargs: (set(), False))
-    monkeypatch.setattr(worker, '_v5_resolve_missing_id_map', lambda **kwargs: ({}, False))
-    monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
-    monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
-    monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
-
-    saved_resume = []
-    cleared = {'count': 0}
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: saved_resume.append(dict(state)))
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: cleared.__setitem__('count', cleared['count'] + 1))
-
-    worker.sync_v5()
-
-    assert len(saved_resume) >= 3
-    assert cleared['count'] == 1
-
-
-def test_sync_v5_resume_state_not_cleared_on_fatal_error(monkeypatch):
-    worker = _make_worker()
-    worker.gui = None
-    worker.calimob_library_id = 8
-    worker.library_id = 'lib-123'
-    worker.status_tag_mappings = {}
-
-    class FailingClient:
-        def sync_v5(self, **kwargs):
-            raise RuntimeError('boom')
-    worker.client = FailingClient()
-
-    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
-    monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
-    monkeypatch.setattr(worker, '_v5_get_resume_state', lambda: None)
-    monkeypatch.setattr(
-        worker,
-        '_v5_collect_client_books_candidates',
-        lambda **kwargs: (
-            ['d1'],
-            {'u1': 1},
-            [{'id': 1, 'uuid': 'u1', 'last_modified': 10}],
-        ),
-    )
-    monkeypatch.setattr(
-        worker,
-        '_v5_build_client_books_chunk',
-        lambda books_chunk, **kwargs: {
-            b['uuid']: {'m': 'h-%s' % b['uuid'], 'c': None, 'f': None, 'lm': b['last_modified']}
-            for b in books_chunk
-        },
-    )
-
-    saved_resume = []
-    cleared = {'count': 0}
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: saved_resume.append(dict(state)))
-    monkeypatch.setattr(worker, '_v5_clear_resume_state', lambda: cleared.__setitem__('count', cleared['count'] + 1))
-
-    summary = worker.sync_v5()
-
-    assert saved_resume
-    assert cleared['count'] == 0
-    assert summary['errors'], "fatal path should record errors"
-
-
 def test_v5_checkpoint_does_not_force_stop_when_cursor_next_exists_even_with_batch_errors(monkeypatch):
     worker = _make_worker()
 
     saved_pull = []
-    saved_resume = []
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: saved_pull.append(c))
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: saved_resume.append(dict(state)))
 
     state = worker._v5_checkpoint_batch_state(
         cursor_next='200:2',
         batch_had_errors=True,
         cursor='100:1',
-        resume_sig='sig-1',
         client_cursor=42,
         client_total=100,
     )
@@ -4572,23 +4198,19 @@ def test_v5_checkpoint_does_not_force_stop_when_cursor_next_exists_even_with_bat
 
     # Checkpoint persistente solo su batch senza errori.
     assert saved_pull == []
-    assert saved_resume == []
 
 
 def test_v5_checkpoint_persists_when_only_non_critical_errors(monkeypatch):
     worker = _make_worker()
 
     saved_pull = []
-    saved_resume = []
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: saved_pull.append(c))
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: saved_resume.append(dict(state)))
 
     state = worker._v5_checkpoint_batch_state(
         cursor_next='200:2',
         batch_had_errors=True,
         batch_has_critical_errors=False,
         cursor='100:1',
-        resume_sig='sig-1',
         client_cursor=42,
         client_total=100,
     )
@@ -4597,24 +4219,19 @@ def test_v5_checkpoint_persists_when_only_non_critical_errors(monkeypatch):
     assert state['has_more'] is None
     assert state['client_done'] is None
     assert saved_pull == ['200:2']
-    assert len(saved_resume) == 1
-    assert saved_resume[0]['server_cursor'] == '200:2'
 
 
 def test_v5_checkpoint_blocks_persist_on_critical_errors_even_with_cursor_next(monkeypatch):
     worker = _make_worker()
 
     saved_pull = []
-    saved_resume = []
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: saved_pull.append(c))
-    monkeypatch.setattr(worker, '_v5_save_resume_state', lambda state: saved_resume.append(dict(state)))
 
     state = worker._v5_checkpoint_batch_state(
         cursor_next='200:2',
         batch_had_errors=True,
         batch_has_critical_errors=True,
         cursor='100:1',
-        resume_sig='sig-1',
         client_cursor=42,
         client_total=100,
     )
@@ -4623,7 +4240,6 @@ def test_v5_checkpoint_blocks_persist_on_critical_errors_even_with_cursor_next(m
     assert state['has_more'] is None
     assert state['client_done'] is None
     assert saved_pull == []
-    assert saved_resume == []
 
 
 def test_v5_build_client_books_chunk_no_spurious_format_error_when_cache_valid():
