@@ -2,13 +2,11 @@
 
 
 def test_sync_snapshot_delegates_to_legacy_module():
-    """sync_snapshot should delegate to sync_legacy_snapshot.run_snapshot_sync."""
+    """sync_snapshot was removed — verify it no longer exists on SyncWorker."""
     from calibre_plugins.sync_calimob import sync_worker
-    import inspect
 
-    source = inspect.getsource(sync_worker.SyncWorker.sync_snapshot)
-    assert 'sync_legacy_snapshot' in source
-    assert 'run_snapshot_sync' in source
+    assert not hasattr(sync_worker.SyncWorker, 'sync_snapshot'), \
+        "sync_snapshot has been removed (legacy policy eliminated)"
 
 
 def test_sync_current_delegates_to_current_module():

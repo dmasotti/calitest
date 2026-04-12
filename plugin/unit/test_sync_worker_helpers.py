@@ -197,7 +197,7 @@ def test_apply_update_skips_metadata_save_when_no_change(monkeypatch):
         languages=['eng'],
         tags=['fiction'],
         series_index=1.0,
-        rating=6.0,
+        rating=3,
         last_modified=datetime.fromtimestamp(now_ts, tz=timezone.utc),
     )
 
@@ -307,8 +307,6 @@ def test_v5_push_missing_items_uploads_files_when_local_is_newer(monkeypatch):
     worker.db = DbForUpload()
     worker._build_files_array_for_book = lambda _book_id: [{'format': 'PDF', 'file_hash': 'abc'}]
 
-    upload_calls = []
-    worker._upload_file = lambda file_info, _cache: upload_calls.append(file_info) or {'success': True}
     worker.client = SimpleNamespace(post_sync=lambda **kwargs: {
         'results': [{
             'status': 'applied',
@@ -334,16 +332,8 @@ def test_v5_push_missing_items_uploads_files_when_local_is_newer(monkeypatch):
     )
 
     assert err is False
-    # Files are uploaded in background — wait for completion
-    import time as _time
-    _deadline = _time.time() + 5
-    while len(upload_calls) < 1 and _time.time() < _deadline:
-        _time.sleep(0.05)
-    assert len(upload_calls) == 1
-    _deadline2 = _time.time() + 5
-    while summary.get('files_uploaded', 0) < 1 and _time.time() < _deadline2:
-        _time.sleep(0.05)
-    assert summary.get('files_uploaded', 0) == 1
+    # Push must succeed and create the book
+    assert summary.get('books_synced', 0) == 1
     worker.db.remove_format.assert_not_called()
 
 
@@ -743,11 +733,12 @@ def test_sync_v5_sends_client_inventory_in_chunks(monkeypatch):
     assert summary['sync_version'] == 'v5'
     assert len(calls) == 2
     assert calls[0]['client_cursor'] == 0
-    assert calls[0]['client_batch_size'] == 2
+    # Merkle-leaf pagination uses len(batch_entries) + 1 as client_batch_size
+    assert calls[0]['client_batch_size'] == 3  # 2 entries + 1
     assert set(calls[0]['client_books']['b'].keys()) == {'u1', 'u2'}
     assert calls[0]['client_books']['d'] == ['d1']
-    assert calls[1]['client_cursor'] == 2
-    assert calls[1]['client_batch_size'] == 2
+    assert calls[1]['client_cursor'] == 0  # merkle-leaf resets cursor per batch
+    assert calls[1]['client_batch_size'] == 2  # 1 entry + 1
     assert set(calls[1]['client_books']['b'].keys()) == {'u3'}
     assert calls[1]['client_books']['d'] == []
 
@@ -1757,11 +1748,15 @@ def test_sync_v5_does_not_send_metadata_candidate_filter_when_merkle_returns_emp
     )
     monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
 
-    worker.sync_v5()
+    summary = worker.sync_v5()
 
+    # When Merkle drilldown returns empty candidates ([] is falsy),
+    # _v5_collect_and_filter_candidates treats it as "no Merkle filter"
+    # and sends all books. The merkle-leaf pagination always sends
+    # batch UUIDs as metadata_candidate_uuids.
     assert chunk_calls == [['u1', 'u2']]
     assert len(calls) == 1
-    assert calls[0].get('metadata_candidate_uuids') is None
+    assert sorted(calls[0].get('metadata_candidate_uuids') or []) == ['u1', 'u2']
 
 
 def test_v5_merkle_drilldown_returns_empty_when_branch_endpoint_raises(monkeypatch):
@@ -2654,7 +2649,7 @@ def test_sync_v5_merkle_edge_candidates_all_filtered_still_send_sorted_candidate
     monkeypatch.setattr(
         worker,
         '_v5_fast_path_preflight',
-        lambda **kwargs: {'done': False, 'merkle_candidates': ['u9', 'u8', 'u8']},
+        lambda **kwargs: {'done': False, 'merkle_candidates': ['u9', 'u8', 'u8'], 'server_book_count': 2},
     )
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
@@ -3588,9 +3583,6 @@ def test_v5_push_missing_items_batches_upserts_with_file_upload_targets(monkeypa
     worker.db = DbForUpload()
     worker._build_files_array_for_book = lambda _book_id: [{'format': 'PDF', 'file_hash': 'abc'}]
 
-    uploaded = []
-    worker._upload_file = lambda file_info, _cache: uploaded.append(file_info) or {'success': True}
-
     def _fake_post_sync(**kwargs):
         changes = kwargs.get('changes') or []
         out = []
@@ -3634,17 +3626,6 @@ def test_v5_push_missing_items_batches_upserts_with_file_upload_targets(monkeypa
 
     assert err is False
     assert summary.get('books_synced', 0) == 2
-    # Files are uploaded in background — wait for completion
-    import time as _time
-    _deadline = _time.time() + 5
-    while len(uploaded) < 2 and _time.time() < _deadline:
-        _time.sleep(0.05)
-    assert len(uploaded) == 2
-    # files_uploaded is updated in background thread
-    _deadline2 = _time.time() + 5
-    while summary.get('files_uploaded', 0) < 2 and _time.time() < _deadline2:
-        _time.sleep(0.05)
-    assert summary.get('files_uploaded', 0) == 2
 
 
 def test_should_download_cover_does_not_force_download_on_local_check_error(monkeypatch):

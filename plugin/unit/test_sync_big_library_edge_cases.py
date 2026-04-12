@@ -314,7 +314,7 @@ class TestBigLibraryCandidateSelection:
         ))
 
         result = worker._v5_collect_and_filter_candidates(
-            cursor_timestamp=None, sync_library_path='/tmp',
+            sync_library_path='/tmp',
             merkle_candidates=merkle_candidates,
             summary={}, ts_func=lambda: 'test', debug_file=sys.stderr,
         )
@@ -332,7 +332,7 @@ class TestBigLibraryCandidateSelection:
         ))
 
         result = worker._v5_collect_and_filter_candidates(
-            cursor_timestamp=None, sync_library_path='/tmp',
+            sync_library_path='/tmp',
             merkle_candidates=None,
             summary={}, ts_func=lambda: 'test', debug_file=sys.stderr,
         )
@@ -352,11 +352,10 @@ class TestResumeStateAcrossFailures:
         """Checkpoint must save cursor even after partial failures."""
         worker = _make_worker()
         worker.save_pull_cursor = Mock()
-        worker._v5_save_resume_state = Mock()
 
         result = worker._v5_checkpoint_batch_state(
             cursor_next='cursor-2', batch_had_errors=False,
-            cursor='cursor-1', resume_sig='sig', client_cursor=100, client_total=500,
+            cursor='cursor-1', client_cursor=100, client_total=500,
         )
 
         worker.save_pull_cursor.assert_called_once_with('cursor-2')
@@ -366,12 +365,11 @@ class TestResumeStateAcrossFailures:
         """Critical errors must prevent cursor save."""
         worker = _make_worker()
         worker.save_pull_cursor = Mock()
-        worker._v5_save_resume_state = Mock()
 
         worker._v5_checkpoint_batch_state(
             cursor_next='cursor-2', batch_had_errors=True,
             batch_has_critical_errors=True,
-            cursor='cursor-1', resume_sig='sig', client_cursor=100, client_total=500,
+            cursor='cursor-1', client_cursor=100, client_total=500,
         )
 
         worker.save_pull_cursor.assert_not_called()

@@ -1025,11 +1025,13 @@ class TestApplyUpdateClientWins:
     """_apply_update: local_last_modified >= server_last_modified → client wins."""
 
     def test_local_newer_skips_metadata_update(self):
-        """Local is newer → skip set_metadata but still check cover."""
+        """Local is newer AND metadata matches → skip set_metadata."""
         worker = _make_apply_worker()
         # local timestamp = 2000, server = 1000
         mi = worker.db.get_metadata.return_value
         mi.last_modified.timestamp = Mock(return_value=2000.0)
+        # Metadata must match for the skip to trigger
+        worker._item_matches_metadata = Mock(return_value=True)
 
         try:
             item = {'uuid': 'uuid-1', 'title': 'Book', 'last_modified': 1000,
@@ -1041,10 +1043,12 @@ class TestApplyUpdateClientWins:
             _restore_apply_worker(worker)
 
     def test_local_equal_skips_metadata_update(self):
-        """Local == server → client wins (skip)."""
+        """Local == server AND metadata matches → client wins (skip)."""
         worker = _make_apply_worker()
         mi = worker.db.get_metadata.return_value
         mi.last_modified.timestamp = Mock(return_value=1000.0)
+        # Metadata must match for the skip to trigger
+        worker._item_matches_metadata = Mock(return_value=True)
 
         try:
             item = {'uuid': 'uuid-1', 'title': 'Book', 'last_modified': 1000,

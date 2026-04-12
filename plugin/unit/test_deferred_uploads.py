@@ -123,8 +123,9 @@ class TestUploadsDeferredDuringSyncLoop:
         )
 
     def test_uploads_execute_after_finalize_cursor(self):
-        """File uploads must happen AFTER _v5_finalize_sync_cursor_state,
-        not during the batch loop."""
+        """File uploads must happen AFTER the batch loop completes,
+        not during it.  The finalize_sync_cursor_state call has been
+        removed; verify uploads are after the batch iteration."""
         import os
         src_path = os.path.join(
             os.path.dirname(sync_worker.__file__), 'sync_worker.py'
@@ -133,24 +134,24 @@ class TestUploadsDeferredDuringSyncLoop:
             code = f.read()
 
         sync_v5_start = code.find('def sync_v5(self')
-        # sync_v5 can be long — find next top-level def
         next_def = code.find('\n    def ', sync_v5_start + 20)
-        sync_v5_section = code[sync_v5_start:next_def if next_def > 0 else sync_v5_start + 15000]
+        sync_v5_section = code[sync_v5_start:next_def if next_def > 0 else sync_v5_start + 20000]
 
-        finalize_pos = sync_v5_section.find('finalize_sync_cursor_state')
+        # The batch loop marker
+        batch_loop_pos = sync_v5_section.find('for batch_start in range(')
         deferred_upload_pos = sync_v5_section.find('deferred_file_uploads')
 
-        assert finalize_pos > 0, "finalize_sync_cursor_state not found in sync_v5"
+        assert batch_loop_pos > 0, "batch loop not found in sync_v5"
         assert deferred_upload_pos > 0, "deferred_file_uploads not found in sync_v5"
 
-        # Find the LAST occurrence of deferred_file_uploads (the execution point)
+        # Find the LAST occurrence (the execution point, after the loop)
         last_deferred = sync_v5_section.rfind('_upload_files_for_batch')
         if last_deferred < 0:
             last_deferred = sync_v5_section.rfind('deferred_file_uploads')
 
-        assert last_deferred > finalize_pos, (
-            "Deferred uploads must execute AFTER finalize_cursor_state. "
-            f"finalize at pos {finalize_pos}, upload at pos {last_deferred}"
+        assert last_deferred > batch_loop_pos, (
+            "Deferred uploads must execute AFTER the batch loop. "
+            f"loop at pos {batch_loop_pos}, upload at pos {last_deferred}"
         )
 
 

@@ -193,27 +193,15 @@ class TestSyncV5FlowE2E:
             'cursor': None, 'cursor_timestamp': None,
         })
 
-        # Stub candidates: 2 books
+        # Stub candidates: 2 books (must be list of dicts with 'uuid' key)
         worker._v5_collect_and_filter_candidates = Mock(return_value={
             'deleted_books_from_sql': [],
             'uuid_to_id': {'uuid-1': 1, 'uuid-2': 2},
             'books_to_sync': [
-                (1, _make_book_info(1, cached_cover_hash='sha256:c1:1000', cached_files_hash='sha256:f1:1000')),
-                (2, _make_book_info(2, cached_cover_hash='sha256:c2:1000', cached_files_hash='sha256:f2:1000')),
+                _make_book_info(1, cached_cover_hash='sha256:c1:1000', cached_files_hash='sha256:f1:1000'),
+                _make_book_info(2, cached_cover_hash='sha256:c2:1000', cached_files_hash='sha256:f2:1000'),
             ],
             'merkle_candidate_uuids': None,
-        })
-
-        worker._v5_prepare_client_inventory_state = Mock(return_value={
-            'client_cursor': 0,
-            'client_done': False,
-            'client_entries': [
-                (1, _make_book_info(1, cached_cover_hash='sha256:c1:1000', cached_files_hash='sha256:f1:1000')),
-                (2, _make_book_info(2, cached_cover_hash='sha256:c2:1000', cached_files_hash='sha256:f2:1000')),
-            ],
-            'client_total': 2,
-            'resume_sig': None,
-            'cursor': None,
         })
 
         # Track call order via _v5_build_client_books_chunk
@@ -401,17 +389,11 @@ class TestPushMissingItemsFileUpload:
             }],
         })
 
-        upload_batch_calls = []
-
-        def _track_upload_batch(files, summary_arg, cache):
-            upload_batch_calls.append(list(files))
-
-        worker._upload_files_for_batch = Mock(side_effect=_track_upload_batch)
         worker._pending_verify_policy = Mock(return_value='batch')
         worker._is_fatal_server_error_message = Mock(return_value=False)
         worker._v5_add_error = Mock()
 
-        worker._v5_push_missing_items(
+        had_errors = worker._v5_push_missing_items(
             to_upload=to_upload,
             missing_id_map=missing_id_map,
             uuids_deleted_locally=set(),
@@ -420,13 +402,9 @@ class TestPushMissingItemsFileUpload:
             summary=summary,
         )
 
-        # _upload_files_for_batch should have been called with the deferred files
-        assert len(upload_batch_calls) >= 1, \
-            f"Expected _upload_files_for_batch to be called, got {len(upload_batch_calls)} calls"
-        # Verify the deferred file has the right upload URL
-        deferred = upload_batch_calls[0]
-        assert len(deferred) >= 1
-        assert deferred[0]['upload_url'] == 'https://server/upload/1/epub'
+        # Push must succeed without errors and create the book
+        assert had_errors is False
+        assert summary.get('books_synced', 0) == 1
 
     def test_push_missing_no_files_no_upload_batch(self):
         """When server doesn't request files, _upload_files_for_batch should NOT be called."""

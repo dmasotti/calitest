@@ -51,31 +51,33 @@ def test_run_ui_sync_routes_to_sync_when_not_forced():
 
 
 def test_run_cli_sync_snapshot_route_sets_version():
+    """snapshot route removed — CLI always routes to v5 sync now."""
     from calibre_plugins.sync_calimob import sync_entrypoints
 
     worker = _FakeWorker()
     logs = []
+    # Even with snapshot=True, the new entrypoint ignores it and routes to sync (v5)
     summary = sync_entrypoints.run_cli_sync(
         worker,
         _Args(snapshot=True, since='2026-03-01T00:00:00Z'),
         debug_print=logs.append
     )
 
-    assert summary['from'] == 'snapshot'
-    assert summary['sync_version'] == 'snapshot'
-    assert worker.calls == [('snapshot', '2026-03-01T00:00:00Z')]
-    assert any('SYNC_LEGACY_SNAPSHOT' in line for line in logs)
+    assert summary['from'] == 'sync'
+    assert summary['sync_version'] == 'v5'
+    assert any('SYNC_CURRENT_V5' in line for line in logs)
 
 
 def test_run_cli_sync_v4_route_sets_version():
+    """v4 route removed — CLI always routes to v5 sync now."""
     from calibre_plugins.sync_calimob import sync_entrypoints
 
     worker = _FakeWorker()
-    summary = sync_entrypoints.run_cli_sync(worker, _Args(v4=True, full_sync=True), debug_print=None)
+    logs = []
+    summary = sync_entrypoints.run_cli_sync(worker, _Args(v4=True, full_sync=True), debug_print=logs.append)
 
-    assert summary['from'] == 'v4'
-    assert summary['sync_version'] == 'v4'
-    assert worker.calls == [('v4', True)]
+    assert summary['from'] == 'sync'
+    assert summary['sync_version'] == 'v5'
 
 
 def test_run_cli_sync_default_current_route_sets_version():

@@ -28,12 +28,16 @@ class DummyMetadata:
 
 
 def test_to_unix_timestamp_handles_datetime():
+    """_to_unix_timestamp now delegates to _to_iso_date, returning 'YYYY-MM-DD' strings."""
     dt = datetime(2023, 1, 1, 12, 0, tzinfo=timezone.utc)
-    assert sync_mapper._to_unix_timestamp(dt) == int(dt.timestamp())
+    result = sync_mapper._to_unix_timestamp(dt)
+    assert result == '2023-01-01'
 
 
 def test_to_unix_timestamp_handles_number():
-    assert sync_mapper._to_unix_timestamp(1670000000) == 1670000000
+    """Numeric values are no longer timestamps — _to_iso_date returns None for them."""
+    result = sync_mapper._to_unix_timestamp(1670000000)
+    assert result is None
 
 
 def test_to_unix_timestamp_none():
@@ -73,7 +77,8 @@ def test_calibre_to_json_item_includes_expected_fields():
     assert item['identifiers']['asin'] == 'B00TEST'
     assert 'isbn' in item['identifiers']
     assert item['publisher'] == 'Test Publisher'
-    assert item['pubdate'] == int(metadata.pubdate.timestamp())
+    # pubdate is now ISO date string "YYYY-MM-DD" per the pubdate contract
+    assert item['pubdate'] == '2025-01-01'
     assert item['languages'] == ['eng', 'ita']
     assert any(tag['name'] == 'Fiction' for tag in item['tags'])
     assert item['status'] == 'reading'

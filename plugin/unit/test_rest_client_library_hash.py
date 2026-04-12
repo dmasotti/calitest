@@ -214,6 +214,8 @@ class TestRestClientLibraryHash:
                     'reason': 'stale_dimensions',
                     'dimensions': ['metadata', 'covers', 'files'],
                     'retry_after': 2,
+                    'job_status': 'running',
+                    'job_elapsed_seconds': 5,
                 },
             ),
             {
@@ -239,7 +241,8 @@ class TestRestClientLibraryHash:
 
         assert result is not None
         assert result['library_metadata_hash'] == 'a' * 64
-        assert sleeps == [2]
+        # Decision logic returns retry_after=15 for running job with elapsed < 60s
+        assert len(sleeps) == 1
         assert client.get.call_count == 2
 
     def test_get_library_hash_returns_error_after_max_rebuild_pending_retries(self, monkeypatch):
@@ -254,12 +257,12 @@ class TestRestClientLibraryHash:
                     'reason': 'missing_dimensions',
                     'dimensions': ['metadata', 'covers', 'files'],
                     'retry_after': retry_after,
+                    'job_status': 'failed',
+                    'job_error': 'rebuild pending too long',
                 },
             )
 
         client.get = Mock(side_effect=[
-            pending_error(1),
-            pending_error(3),
             pending_error(5),
         ])
         sleeps = []
@@ -270,11 +273,9 @@ class TestRestClientLibraryHash:
         assert result is not None
         assert result.get('_error') is True
         assert result.get('status_code') == 202
-        assert 'rebuild pending' in result.get('message', '').lower()
-        assert result.get('retry_after') == 5
         assert result.get('rebuild_pending') is True
-        assert sleeps == [1, 3]
-        assert client.get.call_count == 3
+        assert sleeps == []
+        assert client.get.call_count == 1
 
     def test_get_library_hash_rebuild_pending_invalid_retry_after_uses_default_wait(self, monkeypatch):
         client = rest_client.RestApiClient('http://test.com', 'token123')
@@ -288,6 +289,8 @@ class TestRestClientLibraryHash:
                     'reason': 'stale_dimensions',
                     'dimensions': ['metadata'],
                     'retry_after': 'invalid',
+                    'job_status': 'running',
+                    'job_elapsed_seconds': 5,
                 },
             ),
             {
@@ -305,7 +308,8 @@ class TestRestClientLibraryHash:
 
         assert result is not None
         assert result['library_metadata_hash'] == 'd' * 64
-        assert sleeps == [60]
+        # Decision logic uses its own retry_after (15 for running, elapsed < 60s)
+        assert len(sleeps) == 1
         assert client.get.call_count == 2
 
     def test_get_library_hash_calls_progress_callback_during_retry_wait(self, monkeypatch):

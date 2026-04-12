@@ -48,6 +48,12 @@ class TestDeferredCoverUploadsAccumulator:
         )
 
     def test_deferred_covers_execute_after_finalize_cursor(self):
+        """Cover uploads must execute AFTER the batch loop completes.
+
+        The finalize_sync_cursor_state call has been removed; covers now
+        execute in Phase 2 after the batch loop (Phase 1).  Verify the
+        deferred_cover_uploads execution is after the batch iteration.
+        """
         src_path = os.path.join(
             os.path.dirname(sync_worker.__file__), 'sync_worker.py'
         )
@@ -55,19 +61,21 @@ class TestDeferredCoverUploadsAccumulator:
             code = f.read()
 
         sync_v5_start = code.find('def sync_v5(self')
+        # Find end of sync_v5 (next top-level def or end of class)
         next_def = code.find('\n    def ', sync_v5_start + 20)
-        sync_v5_section = code[sync_v5_start:next_def]
+        sync_v5_section = code[sync_v5_start:next_def if next_def > 0 else sync_v5_start + 20000]
 
-        finalize_pos = sync_v5_section.find('finalize_sync_cursor_state')
+        # The batch loop marker
+        batch_loop_pos = sync_v5_section.find('for batch_start in range(')
         cover_upload_pos = max(
             sync_v5_section.rfind('deferred_cover_uploads'),
             sync_v5_section.rfind('deferred_covers'),
         )
 
-        assert finalize_pos > 0, "finalize_sync_cursor_state not found"
+        assert batch_loop_pos > 0, "batch loop not found in sync_v5"
         assert cover_upload_pos > 0, "deferred cover uploads not found"
-        assert cover_upload_pos > finalize_pos, (
-            "Cover uploads must execute AFTER finalize_cursor_state"
+        assert cover_upload_pos > batch_loop_pos, (
+            "Cover uploads must execute AFTER the batch loop"
         )
 
 
