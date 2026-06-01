@@ -41,6 +41,7 @@ class ReadingProgressDeviceResolutionTest extends TestCase
             'Authorization' => 'Bearer ' . $deviceToken,
         ])->postJson("/api/books/{$book->uuid}/reading-progress", [
             'library_id' => $library->id,
+            'device_uuid' => $deviceUuid,
             'format' => 'EPUB',
             'progress_bp' => 1234,
         ]);
