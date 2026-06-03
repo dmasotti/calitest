@@ -35,6 +35,151 @@ PLUGIN_DIR = os.path.join(PROJECT_ROOT, "sync_calimob")
 API_URL = os.getenv("CALIMOB_TEST_API_URL", "http://caliserver-integration.test/api")
 API_TOKEN = os.getenv("CALIMOB_TEST_TOKEN", "1|vUoYzdsOGUJDmgS0Blvr5cMewGg9WiuvKEXMZeTpc484627f")
 
+ENV_FILE = os.path.join(PROJECT_ROOT, "tests/plugin/.env")
+
+
+def _load_env_file():
+    """Load key=value pairs from .env file (strips quotes)."""
+    env = {}
+    if not os.path.isfile(ENV_FILE):
+        return env
+    with open(ENV_FILE) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, _, value = line.partition('=')
+            env[key.strip()] = value.strip().strip('"').strip("'")
+    return env
+
+
+def _api_request(url, method='GET', data=None, token=None):
+    """Simple HTTP helper returning (status, json_body)."""
+    payload = json.dumps(data).encode('utf-8') if data else None
+    req = urllib.request.Request(url, data=payload, method=method)
+    req.add_header('Content-Type', 'application/json')
+    req.add_header('Accept', 'application/json')
+    if token:
+        req.add_header('Authorization', f'Bearer {token}')
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = json.loads(resp.read().decode('utf-8'))
+            return resp.status, body
+    except urllib.error.HTTPError as e:
+        try:
+            body = json.loads(e.read().decode('utf-8'))
+        except Exception:
+            body = {'error': str(e)}
+        return e.code, body
+
+
+def ensure_server_ready():
+    """Bootstrap: verify/create token + library so the test can run.
+
+    Steps:
+      1. Try the current API_TOKEN. If 401, login with email/password
+         from .env and create a fresh Sanctum token.
+      2. List libraries. If none matches LIBRARY_UUID, create one.
+      3. Update globals API_TOKEN and CALIMOB_LIB_ID.
+    """
+    global API_TOKEN, CALIMOB_LIB_ID, API_URL
+
+    env = _load_env_file()
+    base_url = API_URL.rstrip('/')
+
+    # --- resolve API_URL from .env if the default doesn't respond ---
+    if env.get('CALIMOB_DISCOVERY_URL'):
+        candidate = env['CALIMOB_DISCOVERY_URL'].rstrip('/') + '/api'
+        try:
+            status, _ = _api_request(candidate + '/libraries', token=API_TOKEN)
+        except Exception:
+            status = 0
+        if status != 0:
+            # candidate server is reachable, use it
+            base_url = candidate
+            API_URL = candidate
+
+    # --- step 1: verify token ---
+    try:
+        status, body = _api_request(base_url + '/libraries', token=API_TOKEN)
+    except Exception:
+        status = 0
+        body = {}
+
+    if status == 401 or status == 0:
+        # token expired or server unreachable with old token, try login
+        email = env.get('TEST_USER_EMAIL')
+        password = env.get('TEST_USER_PASSWORD')
+        if not email or not password:
+            print(f"[bootstrap] Token invalid and no TEST_USER_EMAIL/PASSWORD in {ENV_FILE}")
+            print(f"[bootstrap] Set CALIMOB_TEST_TOKEN env var or create {ENV_FILE}")
+            return False
+
+        print(f"[bootstrap] Token invalid, logging in as {email}...")
+        try:
+            status, body = _api_request(
+                base_url + '/auth/login', method='POST',
+                data={'email': email, 'password': password}
+            )
+        except Exception as e:
+            print(f"[bootstrap] Login failed: {e}")
+            return False
+
+        token = body.get('token')
+        if not token:
+            print(f"[bootstrap] Login response has no token: {body}")
+            return False
+
+        API_TOKEN = token
+        print(f"[bootstrap] Logged in, token acquired")
+
+        # re-fetch libraries with new token
+        status, body = _api_request(base_url + '/libraries', token=API_TOKEN)
+
+    if status != 200:
+        print(f"[bootstrap] GET /libraries returned {status}: {body}")
+        return False
+
+    # --- step 2: find or create library ---
+    libraries = body if isinstance(body, list) else body.get('data', body.get('libraries', []))
+    match = None
+    for lib in libraries:
+        lib_uuid = lib.get('calibre_library_id') or lib.get('calibre_library_uuid') or ''
+        if lib_uuid == LIBRARY_UUID:
+            match = lib
+            break
+
+    if match:
+        CALIMOB_LIB_ID = str(match['id'])
+        print(f"[bootstrap] Library found: id={CALIMOB_LIB_ID} name={match.get('name')}")
+    else:
+        print(f"[bootstrap] Library {LIBRARY_UUID} not found, creating...")
+        try:
+            status, body = _api_request(
+                base_url + '/libraries', method='POST', token=API_TOKEN,
+                data={
+                    'name': 'CalibreTest',
+                    'description': 'Auto-created by test_sync_v5_integration.py',
+                    'type': 'calibre',
+                    'calibre_library_uuid': LIBRARY_UUID,
+                }
+            )
+        except Exception as e:
+            print(f"[bootstrap] Create library failed: {e}")
+            return False
+
+        lib_id = body.get('id')
+        if not lib_id:
+            print(f"[bootstrap] Create library response has no id: {body}")
+            return False
+
+        CALIMOB_LIB_ID = str(lib_id)
+        print(f"[bootstrap] Library created: id={CALIMOB_LIB_ID}")
+
+    print(f"[bootstrap] Ready: API_URL={API_URL} LIB_ID={CALIMOB_LIB_ID}")
+    return True
+
+
 class Colors:
     GREEN = '\033[92m'
     RED = '\033[91m'
@@ -1080,11 +1225,21 @@ def main():
     print(f"UUID: {LIBRARY_UUID}")
     print("="*60)
     print()
-    
+
+    # Bootstrap: verify token + library exist on server
+    if not ensure_server_ready():
+        print("\n[bootstrap] Server not ready — cannot run integration tests.")
+        print("[bootstrap] Check that the server is running and .env credentials are correct.")
+        sys.exit(2)
+
+    print(f"API: {API_URL}")
+    print(f"Library ID: {CALIMOB_LIB_ID}")
+    print()
+
     # Kill any running calibre-debug
     subprocess.run(['pkill', '-9', 'calibre-debug'], capture_output=True)
     time.sleep(1)
-    
+
     tester = SyncV5Tester()
     
     # Run selected test suites
