@@ -84,6 +84,7 @@ def ensure_server_ready():
     """
     global API_TOKEN, CALIMOB_LIB_ID, API_URL
 
+    _bootstrap_user_id = None
     env = _load_env_file()
     base_url = API_URL.rstrip('/')
 
@@ -99,42 +100,32 @@ def ensure_server_ready():
             base_url = candidate
             API_URL = candidate
 
-    # --- step 1: verify token ---
-    try:
-        status, body = _api_request(base_url + '/libraries', token=API_TOKEN)
-    except Exception:
-        status = 0
-        body = {}
-
-    if status == 401 or status == 0:
-        # token expired or server unreachable with old token, try login
-        email = env.get('TEST_USER_EMAIL')
-        password = env.get('TEST_USER_PASSWORD')
-        if not email or not password:
-            print(f"[bootstrap] Token invalid and no TEST_USER_EMAIL/PASSWORD in {ENV_FILE}")
-            print(f"[bootstrap] Set CALIMOB_TEST_TOKEN env var or create {ENV_FILE}")
-            return False
-
-        print(f"[bootstrap] Token invalid, logging in as {email}...")
+    # --- step 1: login (always, to get user_id + fresh token) ---
+    email = env.get('TEST_USER_EMAIL')
+    password = env.get('TEST_USER_PASSWORD')
+    if email and password:
+        print(f"[bootstrap] Logging in as {email}...")
         try:
             status, body = _api_request(
                 base_url + '/auth/login', method='POST',
                 data={'email': email, 'password': password}
             )
+            token = body.get('token')
+            if token:
+                API_TOKEN = token
+                _bootstrap_user_id = (body.get('user') or {}).get('id')
+                print(f"[bootstrap] Logged in (user_id={_bootstrap_user_id})")
+            else:
+                print(f"[bootstrap] Login failed: {body}")
         except Exception as e:
             print(f"[bootstrap] Login failed: {e}")
-            return False
 
-        token = body.get('token')
-        if not token:
-            print(f"[bootstrap] Login response has no token: {body}")
-            return False
-
-        API_TOKEN = token
-        print(f"[bootstrap] Logged in, token acquired")
-
-        # re-fetch libraries with new token
+    # Verify token works
+    try:
         status, body = _api_request(base_url + '/libraries', token=API_TOKEN)
+    except Exception:
+        status = 0
+        body = {}
 
     if status != 200:
         print(f"[bootstrap] GET /libraries returned {status}: {body}")
@@ -176,60 +167,50 @@ def ensure_server_ready():
         CALIMOB_LIB_ID = str(lib_id)
         print(f"[bootstrap] Library created: id={CALIMOB_LIB_ID}")
 
-    # --- step 3: delete all books in library for clean test ---
-    print(f"[bootstrap] Clearing server books...")
-    deleted_count = 0
+    # --- step 3: reset server data via psql (local dev DB) ---
+    print(f"[bootstrap] Resetting server data for library {CALIMOB_LIB_ID}...")
+    db_name = env.get('DB_DATABASE', 'caliweb_dev')
+    lib_id_int = CALIMOB_LIB_ID  # may be UUID string — get numeric id
     try:
-        # Pull all books from server (send empty client_books to get updates_for_client)
-        for page in range(10):  # max 10 pages
-            status, body = _api_request(
-                base_url + '/sync/v5',
-                method='POST',
-                token=API_TOKEN,
-                data={
-                    'library_id': LIBRARY_UUID,
-                    'calibre_library_uuid': LIBRARY_UUID,
-                    'cursor': None,
-                    'batch_size': 500,
-                    'client_books': {'b': {}, 'd': []},
-                    'options': {'sync_files_enabled': False, 'sync_covers_enabled': False},
-                    'client_cursor': 0,
-                    'client_batch_size': 0,
-                },
-            )
-            server_books = body.get('updates_for_client') or []
-            if not server_books:
-                break
-            # Delete via POST /sync with op=delete
-            changes = []
-            for book in server_books:
-                uuid = book.get('uuid')
-                if uuid:
-                    changes.append({
-                        'op': 'delete',
-                        'idempotency_key': f'bootstrap-reset-{uuid}-{int(time.time())}',
-                        'item': {'uuid': uuid},
-                    })
-            if changes:
-                _api_request(
-                    base_url + '/sync',
-                    method='POST',
-                    token=API_TOKEN,
-                    data={
-                        'changes': changes,
-                        'library_id': LIBRARY_UUID,
-                        'calibre_library_uuid': LIBRARY_UUID,
-                    },
+        # Get numeric library id from psql (API may return UUID as id)
+        user_id = _bootstrap_user_id
+        lib_id_int = None
+        if user_id:
+            try:
+                r = subprocess.run(
+                    ['psql', '-d', db_name, '-t', '-A', '-c',
+                     f"SELECT id FROM libraries WHERE calibre_library_id = '{LIBRARY_UUID}' AND user_id = {user_id} LIMIT 1"],
+                    capture_output=True, text=True, timeout=5,
                 )
-                deleted_count += len(changes)
-            if not body.get('has_more'):
-                break
+                lib_id_int = r.stdout.strip()
+            except Exception:
+                pass
+
+        if not lib_id_int or not user_id:
+            print(f"[bootstrap] Could not determine user_id={user_id} or library_id={lib_id_int}, skipping psql reset")
+        else:
+            sql = f"""
+                DELETE FROM books_authors_link WHERE user_id = {user_id} AND library_id = {lib_id_int};
+                DELETE FROM books_authors WHERE user_id = {user_id} AND library_id = {lib_id_int};
+                DELETE FROM books_tags_link WHERE user_id = {user_id} AND library_id = {lib_id_int};
+                DELETE FROM books_languages_link WHERE user_id = {user_id} AND library_id = {lib_id_int};
+                DELETE FROM books_identifiers WHERE user_id = {user_id} AND library_id = {lib_id_int};
+                DELETE FROM books WHERE user_id = {user_id} AND library_id = {lib_id_int};
+                DELETE FROM sync_idempotencies WHERE user_id = {user_id} AND library_id = {lib_id_int};
+                DELETE FROM sync_merkle_leaves WHERE user_id = {user_id} AND library_id = {lib_id_int};
+                DELETE FROM sync_merkle_branches WHERE user_id = {user_id} AND library_id = {lib_id_int};
+                DELETE FROM sync_merkle_roots WHERE user_id = {user_id} AND library_id = {lib_id_int};
+            """
+            result = subprocess.run(
+                ['psql', '-d', db_name, '-c', sql],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                print(f"[bootstrap] Server data reset (user={user_id}, library={lib_id_int})")
+            else:
+                print(f"[bootstrap] psql reset failed: {result.stderr.strip()}")
     except Exception as e:
-        print(f"[bootstrap] Server book reset failed (non-critical): {e}")
-    if deleted_count > 0:
-        print(f"[bootstrap] Deleted {deleted_count} server books")
-    else:
-        print(f"[bootstrap] Server library already empty")
+        print(f"[bootstrap] Server reset failed (non-critical): {e}")
 
     print(f"[bootstrap] Ready: API_URL={API_URL} LIB_ID={CALIMOB_LIB_ID}")
     return True
@@ -307,18 +288,19 @@ def run_streaming_process(cmd, timeout=180):
     return proc.returncode, combined, timed_out
 
 
-def run_sync_v5(clear_cache=False, script_extra=""):
+def run_sync_v5(clear_cache=False, no_cache=False, script_extra=""):
     """Run sync_v5 via calibre-debug"""
-    
+
     if clear_cache:
         log_info("Clearing cache...")
         subprocess.run([
             'sqlite3', f'{LIBRARY_PATH}/metadata.db',
             f"DELETE FROM calimob_books_sync WHERE library_uuid='{LIBRARY_UUID}'"
         ], capture_output=True)
-    
+
     # Create Python script for calibre-debug
     reset_cursor_line = "worker.reset_cursor()" if clear_cache else ""
+    no_cache_arg = "no_cache=True" if no_cache else ""
     script = f"""
 import sys
 sys.path.insert(0, '{PLUGIN_DIR}')
@@ -351,7 +333,7 @@ worker = SyncWorker(None, database, library_uuid, calimob_library_id)
 {reset_cursor_line}
 {script_extra}
 
-summary = worker.sync_v5()
+summary = worker.sync_v5({no_cache_arg})
 
 print("RESULT_START")
 print(f"synced={{summary['books_synced']}}")
@@ -483,7 +465,7 @@ class SyncV5Tester:
         """Test 1: Full sync with empty cache"""
         log_info("Running full sync with empty cache...")
         
-        results, output = run_sync_v5(clear_cache=True)
+        results, output = run_sync_v5(clear_cache=True, no_cache=True)
         
         if not results:
             log_error("Failed to parse results")
@@ -539,19 +521,20 @@ class SyncV5Tester:
         """
         log_info("Test: Hash optimization - no transfers when hashes match")
         
-        # First sync: empty cache, sync everything
-        log_info("Step 1: Full sync with empty cache...")
-        results1, output1 = run_sync_v5(clear_cache=True)
-        
+        # First sync: ensure server has all books (may already be there from test 1)
+        log_info("Step 1: Full sync to ensure server is populated...")
+        results1, output1 = run_sync_v5(clear_cache=True, no_cache=True)
+
         if not results1:
             log_error("First sync failed")
             return False
-        
-        synced_first = int(results1.get('synced', 0))
-        log_info(f"  Synced: {synced_first} books")
-        
-        if synced_first == 0:
-            log_error("No books synced in first run")
+
+        errors_first = int(results1.get('errors', 0))
+        synced_first = int(results1.get('synced', 0)) + int(results1.get('created', 0))
+        log_info(f"  Synced/created: {synced_first} books, errors: {errors_first}")
+
+        if errors_first > 0:
+            log_error(f"First sync had {errors_first} errors")
             return False
         
         time.sleep(2)
@@ -926,7 +909,7 @@ print("FORMAT_REMOVED")
         log_info(f"  {fmt} removed locally")
         
         # Sync (should download file) - reset cursor to force full pull
-        results, sync_output = run_sync_v5(clear_cache=True)
+        results, sync_output = run_sync_v5(clear_cache=True, no_cache=True)
         
         if not results:
             log_error("Sync failed")
@@ -1023,7 +1006,7 @@ print("COVER_REMOVED")
         log_info("  Cover removed locally")
         
         # Sync (should download cover) - reset cursor to force full pull
-        results, sync_output = run_sync_v5(clear_cache=True)
+        results, sync_output = run_sync_v5(clear_cache=True, no_cache=True)
         
         if not results:
             log_error("Sync failed")
@@ -1151,7 +1134,7 @@ if "LOCAL MODIFIED" not in metadata.title:
         """Test 11: sanity E2E push->pull->cache mapping check."""
         log_info("Running sanity E2E flow...")
 
-        baseline, out1 = run_sync_v5(clear_cache=True)
+        baseline, out1 = run_sync_v5(clear_cache=True, no_cache=True)
         if not baseline or baseline.get('errors', 1) > 0:
             log_error("Baseline sync failed")
             print(out1[-2000:])
