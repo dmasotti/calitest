@@ -1244,10 +1244,12 @@ try:
 except TypeError:
     database.set_metadata(ids[0], mi1)
 
-# Mutate book 2: change author + add series
+# Mutate book 2: change author + add series (use timestamp for uniqueness)
+import time as _time
+_ts = int(_time.time())
 mi2 = database.get_metadata(ids[1], index_is_id=True)
 mi2.authors = ['New Author One', 'New Author Two']
-mi2.series = 'Test Series'
+mi2.series = 'Test Series %d' % _ts
 mi2.series_index = 3.5
 try:
     database.set_metadata(ids[1], mi2, index_is_id=True)
