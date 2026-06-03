@@ -1342,6 +1342,25 @@ print("RESULT_END")
         else:
             log_success("  Converged: 0 synced, 0 created")
 
+        # Cleanup: remove books added by this test to keep fixture clean
+        new_ids_str = data.get('new_ids', '')
+        if new_ids_str:
+            cleanup_ids = [int(x) for x in new_ids_str.split(',') if x.strip()]
+            if cleanup_ids:
+                placeholders = ','.join(str(i) for i in cleanup_ids)
+                subprocess.run([
+                    'sqlite3', f'{LIBRARY_PATH}/metadata.db',
+                    f"PRAGMA writable_schema = ON; DELETE FROM books WHERE id IN ({placeholders}); "
+                    f"DELETE FROM books_authors_link WHERE book IN ({placeholders}); "
+                    f"DELETE FROM books_tags_link WHERE book IN ({placeholders}); "
+                    f"DELETE FROM books_series_link WHERE book IN ({placeholders}); "
+                    f"DELETE FROM books_languages_link WHERE book IN ({placeholders}); "
+                    f"DELETE FROM identifiers WHERE book IN ({placeholders}); "
+                    f"DELETE FROM comments WHERE book IN ({placeholders}); "
+                    f"PRAGMA writable_schema = OFF;"
+                ], capture_output=True)
+                log_info(f"  Cleanup: removed {len(cleanup_ids)} test books from fixture")
+
         return success
 
     def print_summary(self):
