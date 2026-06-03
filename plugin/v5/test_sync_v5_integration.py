@@ -1207,6 +1207,143 @@ print("RESULT_END")
         log_info(f"  cache_count={cache_count}")
         return True
     
+    def test_12_incremental_sync_with_mutations_and_additions(self):
+        """Test 12: Samsung-like scenario — push, mutate, add books, re-sync, converge.
+
+        Steps:
+          1. Full sync (5 books → server)
+          2. Locally: mutate 2 books (title, author, comments) + add 2 new books
+          3. Sync again → server should accept 2 updates + 2 new
+          4. Follow-up sync → convergence (0 updates, 0 missing)
+        """
+        log_info("Step 1: Full sync to populate server...")
+        r1, o1 = run_sync_v5(clear_cache=True, no_cache=True)
+        if not r1 or int(r1.get('errors', 1)) > 0:
+            log_error("Initial sync failed")
+            print(o1[-2000:])
+            return False
+        log_info(f"  Initial sync: created={r1.get('created', 0)}")
+
+        # Step 2: mutate 2 books + add 2 new
+        log_info("Step 2: Mutating 2 books + adding 2 new books...")
+        mutate_script = f"""
+import sys, time
+sys.path.insert(0, '{PLUGIN_DIR}')
+from calibre.library import db
+from calibre.ebooks.metadata.book.base import Metadata
+
+database = db('{LIBRARY_PATH}')
+ids = sorted(database.all_ids())
+
+# Mutate book 1: change title + add comment
+mi1 = database.get_metadata(ids[0], index_is_id=True)
+mi1.title = mi1.title + ' [MUTATED]'
+mi1.comments = '<p>This is a <b>rich HTML</b> comment with unicode: \\u00e9\\u00e0\\u00fc</p>'
+try:
+    database.set_metadata(ids[0], mi1, index_is_id=True)
+except TypeError:
+    database.set_metadata(ids[0], mi1)
+
+# Mutate book 2: change author + add series
+mi2 = database.get_metadata(ids[1], index_is_id=True)
+mi2.authors = ['New Author One', 'New Author Two']
+mi2.series = 'Test Series'
+mi2.series_index = 3.5
+try:
+    database.set_metadata(ids[1], mi2, index_is_id=True)
+except TypeError:
+    database.set_metadata(ids[1], mi2)
+
+# Add 2 new books with complex metadata
+new1 = Metadata('Nuovo Libro Italiano', ['Mario Rossi', 'Luca Bianchi'])
+new1.publisher = 'Mondadori'
+new1.languages = ['ita', 'eng']
+new1.comments = 'Descrizione con caratteri speciali: \\u00e8 \\u00e0 \\u00f2 \\u00f9'
+new1.identifiers = {{'isbn': '9781234567890', 'amazon': 'B00TEST123'}}
+new1.tags = ['Fiction', 'Italian']
+new1_id = database.create_book_entry(new1)
+try:
+    database.set_metadata(new1_id, new1, index_is_id=True)
+except TypeError:
+    database.set_metadata(new1_id, new1)
+
+new2 = Metadata('Advanced Quantum Computing', ['Dr. Sarah Chen'])
+new2.publisher = 'MIT Press'
+new2.languages = ['eng']
+new2.series = 'Quantum Series'
+new2.series_index = 2.0
+new2.identifiers = {{'doi': '10.1234/test'}}
+new2_id = database.create_book_entry(new2)
+try:
+    database.set_metadata(new2_id, new2, index_is_id=True)
+except TypeError:
+    database.set_metadata(new2_id, new2)
+
+print("RESULT_START")
+print(f"mutated_ids={{ids[0]}},{{ids[1]}}")
+print(f"new_ids={{new1_id}},{{new2_id}}")
+print(f"total={{len(database.all_ids())}}")
+print("RESULT_END")
+"""
+        ok, out2 = run_calibre_script(mutate_script)
+        data = parse_result_block(out2) if ok else None
+        if not ok or not data:
+            log_error("Failed to mutate/add books")
+            print(out2[-1000:])
+            return False
+        log_info(f"  Mutated: {data.get('mutated_ids')}, New: {data.get('new_ids')}, Total: {data.get('total')}")
+
+        # Step 3: sync again — should push 2 updates + 2 new
+        log_info("Step 3: Sync with mutations + additions...")
+        r2, o2 = run_sync_v5(clear_cache=False)
+        if not r2:
+            log_error("Second sync failed to parse")
+            print(o2[-2000:])
+            return False
+
+        errors2 = int(r2.get('errors', 0))
+        created2 = int(r2.get('created', 0))
+        updated2 = int(r2.get('updated', 0))
+        synced2 = int(r2.get('synced', 0))
+        log_info(f"  Sync 2: synced={synced2} created={created2} updated={updated2} errors={errors2}")
+
+        success = True
+        if errors2 > 0:
+            log_error(f"  Sync 2 had {errors2} errors")
+            print(o2[-2000:])
+            success = False
+        if created2 < 2:
+            log_error(f"  Expected at least 2 created, got {created2}")
+            success = False
+        else:
+            log_success(f"  {created2} books created on server")
+
+        # Step 4: follow-up sync — should converge
+        log_info("Step 4: Follow-up sync (convergence check)...")
+        time.sleep(1)
+        r3, o3 = run_sync_v5(clear_cache=False)
+        if not r3:
+            log_error("Follow-up sync failed to parse")
+            print(o3[-2000:])
+            return False
+
+        errors3 = int(r3.get('errors', 0))
+        synced3 = int(r3.get('synced', 0))
+        created3 = int(r3.get('created', 0))
+        updated3 = int(r3.get('updated', 0))
+        log_info(f"  Sync 3: synced={synced3} created={created3} updated={updated3} errors={errors3}")
+
+        if errors3 > 0:
+            log_error(f"  Follow-up sync had {errors3} errors")
+            success = False
+        if synced3 != 0 or created3 != 0:
+            log_error(f"  Expected convergence (0 synced/created), got synced={synced3} created={created3}")
+            success = False
+        else:
+            log_success("  Converged: 0 synced, 0 created")
+
+        return success
+
     def print_summary(self):
         """Print test summary"""
         print("\n" + "="*60)
@@ -1309,6 +1446,7 @@ def main():
 
     if args.all or args.basic:
         tester.run_test("Test 11: Sanity E2E push/pull/cache", tester.test_11_sanity_e2e_push_pull_cache)
+        tester.run_test("Test 12: Incremental sync (mutate + add books)", tester.test_12_incremental_sync_with_mutations_and_additions)
     
     # Print summary
     success = tester.print_summary()
