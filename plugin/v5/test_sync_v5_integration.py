@@ -176,6 +176,61 @@ def ensure_server_ready():
         CALIMOB_LIB_ID = str(lib_id)
         print(f"[bootstrap] Library created: id={CALIMOB_LIB_ID}")
 
+    # --- step 3: delete all books in library for clean test ---
+    print(f"[bootstrap] Clearing server books...")
+    deleted_count = 0
+    try:
+        # Pull all books from server (send empty client_books to get updates_for_client)
+        for page in range(10):  # max 10 pages
+            status, body = _api_request(
+                base_url + '/sync/v5',
+                method='POST',
+                token=API_TOKEN,
+                data={
+                    'library_id': LIBRARY_UUID,
+                    'calibre_library_uuid': LIBRARY_UUID,
+                    'cursor': None,
+                    'batch_size': 500,
+                    'client_books': {'b': {}, 'd': []},
+                    'options': {'sync_files_enabled': False, 'sync_covers_enabled': False},
+                    'client_cursor': 0,
+                    'client_batch_size': 0,
+                },
+            )
+            server_books = body.get('updates_for_client') or []
+            if not server_books:
+                break
+            # Delete via POST /sync with op=delete
+            changes = []
+            for book in server_books:
+                uuid = book.get('uuid')
+                if uuid:
+                    changes.append({
+                        'op': 'delete',
+                        'idempotency_key': f'bootstrap-reset-{uuid}-{int(time.time())}',
+                        'item': {'uuid': uuid},
+                    })
+            if changes:
+                _api_request(
+                    base_url + '/sync',
+                    method='POST',
+                    token=API_TOKEN,
+                    data={
+                        'changes': changes,
+                        'library_id': LIBRARY_UUID,
+                        'calibre_library_uuid': LIBRARY_UUID,
+                    },
+                )
+                deleted_count += len(changes)
+            if not body.get('has_more'):
+                break
+    except Exception as e:
+        print(f"[bootstrap] Server book reset failed (non-critical): {e}")
+    if deleted_count > 0:
+        print(f"[bootstrap] Deleted {deleted_count} server books")
+    else:
+        print(f"[bootstrap] Server library already empty")
+
     print(f"[bootstrap] Ready: API_URL={API_URL} LIB_ID={CALIMOB_LIB_ID}")
     return True
 
