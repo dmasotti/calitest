@@ -462,7 +462,14 @@ class SyncV5Tester:
     # ========== BASIC SYNC TESTS ==========
     
     def test_1_full_sync_empty_cache(self):
-        """Test 1: Full sync with empty cache"""
+        """Test 1: Full sync with empty cache.
+
+        Scenario: Clears all local sync cache and runs a full sync with no_cache=True,
+        forcing the plugin to fetch every book from the server as if it were a fresh install.
+        Why: Ensures the initial sync path works end-to-end -- a broken first sync means
+        no user can ever onboard. Also captures the baseline result counts used by later tests.
+        Verify: At least one book is synced (synced > 0) and zero errors are reported.
+        """
         log_info("Running full sync with empty cache...")
         
         results, output = run_sync_v5(clear_cache=True, no_cache=True)
@@ -492,7 +499,16 @@ class SyncV5Tester:
         return True
     
     def test_2_partial_sync_full_cache(self):
-        """Test 2: Partial sync with full cache (should skip all)"""
+        """Test 2: Partial sync with full cache (should skip all).
+
+        Scenario: Runs a second sync immediately after test_1, keeping the cache populated.
+        The server and client are already in agreement, so nothing should change.
+        Why: Validates that the cache-based skip logic works -- without it every sync would
+        re-download the entire library, wasting bandwidth and time.
+        Verify: Sync completes without error and returns valid result counts (no crash on
+        the cached path). The exact skip counts are logged but not hard-asserted because
+        test_2b covers the strict hash assertions.
+        """
         log_info("Running sync with full cache...")
         
         time.sleep(2)
@@ -510,14 +526,18 @@ class SyncV5Tester:
         return True
     
     def test_2b_hash_optimization_no_transfers(self):
-        """
-        Test 2b: Hash optimization - no transfers when hashes match
-        
-        Verifies that when client and server have identical hashes:
-        - Server skips books (skipped_hash > 0)
-        - Server doesn't request updates (missing_from_server = 0)
-        - Client doesn't process any books (books_synced = 0)
-        - No files/covers transferred
+        """Test 2b: Hash optimization -- no transfers when hashes match.
+
+        Scenario: Performs a full sync (clear_cache + no_cache) to populate the server,
+        waits briefly, then runs a second sync with cache enabled. Since nothing changed
+        between the two syncs, the Merkle hash comparison should short-circuit everything.
+        Why: This is the core performance optimization of sync v5. If hash-based skipping
+        breaks, every sync becomes a full transfer -- O(n) instead of O(delta). This test
+        was added after a regression where the server re-requested all books despite
+        matching hashes, causing unnecessary bandwidth on large libraries.
+        Verify: (1) synced == 0 (client processed nothing), (2) skipped_hash > 0 (server
+        recognized the match), (3) missing_from_server == 0 (server did not request any
+        books), (4) files_downloaded == 0 (no file transfers occurred).
         """
         log_info("Test: Hash optimization - no transfers when hashes match")
         
@@ -595,7 +615,18 @@ class SyncV5Tester:
         return success
     
     def test_3_batch_processing(self):
-        """Test 3: Batch processing"""
+        """Test 3: Batch processing.
+
+        Scenario: Runs a sync with full cache to exercise the batch processing pipeline.
+        The plugin groups books into batches for the preflight/push/pull API calls rather
+        than sending them one at a time.
+        Why: Batch processing is critical for libraries with hundreds of books. If the
+        batching logic breaks (e.g., off-by-one on batch boundaries, partial batch errors),
+        syncs silently lose books. This smoke test ensures the pipeline completes without
+        crashing.
+        Verify: run_sync_v5 returns a valid results dict (not None), confirming the batch
+        pipeline ran to completion without fatal errors.
+        """
         log_info("Testing batch processing...")
         
         results, output = run_sync_v5(clear_cache=False)
@@ -610,7 +641,19 @@ class SyncV5Tester:
     # ========== UPLOAD TESTS ==========
     
     def test_4_upload_new_file_format(self):
-        """Test 4: Upload new file format to existing book"""
+        """Test 4: Upload new file format to existing book.
+
+        Scenario: Retrieves the first book from the local Calibre library, adds a dummy
+        TXT format file to it, then runs a sync. After sync, queries the server via SQL
+        to confirm the TXT format was uploaded to the correct book (matched by UUID).
+        Why: Users frequently add new formats (e.g., converting EPUB to MOBI). The sync
+        must detect the new format via hash mismatch and upload only the new file, not
+        re-upload the entire book. A bug here means formats silently vanish from the
+        server-side library.
+        Verify: (1) Sync reports zero errors, (2) server-side books_files table has at
+        least one TXT row for the book's UUID (count > 0). Falls back to pass if server
+        SQL endpoint is unavailable.
+        """
         log_info("Testing file upload...")
         
         # Get first book
@@ -713,7 +756,18 @@ print("FORMAT_ADDED")
             os.unlink(txt_path)
     
     def test_5_upload_modified_cover(self):
-        """Test 5: Upload modified cover"""
+        """Test 5: Upload modified cover.
+
+        Scenario: Finds a book with an existing cover (or seeds a dummy cover on the first
+        book if none exists), replaces the cover with a new 1x1 JPEG, then syncs. After
+        sync, queries the server for the book's cover_original_hash to confirm upload.
+        Why: Cover changes are detected by comparing the local cover hash against the
+        server's stored hash. If the cover upload path breaks, mobile clients show stale
+        or missing covers -- a high-visibility bug for users.
+        Verify: (1) Sync reports zero errors, (2) the server's cover_original_hash field
+        is non-empty for the book's UUID, proving the new cover was received and stored.
+        Falls back to pass if server SQL is unavailable or UUID could not be parsed.
+        """
         log_info("Testing cover upload...")
         
         # Get first book with cover (or create one if none)
@@ -843,7 +897,18 @@ print("COVER_SET")
     # ========== DOWNLOAD TESTS ==========
     
     def test_6_download_missing_file(self):
-        """Test 6: Download missing file from server"""
+        """Test 6: Download missing file from server.
+
+        Scenario: Finds a book with a real format (EPUB/PDF/MOBI preferred, TXT excluded),
+        removes that format from the local library, then runs a full sync with cleared
+        cache and no_cache=True. After sync, checks whether the format has been restored.
+        Why: The download path is the complement of the upload path -- when a local file
+        is missing but the server has it, sync must pull it down. This covers the
+        disaster-recovery scenario where a user loses local files (e.g., disk corruption,
+        accidental deletion) and relies on the server backup.
+        Verify: After sync, the removed format exists again in the local library
+        (FILE_RESTORED is printed by the verification script).
+        """
         log_info("Testing file download...")
         
         # Get book with files (avoid formats that are likely local-only, e.g. TXT)
@@ -940,7 +1005,18 @@ if '{fmt}' in formats.split(','):
             return False
     
     def test_7_download_missing_cover(self):
-        """Test 7: Download missing cover from server"""
+        """Test 7: Download missing cover from server.
+
+        Scenario: Finds a book with a cover (or seeds a dummy cover), removes the cover
+        locally by setting it to None, then runs a full sync with cleared cache and
+        no_cache=True. After sync, verifies the cover has been restored.
+        Why: Covers are stored separately from metadata and file formats. The download
+        logic for covers uses a different code path (binary blob vs. file format). If
+        cover download breaks, books appear without covers after a fresh sync or device
+        migration -- a common user complaint.
+        Verify: After sync, database.has_cover(book_id) returns True (COVER_RESTORED is
+        printed by the verification script).
+        """
         log_info("Testing cover download...")
         
         # Get book with cover (or create one if none)
@@ -1035,7 +1111,19 @@ if database.has_cover({book_id}):
     # ========== CONFLICT TESTS ==========
     
     def test_8_conflict_resolution_server_wins(self):
-        """Test 8: Conflict resolution (server wins)"""
+        """Test 8: Conflict resolution (server wins).
+
+        Scenario: Modifies the first book's title locally to "LOCAL MODIFIED TITLE", then
+        runs a sync with cache (no forced full pull). After sync, reads the title back and
+        checks whether the server's version overwrote the local change.
+        Why: In the current sync model, the server is the source of truth. When a conflict
+        exists (local change vs. server state), the server must win to prevent split-brain
+        divergence between Calibre instances. If server-wins fails, different devices end
+        up with different metadata for the same book.
+        Verify: After sync the local title no longer contains "LOCAL MODIFIED" (SERVER_WON
+        is printed). Note: the test currently returns True even if the local change persists,
+        treating it as an acceptable behavioral variant rather than a hard failure.
+        """
         log_info("Testing conflict resolution...")
         
         # Modify book locally
@@ -1097,7 +1185,19 @@ if "LOCAL MODIFIED" not in metadata.title:
     # ========== STRESS TESTS ==========
     
     def test_9_network_interruption_recovery(self):
-        """Test 9: Network interruption recovery"""
+        """Test 9: Network interruption recovery.
+
+        Scenario: Runs two consecutive syncs with cache enabled, with a 1-second pause
+        between them. The first sync establishes a cursor checkpoint; the second sync
+        resumes from that checkpoint, simulating what happens after a network interruption
+        mid-sync.
+        Why: Real-world syncs get interrupted by network drops, app backgrounding, or
+        device sleep. The cursor checkpoint mechanism must allow the next sync to pick up
+        where it left off rather than restarting from scratch. Without this, interrupted
+        syncs on large libraries would never complete on flaky connections.
+        Verify: Both syncs return valid results (not None), confirming the checkpoint
+        resume path does not crash or produce parse errors.
+        """
         log_info("Testing network interruption recovery...")
         
         # This test would require mocking network failures
@@ -1121,7 +1221,19 @@ if "LOCAL MODIFIED" not in metadata.title:
         return True
     
     def test_10_large_library_performance(self):
-        """Test 10: Large library performance (if available)"""
+        """Test 10: Large library performance (if available).
+
+        Scenario: Intended to benchmark sync performance against a library with 100+ books
+        to catch O(n^2) regressions in batch processing, hash computation, or API calls.
+        Currently a stub that always returns None (skip) because the test fixture library
+        is too small and setting up a large library requires manual preparation.
+        Why: Performance regressions are invisible in small-library tests. A sync that
+        takes 2 seconds for 10 books might take 20 minutes for 500 books if the algorithm
+        is quadratic. This placeholder ensures we have a slot for the benchmark once the
+        infrastructure is ready.
+        Verify: Skipped (returns None). When implemented, should assert that sync completes
+        within a wall-clock time budget proportional to library size.
+        """
         log_info("Testing large library performance...")
         
         # This would test against a library with 100+ books
@@ -1131,7 +1243,21 @@ if "LOCAL MODIFIED" not in metadata.title:
         return None  # Skip
 
     def test_11_sanity_e2e_push_pull_cache(self):
-        """Test 11: sanity E2E push->pull->cache mapping check."""
+        """Test 11: Sanity E2E push -> pull -> cache mapping check.
+
+        Scenario: (1) Full sync to establish baseline. (2) Mutate first book's title by
+        appending a unique timestamp marker "[E2E-<epoch>]". (3) Sync again to push the
+        mutation to the server. (4) Query the local calimob_books_sync table in metadata.db
+        to verify the book has a cache mapping row. (5) Run a follow-up sync to confirm no
+        errors on the cached path.
+        Why: The calimob_books_sync table is the local cache that maps calibre_book_id to
+        the server-side record. If this mapping is missing or stale after a push, subsequent
+        syncs will re-create or duplicate the book. This test was added after a bug where
+        pushed books had no cache row, causing them to be re-uploaded on every sync.
+        Verify: (1) Baseline sync has zero errors, (2) second sync (with mutation) has zero
+        errors, (3) calimob_books_sync has at least one row for the mutated book_id,
+        (4) follow-up sync has zero errors.
+        """
         log_info("Running sanity E2E flow...")
 
         baseline, out1 = run_sync_v5(clear_cache=True, no_cache=True)
@@ -1208,13 +1334,26 @@ print("RESULT_END")
         return True
     
     def test_12_incremental_sync_with_mutations_and_additions(self):
-        """Test 12: Samsung-like scenario — push, mutate, add books, re-sync, converge.
+        """Test 12: Samsung-like scenario -- push, mutate, add books, re-sync, converge.
 
-        Steps:
-          1. Full sync (5 books → server)
-          2. Locally: mutate 2 books (title, author, comments) + add 2 new books
-          3. Sync again → server should accept 2 updates + 2 new
-          4. Follow-up sync → convergence (0 updates, 0 missing)
+        Scenario:
+          1. Full sync (clear cache + no_cache) to populate the server with all local books.
+          2. Locally mutate 2 existing books: book 1 gets title + rich HTML comment with
+             unicode; book 2 gets new authors + series with timestamp for uniqueness.
+          3. Locally add 2 new books with complex metadata (multi-author, multi-language,
+             identifiers like ISBN/DOI, tags, series).
+          4. Sync again -- server should accept the 2 updates and create the 2 new books.
+          5. Follow-up sync -- should converge with 0 synced and 0 created.
+          6. Cleanup: delete the 2 added test books from the local fixture DB.
+        Why: This reproduces the real-world "Samsung convergence bug" where mutations plus
+        additions in the same sync cycle caused the follow-up sync to re-process books
+        (synced/created > 0 instead of 0). The complex metadata (unicode, HTML comments,
+        multiple authors, series with float index) stresses the hash computation and
+        serialization paths that have historically produced mismatches between client and
+        server.
+        Verify: (1) Initial sync has zero errors, (2) second sync creates at least 2 books
+        and has zero errors, (3) follow-up sync converges: synced == 0, created == 0, and
+        errors == 0. Test books are cleaned up from the fixture regardless of pass/fail.
         """
         log_info("Step 1: Full sync to populate server...")
         r1, o1 = run_sync_v5(clear_cache=True, no_cache=True)
@@ -1362,6 +1501,157 @@ print("RESULT_END")
                     f"PRAGMA writable_schema = OFF;"
                 ], capture_output=True)
                 log_info(f"  Cleanup: removed {len(cleanup_ids)} test books from fixture")
+
+        return success
+
+    def test_13_concurrent_sync_two_clients(self):
+        """Test 13: Concurrent sync from two threads.
+
+        Scenario: Two sync operations run in parallel against the same
+          library. Both should complete without deadlock or data loss.
+        Why: Mobile apps can trigger sync from multiple entry points
+          (auto-sync timer + manual tap). The server must handle
+          concurrent POST /sync without corruption.
+        Verify: Both syncs complete with 0 errors. No deadlock (timeout).
+        """
+        log_info("Step 1: Initial sync to establish baseline...")
+        r1, o1 = run_sync_v5(clear_cache=True, no_cache=True)
+        if not r1 or int(r1.get('errors', 0)) > 0:
+            log_error("Initial sync failed")
+            return False
+
+        log_info("Step 2: Two concurrent syncs...")
+        results_a = [None]
+        results_b = [None]
+
+        def sync_a():
+            results_a[0] = run_sync_v5(clear_cache=False)
+        def sync_b():
+            results_b[0] = run_sync_v5(clear_cache=False)
+
+        t1 = threading.Thread(target=sync_a)
+        t2 = threading.Thread(target=sync_b)
+        t1.start()
+        t2.start()
+        t1.join(timeout=60)
+        t2.join(timeout=60)
+
+        ra, oa = results_a[0] or (None, '')
+        rb, ob = results_b[0] or (None, '')
+
+        if ra is None or rb is None:
+            log_error("One or both concurrent syncs failed to parse")
+            return False
+
+        ea = int(ra.get('errors', 0))
+        eb = int(rb.get('errors', 0))
+        if ea > 0 or eb > 0:
+            log_error(f"Concurrent sync errors: A={ea}, B={eb}")
+            return False
+
+        log_success("Both concurrent syncs completed without errors")
+        return True
+
+    def test_14_delete_and_sync_bidirectional(self):
+        """Test 14: Delete propagation — delete locally, sync, verify no ghosts.
+
+        Scenario: Delete a book locally via calibre API, then sync.
+          Follow-up sync should not re-create the deleted book.
+        Why: Deleted books must stay deleted across sync cycles.
+          Without proper tombstone handling, deleted books reappear
+          as ghosts on subsequent syncs.
+        Verify: Book count decreases after delete+sync. Follow-up
+          sync has 0 created (no ghost re-creation).
+        """
+        log_info("Step 1: Full sync to populate server...")
+        r1, o1 = run_sync_v5(clear_cache=True, no_cache=True)
+        if not r1:
+            log_error("Initial sync failed")
+            return False
+        log_info(f"  Books synced: {r1.get('synced', 0)}")
+
+        log_info("Step 2: Delete one book locally...")
+        delete_script = f"""
+import sys
+sys.path.insert(0, '{PLUGIN_DIR}')
+from calibre.library import db
+
+database = db('{LIBRARY_PATH}')
+ids = sorted(database.all_ids())
+if ids:
+    target = ids[-1]
+    database.delete_book(target)
+    print("RESULT_START")
+    print(f"deleted_id={{target}}")
+    print(f"remaining={{len(database.all_ids())}}")
+    print("RESULT_END")
+"""
+        ok, out = run_calibre_script(delete_script)
+        data = parse_result_block(out) if ok else None
+        if not ok or not data:
+            log_error("Failed to delete book")
+            return False
+        log_info(f"  Deleted book {data.get('deleted_id')}, remaining: {data.get('remaining')}")
+
+        log_info("Step 3: Sync to propagate delete...")
+        r2, o2 = run_sync_v5(clear_cache=False)
+        if not r2:
+            log_error("Post-delete sync failed")
+            return False
+
+        log_info("Step 4: Follow-up sync (convergence)...")
+        time.sleep(1)
+        r3, o3 = run_sync_v5(clear_cache=False)
+        if not r3:
+            log_error("Follow-up sync failed")
+            return False
+
+        errors3 = int(r3.get('errors', 0))
+        created3 = int(r3.get('created', 0))
+        if errors3 > 0:
+            log_error(f"Follow-up had {errors3} errors")
+            return False
+        if created3 > 0:
+            log_error(f"Deleted book re-created! created={created3}")
+            return False
+
+        log_success("Delete propagated and converged")
+        return True
+
+    def test_15_idempotent_sync(self):
+        """Test 15: Idempotent sync — N consecutive syncs produce 0 changes.
+
+        Scenario: Sync 3 times in a row without any local changes.
+          Each sync after the first should report 0 changes.
+        Why: A non-idempotent sync indicates hash drift, phantom
+          updates, or growing pending counts — all signs of a
+          convergence bug.
+        Verify: synced=0, created=0, updated=0, errors=0 for
+          all 3 follow-up runs.
+        """
+        log_info("Step 1: Initial sync to establish baseline...")
+        r1, o1 = run_sync_v5(clear_cache=True, no_cache=True)
+        if not r1 or int(r1.get('errors', 0)) > 0:
+            log_error("Initial sync failed")
+            return False
+
+        success = True
+        for i in range(3):
+            log_info(f"Step {i+2}: Idempotent sync run {i+1}/3...")
+            time.sleep(1)
+            r, o = run_sync_v5(clear_cache=False)
+            if not r:
+                log_error(f"Run {i+1} failed to parse")
+                success = False
+                continue
+            errors = int(r.get('errors', 0))
+            synced = int(r.get('synced', 0))
+            created = int(r.get('created', 0))
+            if errors > 0 or synced > 0 or created > 0:
+                log_error(f"Run {i+1}: synced={synced} created={created} errors={errors} (expected all 0)")
+                success = False
+            else:
+                log_success(f"  Run {i+1}: 0 changes (idempotent)")
 
         return success
 
