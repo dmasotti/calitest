@@ -197,9 +197,10 @@ class TestDrilldownIndependentTryExcept:
         files_call = preflight_section.rfind('_merkle_files_drilldown(')
         assert meta_call > 0 and files_call > 0, "drilldown calls not found"
 
-        # Include the try block BEFORE the first drilldown call (up to 300 chars)
-        range_start = max(0, meta_call - 300)
-        drilldown_section = preflight_section[range_start:files_call + 800]
+        # Include the try block BEFORE the first drilldown call and enough
+        # after the last drilldown call to capture all except blocks.
+        range_start = max(0, meta_call - 500)
+        drilldown_section = preflight_section[range_start:files_call + 1500]
         except_count = drilldown_section.count('except Exception')
 
         assert except_count >= 3, (

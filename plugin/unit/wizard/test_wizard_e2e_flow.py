@@ -2,6 +2,19 @@
 
 from unittest.mock import Mock, patch, MagicMock
 
+from calibre_plugins.sync_calimob import config as cfg
+
+
+def _fake_prefs(endpoint='https://example.com', rest_token='', device_token='',
+                device_token_status='unknown'):
+    """Build a minimal plugin_prefs dict usable by _is_configured()."""
+    store = dict(cfg.DEFAULT_STORE_VALUES)
+    store[cfg.KEY_REST_ENDPOINT] = endpoint
+    store[cfg.KEY_REST_TOKEN] = rest_token
+    store[cfg.KEY_DEVICE_TOKEN] = device_token
+    store[cfg.KEY_DEVICE_TOKEN_STATUS] = device_token_status
+    return {cfg.STORE_PLUGIN: store}
+
 
 class TestWizardFlowUnauthenticated:
     """User has NO token — first time ever."""
@@ -28,12 +41,8 @@ class TestWizardFlowUnauthenticated:
     def test_welcome_next_goes_to_login_when_no_token(self):
         """With no token, WelcomePage.nextId() should return PageLogin (1)."""
         pages = self._make_wizard_pages()
-        with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mp:
-            mp.__getitem__ = Mock(return_value={
-                'restEndpoint': '',
-                'restToken': '',
-                'deviceToken': '',
-            })
+        fake = _fake_prefs(endpoint='', rest_token='', device_token='')
+        with patch.object(cfg, 'plugin_prefs', fake):
             next_id = pages['welcome'].nextId()
         assert next_id == 1, f"Expected PageLogin (1), got {next_id}"
 
@@ -67,12 +76,8 @@ class TestWizardFlowExpiredToken:
         """If token exists, WelcomePage skips to Library."""
         from calibre_plugins.sync_calimob.wizard.pages.welcome_page import WelcomePage
         page = WelcomePage(Mock(), Mock())
-        with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mp:
-            mp.__getitem__ = Mock(return_value={
-                'restEndpoint': 'https://example.com',
-                'restToken': 'old-token',
-                'deviceToken': '',
-            })
+        fake = _fake_prefs(endpoint='https://example.com', rest_token='old-token')
+        with patch.object(cfg, 'plugin_prefs', fake):
             next_id = page.nextId()
         assert next_id == 2, "Should skip to Library when token exists"
 
@@ -119,12 +124,8 @@ class TestWizardFlowComplete:
         """Configured user: Welcome → Library (skip Login)."""
         from calibre_plugins.sync_calimob.wizard.pages.welcome_page import WelcomePage
         page = WelcomePage(Mock(), Mock())
-        with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mp:
-            mp.__getitem__ = Mock(return_value={
-                'restEndpoint': 'https://api.test',
-                'restToken': 'valid-token',
-                'deviceToken': '',
-            })
+        fake = _fake_prefs(endpoint='https://api.test', rest_token='valid-token')
+        with patch.object(cfg, 'plugin_prefs', fake):
             assert page.nextId() == 2  # PageLibrary
 
     def test_library_next_goes_to_ready(self):

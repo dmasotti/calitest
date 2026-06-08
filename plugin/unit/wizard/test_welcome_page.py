@@ -3,7 +3,18 @@
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 
-import calibre_plugins.sync_calimob.config as cfg
+from calibre_plugins.sync_calimob import config as cfg
+
+
+def _fake_prefs(endpoint='https://example.com', rest_token='', device_token='',
+                device_token_status='unknown'):
+    """Build a minimal plugin_prefs dict usable by _is_configured()."""
+    store = dict(cfg.DEFAULT_STORE_VALUES)
+    store[cfg.KEY_REST_ENDPOINT] = endpoint
+    store[cfg.KEY_REST_TOKEN] = rest_token
+    store[cfg.KEY_DEVICE_TOKEN] = device_token
+    store[cfg.KEY_DEVICE_TOKEN_STATUS] = device_token_status
+    return {cfg.STORE_PLUGIN: store}
 
 
 class TestWelcomePage:
@@ -45,40 +56,24 @@ class TestWelcomePage:
 
     def test_is_configured_returns_false_when_no_token(self):
         page = self._make_page()
-        with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mock_prefs:
-            mock_prefs.__getitem__ = Mock(return_value={
-                'restEndpoint': 'https://example.com',
-                'restToken': '',
-                'deviceToken': '',
-            })
+        fake = _fake_prefs(endpoint='https://example.com', rest_token='', device_token='')
+        with patch.object(cfg, 'plugin_prefs', fake):
             assert page._is_configured() is False
 
     def test_is_configured_returns_false_when_no_endpoint(self):
         page = self._make_page()
-        with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mock_prefs:
-            mock_prefs.__getitem__ = Mock(return_value={
-                'restEndpoint': '',
-                'restToken': 'some-token',
-                'deviceToken': '',
-            })
+        fake = _fake_prefs(endpoint='', rest_token='some-token', device_token='')
+        with patch.object(cfg, 'plugin_prefs', fake):
             assert page._is_configured() is False
 
     def test_is_configured_returns_true_with_rest_token(self):
         page = self._make_page()
-        with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mock_prefs:
-            mock_prefs.__getitem__ = Mock(return_value={
-                'restEndpoint': 'https://example.com',
-                'restToken': 'some-token',
-                'deviceToken': '',
-            })
+        fake = _fake_prefs(endpoint='https://example.com', rest_token='some-token', device_token='')
+        with patch.object(cfg, 'plugin_prefs', fake):
             assert page._is_configured() is True
 
     def test_is_configured_returns_true_with_device_token(self):
         page = self._make_page()
-        with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mock_prefs:
-            mock_prefs.__getitem__ = Mock(return_value={
-                'restEndpoint': 'https://example.com',
-                'restToken': '',
-                'deviceToken': 'device-tok',
-            })
+        fake = _fake_prefs(endpoint='https://example.com', rest_token='', device_token='device-tok')
+        with patch.object(cfg, 'plugin_prefs', fake):
             assert page._is_configured() is True

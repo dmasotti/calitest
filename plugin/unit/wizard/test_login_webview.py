@@ -2,6 +2,19 @@
 
 from unittest.mock import Mock, patch
 
+from calibre_plugins.sync_calimob import config as cfg
+
+
+def _fake_prefs(endpoint='https://example.com', rest_token='', device_token='',
+                device_token_status='unknown'):
+    """Build a minimal plugin_prefs dict usable by config access."""
+    store = dict(cfg.DEFAULT_STORE_VALUES)
+    store[cfg.KEY_REST_ENDPOINT] = endpoint
+    store[cfg.KEY_REST_TOKEN] = rest_token
+    store[cfg.KEY_DEVICE_TOKEN] = device_token
+    store[cfg.KEY_DEVICE_TOKEN_STATUS] = device_token_status
+    return {cfg.STORE_PLUGIN: store}
+
 
 class TestLoginPage:
     """LoginPage opens browser, polls for device authorization."""
@@ -48,17 +61,16 @@ class TestLoginPage:
         page._open_btn = Mock()
         page._open_browser_link = Mock()
 
-        stored = {}
-        with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mp:
-            mp.__getitem__ = Mock(return_value=stored)
-            mp.__setitem__ = Mock(side_effect=lambda k, v: stored.update({k: v}) if isinstance(v, dict) else None)
+        fake = _fake_prefs()
+        with patch.object(cfg, 'plugin_prefs', fake):
             # Patch QTimer.singleShot to avoid Qt dependency
             with patch('calibre_plugins.sync_calimob.wizard.pages.login_page.QTimer') as mock_qt:
                 page._on_auth_success()
 
         assert page._login_success is True
-        assert stored.get('deviceToken') == 'test-device-uuid'
-        assert stored.get('deviceTokenStatus') == 'authorized'
+        stored = fake[cfg.STORE_PLUGIN]
+        assert stored[cfg.KEY_DEVICE_TOKEN] == 'test-device-uuid'
+        assert stored[cfg.KEY_DEVICE_TOKEN_STATUS] == 'authorized'
 
     def test_poll_pending_keeps_waiting(self):
         """Polling with 'pending' status should not trigger success."""

@@ -543,8 +543,34 @@ def mock_http_response():
 
 
 @pytest.fixture(autouse=True)
+def _restore_plugin_prefs():
+    """Save and restore cfg.plugin_prefs after every test so direct
+    assignments like ``cfg.plugin_prefs = {...}`` don't leak.
+
+    Handles both mutation (prefs.clear() / prefs[k]=v) and replacement
+    (cfg.plugin_prefs = {new dict}).
+    """
+    import copy
+    _cfg = sys.modules.get('calibre_plugins.sync_calimob.config')
+    if _cfg is None:
+        yield
+        return
+    original_ref = getattr(_cfg, 'plugin_prefs', None)
+    try:
+        snapshot = copy.deepcopy(dict(original_ref)) if original_ref is not None else None
+    except Exception:
+        snapshot = None
+    yield
+    if original_ref is not None and snapshot is not None:
+        # Restore original object reference AND its contents
+        original_ref.clear()
+        original_ref.update(snapshot)
+        _cfg.plugin_prefs = original_ref
+
+
+@pytest.fixture
 def patch_plugin_prefs(mock_plugin_config):
-    """Auto-patch plugin preferences for all tests."""
+    """Patch plugin preferences (opt-in, no longer autouse)."""
     with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mock_prefs:
         mock_prefs.__getitem__ = Mock(side_effect=lambda key: {
             'Caliweb': mock_plugin_config['plugin'],

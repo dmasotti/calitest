@@ -7,6 +7,18 @@ WelcomePage skips to Library → 401 → restart → WelcomePage skips again →
 from unittest.mock import Mock, patch
 
 
+def _fake_prefs(endpoint='https://example.com', rest_token='', device_token='',
+                device_token_status='unknown'):
+    """Build a minimal plugin_prefs dict usable by _is_configured()."""
+    from calibre_plugins.sync_calimob import config as cfg
+    store = dict(cfg.DEFAULT_STORE_VALUES)
+    store[cfg.KEY_REST_ENDPOINT] = endpoint
+    store[cfg.KEY_REST_TOKEN] = rest_token
+    store[cfg.KEY_DEVICE_TOKEN] = device_token
+    store[cfg.KEY_DEVICE_TOKEN_STATUS] = device_token_status
+    return {cfg.STORE_PLUGIN: store}
+
+
 class TestWelcomePageTokenValidation:
     """WelcomePage._is_configured must check token STATUS, not just presence."""
 
@@ -16,52 +28,36 @@ class TestWelcomePageTokenValidation:
 
     def test_invalid_token_status_means_not_configured(self):
         """Token exists but status='invalid' → NOT configured → go to Login."""
+        from calibre_plugins.sync_calimob import config as cfg
         page = self._make_welcome()
-        with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mp:
-            mp.__getitem__ = Mock(return_value={
-                'restEndpoint': 'https://example.com',
-                'restToken': 'expired-token-xyz',
-                'deviceToken': '',
-                'deviceTokenStatus': 'invalid',
-            })
+        fake = _fake_prefs(rest_token='expired-token-xyz', device_token_status='invalid')
+        with patch.object(cfg, 'plugin_prefs', fake):
             assert page._is_configured() is False
             assert page.nextId() == 1  # PageLogin, NOT PageLibrary
 
     def test_authorized_token_means_configured(self):
         """Token exists and status='authorized' → configured → skip to Library."""
+        from calibre_plugins.sync_calimob import config as cfg
         page = self._make_welcome()
-        with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mp:
-            mp.__getitem__ = Mock(return_value={
-                'restEndpoint': 'https://example.com',
-                'restToken': 'good-token',
-                'deviceToken': '',
-                'deviceTokenStatus': 'authorized',
-            })
+        fake = _fake_prefs(rest_token='good-token', device_token_status='authorized')
+        with patch.object(cfg, 'plugin_prefs', fake):
             assert page._is_configured() is True
             assert page.nextId() == 2  # PageLibrary
 
     def test_unknown_token_status_means_configured(self):
         """Token exists and status='unknown' → treat as configured (will verify later)."""
+        from calibre_plugins.sync_calimob import config as cfg
         page = self._make_welcome()
-        with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mp:
-            mp.__getitem__ = Mock(return_value={
-                'restEndpoint': 'https://example.com',
-                'restToken': 'some-token',
-                'deviceToken': '',
-                'deviceTokenStatus': 'unknown',
-            })
+        fake = _fake_prefs(rest_token='some-token', device_token_status='unknown')
+        with patch.object(cfg, 'plugin_prefs', fake):
             assert page._is_configured() is True
 
     def test_no_token_means_not_configured(self):
         """No token at all → not configured."""
+        from calibre_plugins.sync_calimob import config as cfg
         page = self._make_welcome()
-        with patch('calibre_plugins.sync_calimob.config.plugin_prefs') as mp:
-            mp.__getitem__ = Mock(return_value={
-                'restEndpoint': 'https://example.com',
-                'restToken': '',
-                'deviceToken': '',
-                'deviceTokenStatus': 'unknown',
-            })
+        fake = _fake_prefs(rest_token='', device_token='')
+        with patch.object(cfg, 'plugin_prefs', fake):
             assert page._is_configured() is False
 
 

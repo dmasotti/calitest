@@ -23,12 +23,10 @@ def _make_action():
 
 
 def _set_library_mapping(library_uuid='lib-uuid', calimob_library_id='77', enabled=True):
-    cfg.plugin_prefs = {
-        cfg.STORE_LIBRARY_MAPPINGS: {
-            library_uuid: {
-                cfg.KEY_CALIMOB_LIBRARY_ID: calimob_library_id,
-                cfg.KEY_SYNC_ENABLED: enabled,
-            }
+    cfg.plugin_prefs[cfg.STORE_LIBRARY_MAPPINGS] = {
+        library_uuid: {
+            cfg.KEY_CALIMOB_LIBRARY_ID: calimob_library_id,
+            cfg.KEY_SYNC_ENABLED: enabled,
         }
     }
 
