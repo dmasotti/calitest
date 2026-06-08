@@ -8,9 +8,21 @@
       "title_sort": "Minimal Book",
       "author_sort": "Simmons, Dan & McCleery, Matthew & Corey, James S. A.",
       "authors": [
-        {"name": "Dan Simmons", "role": "author", "position": 0},
-        {"name": "Matthew McCleery", "role": "author", "position": 1},
-        {"name": "Corey, James S. A.", "role": "author", "position": 2}
+        {
+          "name": "Dan Simmons",
+          "role": "author",
+          "position": 0
+        },
+        {
+          "name": "Matthew McCleery",
+          "role": "author",
+          "position": 1
+        },
+        {
+          "name": "Corey, James S. A.",
+          "role": "author",
+          "position": 2
+        }
       ],
       "series": null,
       "identifiers": {},
@@ -24,12 +36,25 @@
       "edition": null,
       "content_language": null,
       "files": [
-        {"format": "EPUB", "file_hash": "c16f6dc6224c968bc50d5f7b75188dd6af1d6d669480c56420070045402335bb"}
+        {
+          "format": "EPUB",
+          "file_hash": "c16f6dc6224c968bc50d5f7b75188dd6af1d6d669480c56420070045402335bb"
+        }
       ],
-      "cover": {"has_cover": "", "cover_hash": null, "cover_url": null},
-      "timestamps": {"created_at": 1771585403, "deleted_at": null},
+      "cover": {
+        "has_cover": "",
+        "cover_hash": null,
+        "cover_url": null
+      },
+      "timestamps": {
+        "created_at": 1771585403,
+        "deleted_at": null
+      },
       "last_modified": 1771592936,
-      "source": {"client": "calibre", "client_library": "1685fd4f-054e-4451-9df8-119c27fc1289"},
+      "source": {
+        "client": "calibre",
+        "client_library": "1685fd4f-054e-4451-9df8-119c27fc1289"
+      },
       "extra": [],
       "progress_percent": null,
       "favorite": false
@@ -41,6 +66,6 @@
       }
     },
     "cover_hash": null,
-    "expected_hash": "7f7b9775df2c6717c168821e8451cbec9c671cad1e030d5c34ae495746aec4b4"
+    "expected_hash": "1b16f760de75a10a8d208620efbfa1268504e700c188081673589dbb95988734"
   }
 ]

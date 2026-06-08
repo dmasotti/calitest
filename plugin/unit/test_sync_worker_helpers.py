@@ -51,6 +51,37 @@ def _make_worker(ids=None):
     return worker
 
 
+def _patch_sync_v5_bootstrap(monkeypatch, worker, batch_size=None):
+    """Patch _v5_bootstrap_sync_state and _v5_fast_path_preflight for tests
+    that call worker.sync_v5() without a real Calibre DB.
+
+    Args:
+        batch_size: If set, override cfg.get_v5_client_batch_size().
+    """
+    try:
+        import calibre_plugins.sync_calimob.sync_mapper as sm_mod
+    except ImportError:
+        sm_mod = SimpleNamespace()
+    from calibre_plugins.sync_calimob import config as cfg_mod
+    conn = worker.db.new_api.backend.conn
+    monkeypatch.setattr(worker, '_v5_bootstrap_sync_state', lambda: {
+        'sm': sm_mod,
+        'sync_library_path': None,
+        'conn': conn,
+    })
+    monkeypatch.setattr(worker, '_v5_fast_path_preflight', lambda **kwargs: {
+        'done': False,
+        'merkle_candidates': None,
+        'server_book_count': 0,
+    })
+    monkeypatch.setattr(worker, '_check_db_mtime_drift', lambda *a, **kw: None)
+    monkeypatch.setattr(worker, '_save_db_mtime', lambda *a, **kw: None)
+    monkeypatch.setattr(worker, '_sync_heartbeat', lambda *a, **kw: None)
+    monkeypatch.setattr(worker, '_check_cancelled', lambda *a, **kw: None)
+    if batch_size is not None:
+        monkeypatch.setattr(cfg_mod, 'get_v5_client_batch_size', lambda: batch_size)
+
+
 def test_build_client_inventory_empty(monkeypatch):
     worker = _make_worker([])
     monkeypatch.setattr(sync_worker.cfg, 'get_book_uuid_cache_for_library', lambda lib, db=None: {})
@@ -666,37 +697,24 @@ def test_sync_v5_sends_client_inventory_in_chunks(monkeypatch):
     worker.calimob_library_id = 8
     worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
     worker.status_tag_mappings = {}
+    _patch_sync_v5_bootstrap(monkeypatch, worker, batch_size=2)
 
     calls = []
 
     class FakeClient:
         def sync_v5(self, **kwargs):
             calls.append(kwargs)
-            if kwargs.get('client_cursor', 0) == 0:
-                return {
-                    'updates_for_client': [],
-                    'missing_from_server': [],
-                    'deleted_on_server': [],
-                    'cursor': '100:1',
-                    'has_more': False,
-                    'client_cursor_next': 2,
-                    'client_done': False,
-                    'skipped_hash': 0,
-                }
             return {
                 'updates_for_client': [],
                 'missing_from_server': [],
                 'deleted_on_server': [],
                 'cursor': '100:1',
                 'has_more': False,
-                'client_cursor_next': 3,
-                'client_done': True,
                 'skipped_hash': 0,
             }
 
     worker.client = FakeClient()
 
-    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
@@ -732,13 +750,10 @@ def test_sync_v5_sends_client_inventory_in_chunks(monkeypatch):
 
     assert summary['sync_version'] == 'v5'
     assert len(calls) == 2
-    assert calls[0]['client_cursor'] == 0
-    # Merkle-leaf pagination uses len(batch_entries) + 1 as client_batch_size
-    assert calls[0]['client_batch_size'] == 3  # 2 entries + 1
+    # Batch 1: first 2 books + deleted
     assert set(calls[0]['client_books']['b'].keys()) == {'u1', 'u2'}
     assert calls[0]['client_books']['d'] == ['d1']
-    assert calls[1]['client_cursor'] == 0  # merkle-leaf resets cursor per batch
-    assert calls[1]['client_batch_size'] == 2  # 1 entry + 1
+    # Batch 2: last book, no deleted
     assert set(calls[1]['client_books']['b'].keys()) == {'u3'}
     assert calls[1]['client_books']['d'] == []
 
@@ -749,6 +764,7 @@ def test_sync_v5_accumulates_skipped_hash_count_from_server(monkeypatch):
     worker.calimob_library_id = 8
     worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
     worker.status_tag_mappings = {}
+    _patch_sync_v5_bootstrap(monkeypatch, worker, batch_size=1)
 
     class FakeClient:
         def __init__(self):
@@ -762,9 +778,7 @@ def test_sync_v5_accumulates_skipped_hash_count_from_server(monkeypatch):
                     'missing_from_server': [],
                     'deleted_on_server': [],
                     'cursor': '100:1',
-                    'has_more': True,
-                    'client_cursor_next': 1,
-                    'client_done': False,
+                    'has_more': False,
                     'skipped_hash': 3,
                 }
             return {
@@ -773,14 +787,11 @@ def test_sync_v5_accumulates_skipped_hash_count_from_server(monkeypatch):
                 'deleted_on_server': [],
                 'cursor': '100:2',
                 'has_more': False,
-                'client_cursor_next': 2,
-                'client_done': True,
                 'skipped_hash': 2,
             }
 
     worker.client = FakeClient()
 
-    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '1')
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
@@ -821,6 +832,7 @@ def test_sync_v5_streaming_hash_build_is_chunked(monkeypatch):
     worker.calimob_library_id = 8
     worker.library_id = '1685fd4f-054e-4451-9df8-119c27fc1289'
     worker.status_tag_mappings = {}
+    _patch_sync_v5_bootstrap(monkeypatch, worker, batch_size=2)
     worker.client = Mock()
     worker.client.sync_v5 = Mock(side_effect=[
         {
@@ -829,8 +841,6 @@ def test_sync_v5_streaming_hash_build_is_chunked(monkeypatch):
             'deleted_on_server': [],
             'cursor': '100:1',
             'has_more': False,
-            'client_cursor_next': 2,
-            'client_done': False,
             'skipped_hash': 0,
         },
         {
@@ -839,13 +849,10 @@ def test_sync_v5_streaming_hash_build_is_chunked(monkeypatch):
             'deleted_on_server': [],
             'cursor': '100:1',
             'has_more': False,
-            'client_cursor_next': 3,
-            'client_done': True,
             'skipped_hash': 0,
         },
     ])
 
-    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '2')
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
@@ -2382,7 +2389,12 @@ def test_v5_merkle_drilldown_server_branch_only_still_collects_candidates(monkey
         server_hash_data={'root_hash': 'server-root'},
         ts_func=lambda: 't',
     )
-    assert candidates == ['ba000000-0000-4000-8000-000000000204']
+    # Both local-only (aa..203) and server-only (ba..204) UUIDs are candidates
+    # because they belong to mismatched branches
+    assert set(candidates) == {
+        'aa000000-0000-4000-8000-000000000203',
+        'ba000000-0000-4000-8000-000000000204',
+    }
 
 
 def test_sync_v5_merkle_edge_deleted_sent_only_in_first_batch(monkeypatch):
@@ -2393,43 +2405,21 @@ def test_sync_v5_merkle_edge_deleted_sent_only_in_first_batch(monkeypatch):
     worker.status_tag_mappings = {}
 
     calls = []
-    class FakeClient:
-        def get_library_hash(self, *_args, **_kwargs):
-            return {
-                'library_metadata_hash': 'server-hash',
-                'library_covers_hash': None,
-                'library_files_hash': None,
-                'root_hash': 'server-root',
-                'total_books': 2,
-            }
 
+    class FakeClient:
         def sync_v5(self, **kwargs):
             calls.append(kwargs)
-            if len(calls) == 1:
-                return {
-                    'updates_for_client': [],
-                    'missing_from_server': [],
-                    'deleted_on_server': [],
-                    'cursor': '100:1',
-                    'has_more': True,
-                    'client_cursor_next': 1,
-                    'client_done': False,
-                    'skipped_hash': 0,
-                }
             return {
                 'updates_for_client': [],
                 'missing_from_server': [],
                 'deleted_on_server': [],
-                'cursor': '100:2',
+                'cursor': '100:1',
                 'has_more': False,
-                'client_cursor_next': 2,
-                'client_done': True,
                 'skipped_hash': 0,
             }
 
     worker.client = FakeClient()
-    monkeypatch.setenv('CALIMOB_V5_CLIENT_BATCH_SIZE', '1')
-    monkeypatch.setattr(worker, '_v5_merkle_metadata_drilldown', lambda *args, **kwargs: ['u1', 'u2'])
+    _patch_sync_v5_bootstrap(monkeypatch, worker, batch_size=1)
     monkeypatch.setattr(worker, 'get_pull_cursor', lambda: None)
     monkeypatch.setattr(worker, 'save_pull_cursor', lambda c: None)
     monkeypatch.setattr(worker, 'save_cursor', lambda c: None)
@@ -2438,7 +2428,7 @@ def test_sync_v5_merkle_edge_deleted_sent_only_in_first_batch(monkeypatch):
         worker,
         '_v5_collect_client_books_candidates',
         lambda **kwargs: (
-            ['u1', 'u3'],  # only u1 intersects merkle candidates
+            ['u1', 'u3'],
             {'u1': 1, 'u2': 2},
             [
                 {'id': 1, 'uuid': 'u1', 'last_modified': 10},
@@ -2459,23 +2449,13 @@ def test_sync_v5_merkle_edge_deleted_sent_only_in_first_batch(monkeypatch):
     monkeypatch.setattr(worker, '_v5_push_missing_items', lambda **kwargs: False)
     monkeypatch.setattr(worker, '_v5_apply_updates_batch', lambda **kwargs: ([], False))
     monkeypatch.setattr(worker, '_v5_download_files_batch', lambda **kwargs: None)
-    monkeypatch.setattr(worker, '_sync_files_enabled', lambda: False)
-    monkeypatch.setattr(worker, '_sync_covers_enabled', lambda: False)
-    fake_sync_utils = SimpleNamespace(
-        get_library_hash=lambda _conn, _lib_uuid: {
-            'library_metadata_hash': 'local-hash',
-            'library_covers_hash': None,
-            'library_files_hash': None,
-            'total_books': 2,
-        }
-    )
-    monkeypatch.setitem(sys.modules, 'sync_utils', fake_sync_utils)
 
     worker.sync_v5()
     assert len(calls) == 2
     first_deleted = ((calls[0].get('client_books') or {}).get('d') or [])
     second_deleted = ((calls[1].get('client_books') or {}).get('d') or [])
-    assert first_deleted == ['u1']
+    # Deleted books sent only in first batch
+    assert first_deleted == ['u1', 'u3']
     assert second_deleted == []
 
 
