@@ -530,6 +530,22 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
 
     private function metadataHashForBook(UserBook $book): string
     {
+        // books_hash_v2 is a VIEW — Schema::hasTable returns false for views.
+        // Query it directly; the VIEW uses the canonical JSON hash formula that
+        // the controller relies on, so tests must use the same source of truth.
+        try {
+            $hash = (string) DB::table('books_hash_v2')
+                ->where('user_id', $book->user_id)
+                ->where('library_id', $book->library_id)
+                ->where('uuid', $book->uuid)
+                ->value('metadata_hash');
+            if ($hash !== '') {
+                return strtolower($hash);
+            }
+        } catch (\Throwable $e) {
+            // VIEW does not exist — fall through to PHP computation.
+        }
+
         return (string) MetadataHasher::computeHash([
             'uuid' => $book->uuid,
             'title' => $book->title,

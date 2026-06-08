@@ -8,7 +8,6 @@ use App\Services\Sync\MetadataHasher;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -233,7 +232,7 @@ class SyncV5HashMismatchMatrixTest extends TestCase
             'timestamp' => now(),
             'pubdate' => now(),
             'last_modified' => $lastModified,
-            'has_cover' => false,
+            'has_cover' => true,
             'cover_missing' => false,
             'cover_original_hash' => 'sha256:' . $cover,
             'cover_optimized_hash' => null,
@@ -289,7 +288,9 @@ class SyncV5HashMismatchMatrixTest extends TestCase
 
     private function metadataHashForSeed(Library $library, string $uuid): string
     {
-        if (Schema::hasTable('books_hash_v2')) {
+        // books_hash_v2 is a VIEW, not a table — Schema::hasTable returns false for views.
+        // Query it directly; catch any error if the view doesn't exist.
+        try {
             $hash = (string) DB::table('books_hash_v2')
                 ->where('user_id', $library->user_id)
                 ->where('library_id', $library->id)
@@ -298,6 +299,8 @@ class SyncV5HashMismatchMatrixTest extends TestCase
             if ($hash !== '') {
                 return strtolower($hash);
             }
+        } catch (\Throwable $e) {
+            // VIEW does not exist — fall through to PHP computation.
         }
 
         $book = DB::table('books')
