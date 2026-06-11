@@ -178,7 +178,7 @@ class AnnotationSyncTest extends TestCase
         ]);
 
         $this->deleteJson("/api/bookmarks/{$bm->id}")->assertOk();
-        $this->assertDatabaseMissing('bookmarks', ['id' => $bm->id]);
+        $this->assertSoftDeleted('bookmarks', ['id' => $bm->id]);
     }
 
     // ── Batch sync endpoint ──
