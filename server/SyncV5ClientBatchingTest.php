@@ -104,7 +104,7 @@ class SyncV5ClientBatchingTest extends TestCase
 
     public function test_sync_v5_does_not_mark_done_true_for_first_pre_sliced_chunk(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create(['subscription_tier' => 'pro', 'subscription_status' => 'active']);
         $library = Library::factory()->create(['user_id' => $user->id]);
         Sanctum::actingAs($user);
 
