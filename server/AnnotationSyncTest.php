@@ -42,7 +42,7 @@ class AnnotationSyncTest extends TestCase
         $uuid = (string) Str::uuid();
 
         $response = $this->postJson('/api/highlights', [
-            'book_id' => $book->id,
+            'book_id' => $book->uuid,
             'uuid' => $uuid,
             'text' => 'The quick brown fox',
             'position_start' => ['chapter_index' => 3, 'char_offset' => 100, 'cfi' => '/6/14!/4/2:0'],
@@ -61,7 +61,7 @@ class AnnotationSyncTest extends TestCase
         $uuid = (string) Str::uuid();
 
         $this->postJson('/api/highlights', [
-            'book_id' => $book->id,
+            'book_id' => $book->uuid,
             'uuid' => $uuid,
             'text' => 'First',
             'position_start' => ['chapter_index' => 1, 'char_offset' => 0],
@@ -70,7 +70,7 @@ class AnnotationSyncTest extends TestCase
 
         // Same UUID = upsert (update), not duplicate
         $this->postJson('/api/highlights', [
-            'book_id' => $book->id,
+            'book_id' => $book->uuid,
             'uuid' => $uuid,
             'text' => 'Updated text',
             'position_start' => ['chapter_index' => 1, 'char_offset' => 0],
@@ -88,7 +88,7 @@ class AnnotationSyncTest extends TestCase
         $uuid = (string) Str::uuid();
 
         $this->postJson('/api/highlights', [
-            'book_id' => $book->id,
+            'book_id' => $book->uuid,
             'uuid' => $uuid,
             'text' => 'To be deleted',
             'position_start' => ['chapter_index' => 1, 'char_offset' => 0],
@@ -110,7 +110,7 @@ class AnnotationSyncTest extends TestCase
         $uuid = (string) Str::uuid();
 
         $response = $this->postJson('/api/notes', [
-            'book_id' => $book->id,
+            'book_id' => $book->uuid,
             'uuid' => $uuid,
             'content' => 'This is important because...',
             'position' => ['chapter_index' => 2, 'char_offset' => 500],
@@ -128,7 +128,7 @@ class AnnotationSyncTest extends TestCase
         $uuid = (string) Str::uuid();
 
         $response = $this->postJson('/api/bookmarks', [
-            'book_id' => $book->id,
+            'book_id' => $book->uuid,
             'uuid' => $uuid,
             'label' => 'Chapter 5 start',
             'position' => ['chapter_index' => 5, 'page_index' => 42],
@@ -145,7 +145,7 @@ class AnnotationSyncTest extends TestCase
         Bookmark::create([
             'user_id' => $user->id,
             'library_id' => $library->id,
-            'book_id' => $book->id,
+            'book' => $book->uuid,
             'uuid' => (string) Str::uuid(),
             'label' => 'BM1',
             'position' => ['page_index' => 1],
@@ -153,7 +153,7 @@ class AnnotationSyncTest extends TestCase
         Bookmark::create([
             'user_id' => $user->id,
             'library_id' => $library->id,
-            'book_id' => $book->id,
+            'book' => $book->uuid,
             'uuid' => (string) Str::uuid(),
             'label' => 'BM2',
             'position' => ['page_index' => 10],
@@ -171,7 +171,7 @@ class AnnotationSyncTest extends TestCase
         $bm = Bookmark::create([
             'user_id' => $user->id,
             'library_id' => $library->id,
-            'book_id' => $book->id,
+            'book' => $book->uuid,
             'uuid' => (string) Str::uuid(),
             'label' => 'Delete me',
             'position' => ['page_index' => 99],
@@ -241,7 +241,7 @@ class AnnotationSyncTest extends TestCase
         $oldHl = Highlight::create([
             'user_id' => $user->id,
             'library_id' => $library->id,
-            'book_id' => $book->id,
+            'book' => $book->uuid,
             'uuid' => (string) Str::uuid(),
             'text' => 'Old highlight',
             'position_start' => ['chapter_index' => 1],
@@ -257,7 +257,7 @@ class AnnotationSyncTest extends TestCase
         $newHl = Highlight::create([
             'user_id' => $user->id,
             'library_id' => $library->id,
-            'book_id' => $book->id,
+            'book' => $book->uuid,
             'uuid' => (string) Str::uuid(),
             'text' => 'New highlight',
             'position_start' => ['chapter_index' => 2],
@@ -292,7 +292,7 @@ class AnnotationSyncTest extends TestCase
         Highlight::create([
             'user_id' => $user->id,
             'library_id' => $library->id,
-            'book_id' => $book->id,
+            'book' => $book->uuid,
             'uuid' => $uuid,
             'text' => 'Original text',
             'position_start' => ['chapter_index' => 1],
@@ -333,7 +333,7 @@ class AnnotationSyncTest extends TestCase
         Highlight::create([
             'user_id' => $user->id,
             'library_id' => $library->id,
-            'book_id' => $book->id,
+            'book' => $book->uuid,
             'uuid' => $uuid,
             'text' => 'Will be deleted',
             'position_start' => ['chapter_index' => 1],
@@ -368,7 +368,7 @@ class AnnotationSyncTest extends TestCase
         Highlight::create([
             'user_id' => $userA->id,
             'library_id' => $libraryA->id,
-            'book_id' => $bookA->id,
+            'book' => $bookA->uuid,
             'uuid' => (string) Str::uuid(),
             'text' => 'User A highlight',
             'position_start' => ['chapter_index' => 1],

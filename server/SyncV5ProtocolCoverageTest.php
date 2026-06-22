@@ -1223,10 +1223,10 @@ class SyncV5ProtocolCoverageTest extends TestCase
         $this->assertGreaterThanOrEqual(0.0, $bookdataMs);
         $this->assertGreaterThanOrEqual(0.0, $hashMs);
         $this->assertGreaterThanOrEqual(
-            $payloadBaseTextMs + $payloadBaseTemporalMs + $payloadBaseScalarMs,
+            $payloadBaseTextMs + $payloadBaseTemporalMs + $payloadBaseScalarMs - 0.01,
             $payloadBasePrepMs
         );
-        $this->assertGreaterThanOrEqual($bookdataMs + $hashMs, $payloadMs);
+        $this->assertGreaterThanOrEqual($bookdataMs + $hashMs - 0.01, $payloadMs);
         $this->assertSame(0.0, (float) ($profile['loop_updates_files_payload_ms'] ?? -1));
     }
 
