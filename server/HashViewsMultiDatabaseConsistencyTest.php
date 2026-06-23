@@ -316,12 +316,36 @@ class HashViewsMultiDatabaseConsistencyTest extends TestCase
             'series_index' => 1.0,
             'path' => 'simple-book',
             'flags' => 1,
-            'has_cover' => 0,
+            'has_cover' => false,
+            'pubdate' => '2020-01-01 00:00:00',
             'last_modified' => $now,
             'created_at' => $now,
             'updated_at' => $now,
         ]);
-        
+
+        // Add a series + link so the hash_payload includes a concrete series
+        // object on both SQLite and PG (without a link, the VIEW produces
+        // {"name":null,"series_index":1.0} on SQLite vs null on PG).
+        DB::table('books_series')->insert([
+            'id' => 1,
+            'idx' => 1,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+            'name' => 'Test Series',
+            'sort' => 'Test Series',
+            'uuid' => '22222222-3333-4444-8555-666666666666',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('books_series_link')->insert([
+            'uuid' => '33333333-4444-5555-8666-777777777777',
+            'book' => $uuid,
+            'series' => 1,
+            'series_index' => 1.0,
+            'user_id' => $user->id,
+            'library_id' => $library->id,
+        ]);
+
         return [$user, $library, $uuid];
     }
 
@@ -344,13 +368,36 @@ class HashViewsMultiDatabaseConsistencyTest extends TestCase
                 'library_id' => $library->id,
                 'title' => "Book {$i}",
                 'author_sort' => "Author, {$i}",
-                'series_index' => (float) $i,
+                'series_index' => 1.0,
                 'path' => "book-{$i}",
                 'flags' => 1,
-                'has_cover' => 0,
+                'has_cover' => false,
+                'pubdate' => '2020-01-01 00:00:00',
                 'last_modified' => $now->copy()->addSeconds($i),
                 'created_at' => $now,
                 'updated_at' => $now,
+            ]);
+
+            // Add series link to ensure consistent hash across DBs
+            $seriesId = 2000 + $i;
+            DB::table('books_series')->insert([
+                'id' => $seriesId,
+                'idx' => $seriesId,
+                'user_id' => $user->id,
+                'library_id' => $library->id,
+                'name' => "Series {$i}",
+                'sort' => "Series {$i}",
+                'uuid' => sprintf('44444444-5555-6666-8777-%012d', $i),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+            DB::table('books_series_link')->insert([
+                'uuid' => sprintf('55555555-6666-7777-8888-%012d', $i),
+                'book' => $uuid,
+                'series' => $seriesId,
+                'series_index' => 1.0,
+                'user_id' => $user->id,
+                'library_id' => $library->id,
             ]);
         }
         

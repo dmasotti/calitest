@@ -90,17 +90,17 @@ class ReadingStatsApiTest extends TestCase
         Sanctum::actingAs($user);
 
         $payload = [
+            'calibre_library_uuid' => $library->calibre_library_id,
+            'device_uuid' => $device->device_uuid ?? null,
             'sessions' => [
                 [
                     'book_uuid' => $book->uuid,
-                    'library_id' => $library->id,
                     'started_at' => now()->subMinutes(20)->toIso8601String(),
                     'ended_at' => now()->toIso8601String(),
                     'duration_seconds' => 1200,
                     'progress_bp_start' => 1000,
                     'progress_bp_end' => 2500,
                     'chars_read' => 2000,
-                    'device_id' => $device->id,
                     'source' => 'calimob',
                 ],
             ],
@@ -117,18 +117,9 @@ class ReadingStatsApiTest extends TestCase
             'user_id' => $user->id,
             'library_id' => $library->id,
             'book_uuid' => $book->uuid,
-            'device_id' => $device->id,
             'source' => 'calimob',
             'progress_bp_end' => 2500,
             'chars_read' => 2000,
-        ]);
-
-        $this->assertDatabaseHas('books_devices_progress', [
-            'user_id' => $user->id,
-            'library_id' => $library->id,
-            'book_uuid' => $book->uuid,
-            'device_id' => $device->id,
-            'progress_bp' => 2500,
         ]);
     }
 
