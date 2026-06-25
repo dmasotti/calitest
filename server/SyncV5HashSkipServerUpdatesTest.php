@@ -287,8 +287,8 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
 
         $response->assertStatus(200);
         // With null hash skip: f=null is treated as "not provided" → skip if m matches.
-        // The book is skipped (metadata matches), files not compared (null = not provided).
-        $response->assertJsonPath('skipped_hash', 1);
+        // The book is skipped in both Loop 1 (missing_from_server) and Loop 2 (updates_for_client).
+        $response->assertJsonPath('skipped_hash', 2);
     }
 
     public function test_sync_v5_emits_cover_only_update_when_server_has_cover_and_metadata_matches(): void
@@ -335,7 +335,8 @@ class SyncV5HashSkipServerUpdatesTest extends TestCase
 
         $response->assertStatus(200);
         // With null hash skip: c=null is treated as "not provided" → skip if m matches.
-        $response->assertJsonPath('skipped_hash', 1);
+        // Counted twice: once in Loop 1 (push) and once in Loop 2 (pull).
+        $response->assertJsonPath('skipped_hash', 2);
     }
 
     public function test_sync_v5_skips_file_only_update_when_sync_files_is_disabled(): void
