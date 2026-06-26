@@ -67,6 +67,8 @@ trait CreatesApplication
             'APP_ENV' => 'testing',
             'DB_CONNECTION' => 'sqlite',
             'DB_DATABASE' => $dbPath,
+            'PGVECTOR_DRIVER' => 'sqlite',
+            'PGVECTOR_DATABASE' => $dbPath,
             'SESSION_DRIVER' => 'array',
             'CACHE_STORE' => 'array',
             'QUEUE_CONNECTION' => 'sync',
