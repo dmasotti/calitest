@@ -238,3 +238,26 @@ class TestComputeStartPage:
         if mapping and mapping.get('calimobLibraryId'):
             return 3  # PageReady
         return 2  # PageLibrary
+
+
+# ---------------------------------------------------------------------------
+# Test: show_wizard must keep a reference to prevent GC during background sync
+# ---------------------------------------------------------------------------
+
+class TestWizardReference:
+    """Verify that show_wizard stores a reference on self to prevent GC."""
+
+    def test_show_wizard_stores_reference(self):
+        """show_wizard must store the wizard on self (e.g. _active_wizard)
+        so it survives after exec_() returns when the wizard is hidden
+        during background sync. Otherwise Qt deletes the C++ objects and
+        'Show sync window' crashes with 'wrapped C/C++ object deleted'.
+        """
+        src = (plugin_path / 'action.py').read_text()
+        # Find the show_wizard method
+        import re
+        match = re.search(r'def show_wizard\(self\):\s*\n((?:[ \t]+.*\n)*)', src)
+        assert match, "Could not find show_wizard method"
+        body = match.group(1)
+        assert 'self._active_wizard' in body or 'self._wizard' in body, \
+            "show_wizard must store wizard reference on self to prevent GC"
