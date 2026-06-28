@@ -185,18 +185,54 @@ def test_phase1a_server_cover_leaves_match_raw_client(rebuilt_server):
 # PHASE 1b — single-device convergence on a REAL emulator (TODO: wire calimob)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.skip(reason="Phase 1b — emulator orchestration not wired yet.")
-def test_phase1b_emulator_single_device_convergence():
-    """Point calimob (emulator → http://10.0.2.2:8081) at the seeded server, run a
-    backup/sync, then assert the device's Merkle root == the server's library-hash
-    root for meta/covers/files (0 candidates).
+CALIMOB_DIR = os.environ.get(
+    "CALIMOB_DIR",
+    "/Users/macbookpro/Coding/flutter_25/Personal/calimob",
+)
+EMULATOR = os.environ.get("ANDROID_EMULATOR", "emulator-5554")
 
-    Plan (see README): (1) push the matching LOCAL state onto the emulator (device
-    seeder / a calimob integration_test via `flutter test ... -d <emulator>`),
-    (2) trigger sync, (3) GET the server library-hash + read the client root,
-    assert equality. 'cover_prefixed' is the H4 regression guard — and Phase 1a
-    already proves the server side of it on the real PG engine.
-    """
+
+def _emulator_connected() -> bool:
+    if not shutil.which("adb"):
+        return False
+    out = subprocess.run(["adb", "devices"], capture_output=True, text=True).stdout
+    return any(line.startswith(EMULATOR) and "device" in line
+               for line in out.splitlines())
+
+
+@pytest.mark.skipif(
+    not _emulator_connected() or not os.path.isdir(CALIMOB_DIR),
+    reason=f"emulator {EMULATOR} not connected or CALIMOB_DIR missing.",
+)
+def test_phase1b_emulator_single_device_convergence():
+    """REAL device: mint a Sanctum token, point calimob (emulator → the local
+    server) at the seeded library with a DIVERGENT local state, run a sync, and
+    assert the device ADOPTS the server cover and converges. Drives the calimob
+    integration test integration_test/sync_matrix_convergence_test.dart.
+
+    The 'cover_prefixed' scenario is the H4 regression guard end-to-end on a real
+    device against the real PG server. Headless auth (bearer token) — no browser."""
+    env = {**os.environ, "DB_HOST": "127.0.0.1", "DB_PORT": "5433",
+           "DB_DATABASE": "caliweb_test", "DB_USERNAME": "testuser",
+           "DB_PASSWORD": "testpass", "DB_CONNECTION": "pgsql"}
+    token = subprocess.run(
+        ["php", "artisan", "sync:test-token", "sync-matrix@test.com", "--env=test-server"],
+        cwd=HTML_DIR, env=env, capture_output=True, text=True, check=True,
+    ).stdout.strip().splitlines()[-1]
+    assert token and "|" in token, "failed to mint a Sanctum token"
+
+    r = subprocess.run(
+        ["flutter", "test",
+         "integration_test/sync_matrix_convergence_test.dart",
+         "-d", EMULATOR,
+         "--dart-define=TEST_SERVER_URL=http://10.0.2.2:8081/api",
+         f"--dart-define=TEST_TOKEN={token}"],
+        cwd=CALIMOB_DIR, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, (
+        "device convergence test failed:\n"
+        + r.stdout[-3000:] + "\n" + r.stderr[-1500:]
+    )
 
 
 # PHASE 2 (concurrency, 2 emulators) and PHASE 3 (multi-user separation + load)
