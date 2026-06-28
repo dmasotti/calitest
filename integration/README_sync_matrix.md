@@ -88,9 +88,41 @@ the assertion.)
 ## Phases (build order)
 
 - **Phase 0 (done)**: local server + parameterized seeder + PG-verified fix + this doc + `upTests` wiring.
-- **Phase 1**: single-device convergence over `SCENARIOS` (the bugs we fixed).
-- **Phase 2**: concurrency (2 emulators, same library).
+- **Phase 1 (done)**: single-device convergence. `1a` server-side leaf == raw-client (H4 guard, no emulator); `1b` real emulator adopts the server cover (`has_cover 0→1`) and re-sync is idempotent.
+- **Phase 2 (done)**: concurrency, two emulators, same user + library — `2a` + `2b` below.
 - **Phase 3**: multi-user (separation + load), scaled via the same parameterized scenarios.
+
+### Phase 2 — concurrency (how it works)
+
+ONE compiled calimob APK serves every phase; the `SCENARIO` is chosen by
+`--dart-define` (`integration_test/sync_matrix_convergence_test.dart`):
+
+| `SCENARIO` | divergent local state | device-side assertion |
+|---|---|---|
+| `adopt` (1b) | target `has_cover=0`, old lm | adopts server cover → `has_cover=1`, re-sync idempotent |
+| `push` (2a) | target title changed + `app_modified=NEW_LM_MS` (newer) → PUSH | push sync + idempotent re-sync |
+| `conflict` (2b) | same book, both newer, different titles | converges to `EXPECTED_WINNER_TITLE` (loser adopts) |
+
+**Barrier.** Two devices must hit `sync()` together. The conductor measures each
+emulator's clock skew (`adb shell date`) and passes a per-device `GO_AT_MS` (a
+host wall-clock instant + that device's skew). Each test busy-waits to `GO_AT_MS`
+before `sync()`, so both fire within ~1s. Builds are **staggered** (so two
+`flutter test` don't fight over `build/`), but the *sync* is synchronized.
+
+**`test_phase2a_disjoint_concurrent_push`** — A writes book P (`no_cover`), B
+writes book Q (`converged_normal`), concurrently. Asserts: (1) **no lost update**
+— both titles present on the server; (2) **no lost invalidation** — any Merkle
+root left `is_stale=false` after the concurrent pushes must be unchanged by a
+fresh rebuild (else a push's invalidation was dropped → clients would diverge).
+
+**`test_phase2b_same_book_conflict_lww`** — both devices rewrite the SAME book
+with different titles/lm. The higher-lm writer is the winner (`NEW_LM_MS` gap, so
+the outcome is push-order-agnostic). Asserts: server elects the winner
+deterministically, and **both** device processes exit 0 — i.e. each converged to
+the winner (the loser adopted it; no ping-pong).
+
+Two emulators are required (`emulator-5554` + `emulator-5556`, override via
+`ANDROID_EMULATOR_A` / `ANDROID_EMULATOR_B`); the tests skip if either is absent.
 
 ## CI / upTests
 

@@ -26,6 +26,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import time
 
 import pytest
 
@@ -235,5 +236,176 @@ def test_phase1b_emulator_single_device_convergence():
     )
 
 
-# PHASE 2 (concurrency, 2 emulators) and PHASE 3 (multi-user separation + load)
-# follow the same parameterized pattern — see README_sync_matrix.md.
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 2 — CONCURRENCY (two real emulators, SAME user + library)
+#
+# Two devices sync the same CaliWeb library at the SAME instant (a skew-
+# compensated GO_AT barrier makes both sync() calls fire together). Two shapes:
+#   2a disjoint pushes  — A writes book P, B writes book Q → neither push is lost
+#                         and the server's Merkle tree isn't corrupted by the
+#                         concurrent rebuilds (a fresh rebuild changes nothing).
+#   2b same-book conflict — both rewrite book X differently → LWW (§13 effective-
+#                         lm) elects ONE deterministic winner (higher lm) and
+#                         BOTH devices converge to it (loser adopts; no ping-pong).
+#
+# Builds are staggered (different gradle start → no build/ contention) but the
+# SYNC is barrier-synchronized, so server-side concurrency is genuinely exercised.
+# ─────────────────────────────────────────────────────────────────────────────
+
+EMULATOR_A = os.environ.get("ANDROID_EMULATOR_A",
+                            os.environ.get("ANDROID_EMULATOR", "emulator-5554"))
+EMULATOR_B = os.environ.get("ANDROID_EMULATOR_B", "emulator-5556")
+SCRIPTS_DIR = os.path.join(os.path.dirname(HTML_DIR), "scripts")
+
+UUID_NO_COVER = EXPECTED_SCENARIOS["no_cover"]            # 22222222… (no cover)
+UUID_CONVERGED = EXPECTED_SCENARIOS["converged_normal"]   # 11111111… (has cover)
+
+
+def _pg_env() -> dict:
+    return {**os.environ, "DB_HOST": "127.0.0.1", "DB_PORT": "5433",
+            "DB_DATABASE": "caliweb_test", "DB_USERNAME": "testuser",
+            "DB_PASSWORD": "testpass", "DB_CONNECTION": "pgsql"}
+
+
+def _mint_token() -> str:
+    out = subprocess.run(
+        ["php", "artisan", "sync:test-token", "sync-matrix@test.com", "--env=test-server"],
+        cwd=HTML_DIR, env=_pg_env(), capture_output=True, text=True, check=True,
+    ).stdout.strip().splitlines()[-1]
+    assert "|" in out, f"failed to mint a Sanctum token: {out!r}"
+    return out
+
+
+def _reset_and_rebuild():
+    """Fresh seed + Merkle rebuild → each Phase-2 test starts from the clean
+    matrix (isolates 2a's server mutations from 2b)."""
+    subprocess.run([os.path.join(SCRIPTS_DIR, "reset-test-server.sh")],
+                   capture_output=True, text=True, check=True)
+
+
+def _rebuild_merkle():
+    subprocess.run(["php", "artisan", "sync:rebuild-merkle", LIBRARY_UUID, "--env=test-server"],
+                   cwd=HTML_DIR, env=_pg_env(), check=True, capture_output=True, text=True)
+
+
+def _host_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _device_epoch_ms(serial: str) -> int:
+    """Wall-clock of an emulator in epoch ms (second granularity is fine — the
+    sync overlaps for seconds, so ~1s of barrier skew is immaterial)."""
+    out = subprocess.run(["adb", "-s", serial, "shell", "date", "+%s"],
+                         capture_output=True, text=True, check=True).stdout.strip()
+    return int(out) * 1000
+
+
+def _flutter_async(serial: str, defines: dict) -> subprocess.Popen:
+    args = ["flutter", "test", "integration_test/sync_matrix_convergence_test.dart",
+            "-d", serial]
+    for k, v in defines.items():
+        args.append(f"--dart-define={k}={v}")
+    return subprocess.Popen(args, cwd=CALIMOB_DIR, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True)
+
+
+def _run_concurrent(token, a_defines, b_defines, window_ms=160_000, stagger_s=45):
+    """Launch both device tests so their sync() calls fire at the same host
+    wall-clock instant. GO_AT_MS is per-device (host target + that device's clock
+    skew). The stagger only offsets the BUILD (avoids gradle build/ contention);
+    the barrier keeps the SYNC concurrent. Returns (rc, stdout, stderr) per dev."""
+    go_at_host = _host_ms() + window_ms
+    skew_a = _device_epoch_ms(EMULATOR_A) - _host_ms()
+    skew_b = _device_epoch_ms(EMULATOR_B) - _host_ms()
+    common = {"TEST_SERVER_URL": "http://10.0.2.2:8081/api", "TEST_TOKEN": token}
+    a = {**common, **a_defines, "DEVICE_LABEL": "A", "GO_AT_MS": go_at_host + skew_a}
+    b = {**common, **b_defines, "DEVICE_LABEL": "B", "GO_AT_MS": go_at_host + skew_b}
+    pa = _flutter_async(EMULATOR_A, a)
+    time.sleep(stagger_s)             # let A clear gradle before B starts building
+    pb = _flutter_async(EMULATOR_B, b)
+    out_a, err_a = pa.communicate(timeout=600)
+    out_b, err_b = pb.communicate(timeout=600)
+    return (pa.returncode, out_a, err_a), (pb.returncode, out_b, err_b)
+
+
+def _both_emulators() -> bool:
+    if not shutil.which("adb"):
+        return False
+    out = subprocess.run(["adb", "devices"], capture_output=True, text=True).stdout
+    connected = {ln.split("\t")[0] for ln in out.splitlines() if "\tdevice" in ln}
+    return EMULATOR_A in connected and EMULATOR_B in connected
+
+
+phase2_skip = pytest.mark.skipif(
+    not _both_emulators() or not os.path.isdir(CALIMOB_DIR),
+    reason=f"Phase 2 needs two emulators ({EMULATOR_A} + {EMULATOR_B}) and CALIMOB_DIR.",
+)
+
+
+@phase2_skip
+def test_phase2a_disjoint_concurrent_push():
+    """Two devices push DISJOINT books concurrently. Proves NO LOST UPDATE (each
+    push lands) and the server Merkle tree is not corrupted by the concurrent
+    rebuilds (the live tree already equals a fresh rebuild)."""
+    _reset_and_rebuild()
+    token = _mint_token()
+    a_title, b_title, lm = "A-PUSH-NoCover", "B-PUSH-Converged", _host_ms()
+    ra, rb = _run_concurrent(
+        token,
+        {"SCENARIO": "push", "TARGET_UUID": UUID_NO_COVER, "TARGET_HAS_COVER": 0,
+         "NEW_TITLE": a_title, "NEW_LM_MS": lm},
+        {"SCENARIO": "push", "TARGET_UUID": UUID_CONVERGED, "TARGET_HAS_COVER": 1,
+         "NEW_TITLE": b_title, "NEW_LM_MS": lm},
+    )
+    assert ra[0] == 0, f"device A push failed:\n{ra[1][-3000:]}\n{ra[2][-1200:]}"
+    assert rb[0] == 0, f"device B push failed:\n{rb[1][-3000:]}\n{rb[2][-1200:]}"
+    # No lost update: BOTH concurrent pushes are present on the server.
+    assert _psql(f"SELECT title FROM books WHERE uuid='{UUID_NO_COVER}'") == a_title
+    assert _psql(f"SELECT title FROM books WHERE uuid='{UUID_CONVERGED}'") == b_title
+    # No LOST INVALIDATION: the server flags rebuild at the ROOT level (the level
+    # the client consults — stale leaves are never served as truth). A concurrency
+    # bug would leave a root advertised FRESH (is_stale=false) while its data
+    # changed → a client would skip the rebuild and diverge. So: any root that is
+    # NOT stale after the concurrent pushes must be unchanged by a fresh rebuild.
+    roots_before = _psql(
+        "SELECT dimension || '|' || root_hash || '|' || is_stale "
+        "FROM sync_merkle_roots ORDER BY dimension")
+    _rebuild_merkle()
+    roots_after = {}
+    for ln in _psql("SELECT dimension || '|' || root_hash "
+                    "FROM sync_merkle_roots ORDER BY dimension").splitlines():
+        dim, h = ln.split("|")
+        roots_after[dim] = h
+    for ln in roots_before.splitlines():
+        dim, h, stale = ln.split("|")
+        if stale not in ("t", "true", "1"):  # advertised fresh
+            assert roots_after.get(dim) == h, (
+                f"dimension '{dim}' root was advertised fresh (is_stale=false) but a "
+                f"rebuild changed it → a concurrent push's invalidation was lost")
+
+
+@phase2_skip
+def test_phase2b_same_book_conflict_lww():
+    """Two devices rewrite the SAME book differently, concurrently. LWW (§13
+    effective-lm) must elect ONE deterministic winner (higher lm) and BOTH
+    devices must converge to it — the loser adopts, no ping-pong."""
+    _reset_and_rebuild()
+    token = _mint_token()
+    winner, loser, base = "LWW-WINNER-A", "LWW-LOSER-B", _host_ms()
+    ra, rb = _run_concurrent(
+        token,
+        {"SCENARIO": "conflict", "TARGET_UUID": UUID_NO_COVER, "TARGET_HAS_COVER": 0,
+         "NEW_TITLE": winner, "NEW_LM_MS": base + 10_000, "EXPECTED_WINNER_TITLE": winner},
+        {"SCENARIO": "conflict", "TARGET_UUID": UUID_NO_COVER, "TARGET_HAS_COVER": 0,
+         "NEW_TITLE": loser, "NEW_LM_MS": base, "EXPECTED_WINNER_TITLE": winner},
+    )
+    # Each device asserts in-test it converged to the winner; exit 0 == no
+    # ping-pong on EITHER device (the loser adopted the winner's value).
+    assert ra[0] == 0, f"winner device A failed:\n{ra[1][-3000:]}\n{ra[2][-1200:]}"
+    assert rb[0] == 0, f"loser device B failed:\n{rb[1][-3000:]}\n{rb[2][-1200:]}"
+    # Server elected the higher-lm writer deterministically (push order agnostic).
+    assert _psql(f"SELECT title FROM books WHERE uuid='{UUID_NO_COVER}'") == winner
+
+
+# PHASE 3 (multi-user separation + load) follows the same parameterized pattern
+# — see README_sync_matrix.md.
