@@ -90,7 +90,23 @@ the assertion.)
 - **Phase 0 (done)**: local server + parameterized seeder + PG-verified fix + this doc + `upTests` wiring.
 - **Phase 1 (done)**: single-device convergence. `1a` server-side leaf == raw-client (H4 guard, no emulator); `1b` real emulator adopts the server cover (`has_cover 0→1`) and re-sync is idempotent.
 - **Phase 2 (done)**: concurrency, two emulators, same user + library — `2a` + `2b` below.
-- **Phase 3**: multi-user (separation + load), scaled via the same parameterized scenarios.
+- **Phase 3 (done)**: multi-user — `3a` logical separation + `3b` concurrent load — HTTP-driven (no emulator).
+
+### Phase 3 — multi-user (how it works)
+
+`SyncMatrixSeeder` also plants a SECOND user B (`sync-matrix-b@test.com`, own
+library `USER_B_LIBRARY_UUID`, distinct book uuids). Both tests are pure API
+(stdlib `urllib`, no emulator):
+
+**`test_phase3a_multiuser_logical_separation`** — each user sees only their own
+library's `total_books`; user B querying A's library (Merkle root) sees 0 books,
+and a sync B runs against A's `library_uuid` returns NONE of A's books in
+`updates_for_client` (the strongest cross-user read-leak check). Symmetric for A↔B.
+
+**`test_phase3b_concurrent_load_no_500s_no_corruption`** — fires N=30 concurrent
+sync requests (ThreadPool, mixed A/B) → asserts every response is 200 (no 500s),
+then no corruption: each user's seeded book count is intact and the Merkle tree
+still rebuilds for both libraries.
 
 ### Phase 2 — concurrency (how it works)
 

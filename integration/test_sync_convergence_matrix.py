@@ -267,12 +267,12 @@ def _pg_env() -> dict:
             "DB_PASSWORD": "testpass", "DB_CONNECTION": "pgsql"}
 
 
-def _mint_token() -> str:
+def _mint_token(email: str = "sync-matrix@test.com") -> str:
     out = subprocess.run(
-        ["php", "artisan", "sync:test-token", "sync-matrix@test.com", "--env=test-server"],
+        ["php", "artisan", "sync:test-token", email, "--env=test-server"],
         cwd=HTML_DIR, env=_pg_env(), capture_output=True, text=True, check=True,
     ).stdout.strip().splitlines()[-1]
-    assert "|" in out, f"failed to mint a Sanctum token: {out!r}"
+    assert "|" in out, f"failed to mint a Sanctum token for {email}: {out!r}"
     return out
 
 
@@ -283,8 +283,8 @@ def _reset_and_rebuild():
                    capture_output=True, text=True, check=True)
 
 
-def _rebuild_merkle():
-    subprocess.run(["php", "artisan", "sync:rebuild-merkle", LIBRARY_UUID, "--env=test-server"],
+def _rebuild_merkle(library_uuid: str = LIBRARY_UUID):
+    subprocess.run(["php", "artisan", "sync:rebuild-merkle", library_uuid, "--env=test-server"],
                    cwd=HTML_DIR, env=_pg_env(), check=True, capture_output=True, text=True)
 
 
@@ -407,5 +407,120 @@ def test_phase2b_same_book_conflict_lww():
     assert _psql(f"SELECT title FROM books WHERE uuid='{UUID_NO_COVER}'") == winner
 
 
-# PHASE 3 (multi-user separation + load) follows the same parameterized pattern
-# — see README_sync_matrix.md.
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 3 — MULTI-USER (logical separation + concurrent load), HTTP-driven
+#
+# No emulator: pure API. SyncMatrixSeeder also plants a SECOND user B (own
+# library USER_B_LIBRARY_UUID, distinct book uuids).
+#   3a separation — user B's token must NOT read user A's library (0 books, no
+#                   leak in a sync's updates_for_client) and vice versa.
+#   3b load        — N concurrent sync requests across both users → no 500s and
+#                   no corruption (per-user counts intact, Merkle still rebuilds).
+# ─────────────────────────────────────────────────────────────────────────────
+
+import json
+import urllib.error
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+
+SERVER_BASE = "http://127.0.0.1:8081/api"      # host → app container
+USER_B_EMAIL = "sync-matrix-b@test.com"
+USER_B_LIBRARY_UUID = "b2b2b2b2-0000-4000-8000-0000000000b2"
+A_UUIDS = set(EXPECTED_SCENARIOS.values())
+
+
+def _api(path: str, token: str, body=None):
+    """Authenticated JSON call. Returns (status, parsed_body). HTTP 4xx/5xx are
+    returned (not raised) so callers can assert on the code (e.g. load test)."""
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(SERVER_BASE + path, data=data, headers=headers,
+                                 method="POST" if body is not None else "GET")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status, json.loads(r.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        try:
+            payload = json.loads(e.read().decode() or "{}")
+        except Exception:
+            payload = {}
+        return e.code, payload
+
+
+def _empty_sync_body(library_uuid: str) -> dict:
+    return {"library_id": library_uuid, "calibre_library_uuid": library_uuid,
+            "cursor": None, "batch_size": 100, "client_books": {"b": {}, "d": []}}
+
+
+def _book_count(library_uuid: str) -> str:
+    return _psql("SELECT count(*) FROM books b JOIN libraries l ON b.library_id = l.id "
+                 f"WHERE l.calibre_library_id = '{library_uuid}'")
+
+
+phase3_skip = pytest.mark.skipif(
+    not _server_up(), reason="Phase 3 needs the dockerized test server up.")
+
+
+@phase3_skip
+def test_phase3a_multiuser_logical_separation():
+    """User B must not see user A's library and vice versa — logical isolation
+    across the sync API (Merkle root + a sync's updates_for_client)."""
+    _reset_and_rebuild()                       # seeds A (4 books) + B (2 books)
+    _rebuild_merkle(USER_B_LIBRARY_UUID)       # build B's tree too
+    token_a = _mint_token()
+    token_b = _mint_token(USER_B_EMAIL)
+
+    # Each user sees ONLY their own library's book count.
+    _, root_a = _api(f"/sync/v5/merkle-root?calibre_library_uuid={LIBRARY_UUID}", token_a)
+    assert root_a.get("total_books") == 4, f"user A should see 4 books, got {root_a}"
+    _, root_b = _api(f"/sync/v5/merkle-root?calibre_library_uuid={USER_B_LIBRARY_UUID}", token_b)
+    assert root_b.get("total_books") == 2, f"user B should see 2 books, got {root_b}"
+
+    # B querying A's library must see NONE of A's books.
+    _, b_on_a = _api(f"/sync/v5/merkle-root?calibre_library_uuid={LIBRARY_UUID}", token_b)
+    assert (b_on_a.get("total_books") or 0) == 0, \
+        f"LEAK: user B sees user A's library ({b_on_a})"
+    _, a_on_b = _api(f"/sync/v5/merkle-root?calibre_library_uuid={USER_B_LIBRARY_UUID}", token_a)
+    assert (a_on_b.get("total_books") or 0) == 0, \
+        f"LEAK: user A sees user B's library ({a_on_b})"
+
+    # Strongest check: B runs a sync against A's library_uuid — A's books must NOT
+    # appear in updates_for_client (a cross-user read leak would surface here).
+    _, resp = _api("/sync/v5", token_b, _empty_sync_body(LIBRARY_UUID))
+    leaked = {u.get("uuid") for u in resp.get("updates_for_client", [])} & A_UUIDS
+    assert not leaked, f"LEAK: user B's sync of A's library returned A's books {leaked}"
+
+
+@phase3_skip
+def test_phase3b_concurrent_load_no_500s_no_corruption():
+    """N concurrent syncs across both users hold up: no 500s, per-user book
+    counts unchanged, and the Merkle tree still rebuilds (no torn state)."""
+    _reset_and_rebuild()
+    _rebuild_merkle(USER_B_LIBRARY_UUID)
+    token_a = _mint_token()
+    token_b = _mint_token(USER_B_EMAIL)
+
+    N = 30
+
+    def _one(i: int) -> int:
+        is_a = (i % 2 == 0)
+        tok = token_a if is_a else token_b
+        lib = LIBRARY_UUID if is_a else USER_B_LIBRARY_UUID
+        status, _ = _api("/sync/v5", tok, _empty_sync_body(lib))
+        return status
+
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        codes = list(ex.map(_one, range(N)))
+
+    bad = [c for c in codes if c != 200]
+    assert not bad, f"{len(bad)}/{N} concurrent syncs were non-200: {sorted(set(bad))}"
+
+    # No corruption: each user's library still has exactly its seeded books.
+    assert _book_count(LIBRARY_UUID) == "4", "user A book count changed under load"
+    assert _book_count(USER_B_LIBRARY_UUID) == "2", "user B book count changed under load"
+    # And the tree is not torn — a rebuild must succeed for both libraries.
+    _rebuild_merkle(LIBRARY_UUID)
+    _rebuild_merkle(USER_B_LIBRARY_UUID)
