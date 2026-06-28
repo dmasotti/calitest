@@ -558,3 +558,59 @@ def test_phase3b_concurrent_load_no_500s_no_corruption():
     # And the tree is not torn — a rebuild must succeed for both libraries.
     _rebuild_merkle(LIBRARY_UUID)
     _rebuild_merkle(USER_B_LIBRARY_UUID)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 4 — DELETION DATA-SAFETY (end-to-end, the live dockerized PG server)
+#
+# Complements the phpunit Level-A tests (which run inside a wrapping
+# transaction): here we drive the REAL running server over HTTP (autocommit) to
+# prove, on the prod engine, that a VOLUNTARY delete tombstones while a PARTIAL
+# inventory (a client that simply doesn't list every book — a restored/partial
+# library) never deletes the omitted books. The plugin's own absence→delete
+# guard is covered by the Level-B unit tests (test_mass_deletion_guard.py).
+# ─────────────────────────────────────────────────────────────────────────────
+
+UUID_PREFIXED = EXPECTED_SCENARIOS["cover_prefixed"]   # 1bed2112…
+
+
+def _sync_body(library_uuid, books=None, deleted=None):
+    return {"library_id": library_uuid, "calibre_library_uuid": library_uuid,
+            "cursor": None, "batch_size": 100,
+            "client_books": {"b": books or {}, "d": deleted or []}}
+
+
+def _alive_count(library_uuid):
+    return _psql("SELECT count(*) FROM books b JOIN libraries l ON b.library_id = l.id "
+                 f"WHERE l.calibre_library_id = '{library_uuid}' AND b.deleted_at IS NULL")
+
+
+def _is_tombstoned(uuid):
+    return _psql(f"SELECT (deleted_at IS NOT NULL)::int FROM books WHERE uuid = '{uuid}'") == "1"
+
+
+@phase3_skip
+def test_phase4a_voluntary_delete_tombstones_partial_inventory_is_safe():
+    """On the live PG server: an EXPLICIT delete (the 'd' list) soft-deletes the
+    book, but a client that simply OMITS books from its inventory (a partial /
+    restored library) never deletes the omitted ones — absence is not deletion."""
+    _reset_and_rebuild()
+    token = _mint_token()
+
+    # 1) Voluntary delete of one book → server tombstones it + confirms.
+    status, resp = _api("/sync/v5", token, _sync_body(LIBRARY_UUID, deleted=[UUID_NO_COVER]))
+    assert status == 200, f"delete sync failed: {status} {resp}"
+    assert UUID_NO_COVER in (resp.get("deleted_confirmed") or []), \
+        "an explicit delete must be confirmed by the server"
+    assert _is_tombstoned(UUID_NO_COVER), "an explicit delete must soft-delete the server book"
+
+    # 2) Partial inventory: report only ONE of the 3 remaining books, NO 'd' list.
+    #    The two unmentioned (still-alive) books must NOT be tombstoned.
+    alive_before = _alive_count(LIBRARY_UUID)            # 3 after the delete
+    status, _ = _api("/sync/v5", token,
+                     _sync_body(LIBRARY_UUID, books={UUID_CONVERGED: {"m": "check"}}))
+    assert status == 200
+    assert _alive_count(LIBRARY_UUID) == alive_before, \
+        "a partial inventory must not delete the omitted books (absence != delete)"
+    assert not _is_tombstoned(UUID_PREFIXED), \
+        "a book merely absent from the client inventory must not be tombstoned"

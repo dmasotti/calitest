@@ -91,6 +91,7 @@ the assertion.)
 - **Phase 1 (done)**: single-device convergence. `1a` server-side leaf == raw-client (H4 guard, no emulator); `1b` real emulator adopts the server cover (`has_cover 0→1`) and re-sync is idempotent.
 - **Phase 2 (done)**: concurrency, two emulators, same user + library — `2a` + `2b` below.
 - **Phase 3 (done)**: multi-user — `3a` logical separation + `3b` concurrent load — HTTP-driven (no emulator).
+- **Phase 4 (done)**: deletion data-safety e2e — `4a` an explicit delete (`d` list) tombstones on the live PG server, but a partial/restored inventory (a client that omits books) never deletes the omitted ones (absence ≠ delete). Complements the phpunit Level-A `DeletionSubscriptionSafetyTest` (downgrade/over-quota never delete) and the plugin Level-B `test_mass_deletion_guard` (absence→delete guard: suppress headless / confirm manual).
 
 ### Phase 3 — multi-user (how it works)
 
