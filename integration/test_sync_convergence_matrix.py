@@ -669,3 +669,55 @@ def test_phase5a_metadata_only_client_keeps_other_clients_covers_and_files():
         "a metadata-only client must NOT drop the plugin's uploaded file"
     assert _cover_hash() == cover_before, \
         "a metadata-only client must NOT drop the server cover"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 6 — REAL DEVICE multi-client asset safety (emulator ↔ live PG)
+#
+# The strongest data-safety check: the server holds a file "uploaded by the
+# plugin" for the book the app adopts; the REAL calimob app (which has only
+# metadata + no local epub) runs its actual sync against the live PG server. The
+# plugin's file must SURVIVE — the app's real sync payload is not a deletion of
+# the other client's asset. (Phase 5a proves this with a simulated HTTP body;
+# this proves it with the app's real code path on a real device.)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.skipif(
+    not _emulator_connected() or not os.path.isdir(CALIMOB_DIR),
+    reason=f"emulator {EMULATOR} not connected or CALIMOB_DIR missing.",
+)
+def test_phase6_real_device_sync_keeps_plugin_uploaded_file():
+    _reset_and_rebuild()
+    bk = UUID_PREFIXED  # the 'adopt' scenario book (1bed2112…)
+    _psql(
+        "INSERT INTO books_files (user_id, library_id, book, format, "
+        "uncompressed_size, name, file_hash, is_uploaded, uuid, created_at, updated_at) "
+        "SELECT user_id, library_id, uuid, 'EPUB', 1024, 'plugin.epub', "
+        "'sha256:" + ('cd' * 32) + "', 1, 'ffffffff-0000-4000-8000-0000000000f6', "
+        f"now(), now() FROM books WHERE uuid = '{bk}'")
+
+    def _files():
+        return _psql(f"SELECT count(*) FROM books_files WHERE book = '{bk}' "
+                     "AND is_uploaded = 1 AND deleted_at IS NULL")
+    assert _files() == "1", "precondition: the plugin's file is present"
+
+    env = {**os.environ, "DB_HOST": "127.0.0.1", "DB_PORT": "5433",
+           "DB_DATABASE": "caliweb_test", "DB_USERNAME": "testuser",
+           "DB_PASSWORD": "testpass", "DB_CONNECTION": "pgsql"}
+    token = subprocess.run(
+        ["php", "artisan", "sync:test-token", "sync-matrix@test.com", "--env=test-server"],
+        cwd=HTML_DIR, env=env, capture_output=True, text=True, check=True,
+    ).stdout.strip().splitlines()[-1]
+
+    r = subprocess.run(
+        ["flutter", "test", "integration_test/sync_matrix_convergence_test.dart",
+         "-d", EMULATOR,
+         "--dart-define=TEST_SERVER_URL=http://10.0.2.2:8081/api",
+         f"--dart-define=TEST_TOKEN={token}"],  # default SCENARIO=adopt
+        cwd=CALIMOB_DIR, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, ("device sync failed:\n"
+                               + r.stdout[-3000:] + "\n" + r.stderr[-1200:])
+    # The plugin's uploaded file must still be there after the app's real sync.
+    assert _files() == "1", \
+        "the real app's sync must NOT drop the plugin's uploaded file"
