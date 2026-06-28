@@ -8,7 +8,6 @@ use App\Models\UserBook;
 use App\Services\Sync\MetadataHasher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -51,7 +50,7 @@ class SyncV5CrossEnginePerformanceTest extends TestCase
             DB::table('books')->insert($chunk);
         }
         // Populate metadata_hash on-write column from VIEW (simulates applyBookMetadata)
-        if (Schema::hasTable('books_hash_v2')) {
+        try {
             $viewHashes = DB::table('books_hash_v2')
                 ->where('user_id', $library->user_id)
                 ->where('library_id', $library->id)
@@ -62,17 +61,21 @@ class SyncV5CrossEnginePerformanceTest extends TestCase
                     ->where('user_id', $library->user_id)
                     ->update(['metadata_hash_cache' => strtolower((string) $hash)]);
             }
+        } catch (\Throwable $e) {
+            // VIEW does not exist — skip cache population.
         }
         return $uuids;
     }
 
     private function serverHash(int $userId, int $libraryId, string $uuid): string
     {
-        if (Schema::hasTable('books_hash_v2')) {
-            $h = DB::table('books_hash_v2')
+        try {
+            $h = (string) DB::table('books_hash_v2')
                 ->where('user_id', $userId)->where('library_id', $libraryId)
                 ->where('uuid', $uuid)->value('metadata_hash');
-            if ($h) return strtolower((string) $h);
+            if ($h !== '') return strtolower($h);
+        } catch (\Throwable $e) {
+            // VIEW does not exist — fall through to PHP computation.
         }
         $book = UserBook::where('uuid', $uuid)->firstOrFail();
         return (string) MetadataHasher::computeHash([
@@ -131,7 +134,7 @@ class SyncV5CrossEnginePerformanceTest extends TestCase
         $hashStart = microtime(true);
         $hashes = [];
         foreach (array_chunk($uuids, 200) as $chunk) {
-            if (Schema::hasTable('books_hash_v2')) {
+            try {
                 $rows = DB::table('books_hash_v2')
                     ->where('user_id', $user->id)
                     ->where('library_id', $library->id)
@@ -140,6 +143,8 @@ class SyncV5CrossEnginePerformanceTest extends TestCase
                 foreach ($rows as $uuid => $h) {
                     $hashes[(string) $uuid] = strtolower((string) $h);
                 }
+            } catch (\Throwable $e) {
+                // VIEW does not exist — skip.
             }
         }
         // Fallback for missing

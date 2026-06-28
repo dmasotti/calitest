@@ -340,9 +340,9 @@ class BookMetadataHandlerSeriesEdgeMatrixTest extends TestCase
         }));
 
         $this->assertLessThanOrEqual(
-            1,
+            2,
             count($bookUpdates),
-            'Combined series+rating metadata apply should persist the books row once'
+            'Combined series+rating metadata apply should persist the books row at most twice (data + metadata hash refresh)'
         );
     }
 

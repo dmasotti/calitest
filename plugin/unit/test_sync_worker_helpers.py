@@ -4295,3 +4295,65 @@ def test_v5_build_client_books_chunk_no_spurious_format_error_when_cache_valid()
         "No spurious format error should be logged when files_hash is cached "
         "and _build_files_array_for_book was skipped. Got: %s" % file_hash_errors
     )
+
+
+def test_collect_candidates_filters_null_uuid(monkeypatch, tmp_path):
+    """Regression: books with NULL/empty UUID must be filtered out.
+    Otherwise sorted(merkle_candidate_uuids) crashes with
+    '<' not supported between instances of 'NoneType' and 'str'.
+    CalibreComics had book #36 with empty UUID.
+    """
+    import sqlite3 as _sqlite3
+    from calibre_plugins.sync_calimob import mapping_table as mt
+
+    db_dir = tmp_path / 'library'
+    db_dir.mkdir()
+    db_path = str(db_dir / 'metadata.db')
+    conn = _sqlite3.connect(db_path)
+    conn.execute('CREATE TABLE books (id INTEGER PRIMARY KEY, uuid TEXT, title TEXT, '
+                 'author_sort TEXT, series_index REAL, pubdate TEXT, last_modified TEXT, '
+                 'timestamp TEXT, sort TEXT)')
+    conn.execute('CREATE TABLE authors (id INTEGER PRIMARY KEY, name TEXT, sort TEXT, link TEXT)')
+    conn.execute('CREATE TABLE books_authors_link (id INTEGER PRIMARY KEY, book INTEGER, author INTEGER)')
+    conn.execute('CREATE TABLE comments (id INTEGER PRIMARY KEY, book INTEGER, text TEXT)')
+    conn.execute('CREATE TABLE identifiers (id INTEGER PRIMARY KEY, book INTEGER, type TEXT, val TEXT)')
+    conn.execute('CREATE TABLE languages (id INTEGER PRIMARY KEY, lang_code TEXT)')
+    conn.execute('CREATE TABLE books_languages_link (id INTEGER PRIMARY KEY, book INTEGER, lang_code INTEGER)')
+    conn.execute('CREATE TABLE publishers (id INTEGER PRIMARY KEY, name TEXT)')
+    conn.execute('CREATE TABLE books_publishers_link (id INTEGER PRIMARY KEY, book INTEGER, publisher INTEGER)')
+    conn.execute('CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT)')
+    conn.execute('CREATE TABLE books_tags_link (id INTEGER PRIMARY KEY, book INTEGER, tag INTEGER)')
+    conn.execute('CREATE TABLE series (id INTEGER PRIMARY KEY, name TEXT)')
+    conn.execute('CREATE TABLE books_series_link (id INTEGER PRIMARY KEY, book INTEGER, series INTEGER)')
+    conn.execute('CREATE TABLE data (id INTEGER PRIMARY KEY, book INTEGER, format TEXT, '
+                 'uncompressed_size INTEGER, name TEXT)')
+    conn.execute('CREATE TABLE ratings (id INTEGER PRIMARY KEY, rating INTEGER)')
+    conn.execute('CREATE TABLE books_ratings_link (id INTEGER PRIMARY KEY, book INTEGER, rating INTEGER)')
+    conn.execute('CREATE TABLE custom_columns (id INTEGER PRIMARY KEY, label TEXT, name TEXT, '
+                 'datatype TEXT, display TEXT, is_multiple INTEGER, normalized INTEGER)')
+    conn.execute("INSERT INTO books VALUES (1, 'aaa-bbb', 'Good Book', 'Author', 1.0, "
+                 "'2020-01-01', '2020-01-01 00:00:00+00:00', '2020-01-01', 'good book')")
+    conn.execute("INSERT INTO books VALUES (2, NULL, 'Broken Book', 'Author', 1.0, "
+                 "'2020-01-01', '2020-01-01 00:00:00+00:00', '2020-01-01', 'broken book')")
+    conn.execute("INSERT INTO books VALUES (3, '', 'Empty UUID Book', 'Author', 1.0, "
+                 "'2020-01-01', '2020-01-01 00:00:00+00:00', '2020-01-01', 'empty uuid book')")
+    conn.commit()
+    conn.close()
+
+    mt.ensure_table(str(db_dir))
+
+    worker = _make_worker()
+    worker.library_id = 'test-lib'
+
+    _orig_connect = mt._connect
+    monkeypatch.setattr(mt, '_connect', lambda path: _orig_connect(path))
+
+    deleted, uuid_to_id, books = worker._v5_collect_client_books_candidates(
+        sync_library_path=str(db_dir),
+    )
+
+    uuids = [b['uuid'] for b in books]
+    assert None not in uuids, "NULL UUID should be filtered out"
+    assert '' not in uuids, "empty UUID should be filtered out"
+    assert 'aaa-bbb' in uuids
+    assert len(books) == 1

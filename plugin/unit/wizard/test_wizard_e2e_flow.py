@@ -147,3 +147,57 @@ class TestWizardFlowComplete:
         from calibre_plugins.sync_calimob.wizard.pages.complete_page import CompletePage
         page = CompletePage(Mock(), Mock())
         assert page.nextId() == -1  # Last page
+
+
+class TestLoginPageBackNavigation:
+    """Regression: authenticated user pressing Back from Library → Login
+    must see Next button to go forward again (not stuck)."""
+
+    def test_login_recognizes_existing_token_on_initialize(self):
+        """initializePage() detects valid token and sets _login_success."""
+        from calibre_plugins.sync_calimob.wizard.pages.login_page import LoginPage
+        gui = Mock()
+        action = Mock()
+        page = LoginPage(gui, action)
+        assert page._login_success is False
+
+        fake = _fake_prefs(
+            endpoint='https://example.com',
+            device_token='valid-tok-123',
+            device_token_status='authorized',
+        )
+        mock_wizard = Mock()
+        with patch.object(page, 'wizard', return_value=mock_wizard):
+            with patch.object(cfg, 'plugin_prefs', fake):
+                page.initializePage()
+
+        assert page._login_success is True
+        assert page.nextId() == 2  # PageLibrary
+
+    def test_login_stays_blocked_without_token(self):
+        """initializePage() with no token keeps _login_success False."""
+        from calibre_plugins.sync_calimob.wizard.pages.login_page import LoginPage
+        page = LoginPage(Mock(), Mock())
+
+        fake = _fake_prefs(endpoint='', device_token='', device_token_status='unknown')
+        with patch.object(cfg, 'plugin_prefs', fake):
+            page.initializePage()
+
+        assert page._login_success is False
+        assert page.nextId() == -1
+
+    def test_login_stays_blocked_with_invalid_token(self):
+        """initializePage() with invalid status keeps _login_success False."""
+        from calibre_plugins.sync_calimob.wizard.pages.login_page import LoginPage
+        page = LoginPage(Mock(), Mock())
+
+        fake = _fake_prefs(
+            endpoint='https://example.com',
+            device_token='old-tok',
+            device_token_status='invalid',
+        )
+        with patch.object(cfg, 'plugin_prefs', fake):
+            page.initializePage()
+
+        assert page._login_success is False
+        assert page.nextId() == -1

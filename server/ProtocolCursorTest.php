@@ -34,7 +34,7 @@ class ProtocolCursorTest extends TestCase
             'calibre_library_uuid' => $calibreUuid,
             'changes' => [
                 [
-                    'op' => 'create',
+                    'op' => 'upsert',
                     'item' => [
                         'id' => 301,
                         'uuid' => $uuid,

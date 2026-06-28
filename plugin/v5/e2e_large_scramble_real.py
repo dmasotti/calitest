@@ -182,8 +182,16 @@ def main():
     bootstrap_lib_id = os.getenv('CALIMOB_TEST_CALIMOB_LIB_ID', '')
     token_user_id = None
     if bootstrap_lib_id:
+        # bootstrap_lib_id can be numeric DB id or calibre_library_id UUID
+        # (REST API returns UUID as 'id', SQL has numeric id).
+        # Try numeric first, then UUID.
+        try:
+            int(bootstrap_lib_id)
+            where_clause = f"id = {bootstrap_lib_id}"
+        except ValueError:
+            where_clause = f"calibre_library_id = '{bootstrap_lib_id}'"
         token_user_rows = sql_api(
-            f"SELECT user_id FROM libraries WHERE id = {int(bootstrap_lib_id)} LIMIT 1"
+            f"SELECT user_id FROM libraries WHERE {where_clause} LIMIT 1"
         ).get('rows', [])
         if token_user_rows:
             token_user_id = int(token_user_rows[0]['user_id'])

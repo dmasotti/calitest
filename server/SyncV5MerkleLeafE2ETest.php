@@ -10,7 +10,6 @@ use App\Services\Sync\MetadataHasher;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -70,11 +69,14 @@ class SyncV5MerkleLeafE2ETest extends TestCase
 
     private function serverHash(int $userId, int $libraryId, string $uuid): string
     {
-        if (Schema::hasTable('books_hash_v2')) {
-            $h = DB::table('books_hash_v2')
+        // books_hash_v2 is a VIEW — Schema::hasTable returns false for views.
+        try {
+            $h = (string) DB::table('books_hash_v2')
                 ->where('user_id', $userId)->where('library_id', $libraryId)
                 ->where('uuid', $uuid)->value('metadata_hash');
-            if ($h) return strtolower((string) $h);
+            if ($h !== '') return strtolower($h);
+        } catch (\Throwable $e) {
+            // VIEW does not exist — fall through to PHP computation.
         }
         $book = UserBook::where('uuid', $uuid)->firstOrFail();
         return (string) MetadataHasher::computeHash([

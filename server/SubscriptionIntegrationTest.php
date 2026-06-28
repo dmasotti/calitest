@@ -52,7 +52,7 @@ class SubscriptionIntegrationTest extends TestCase
             'calibre_library_uuid' => (string) Str::uuid(),
         ]);
         $libraryResponse->assertStatus(201);
-        $libraryId = $libraryResponse->json('id');
+        $calibreUuid = $libraryResponse->json('calibre_library_uuid') ?? $libraryResponse->json('id');
 
         // 2. Try to create second library (should fail)
         $secondLibraryResponse = $this->postJson('/api/libraries', [
@@ -62,7 +62,9 @@ class SubscriptionIntegrationTest extends TestCase
         $secondLibraryResponse->assertStatus(403);
 
         // 3. Create books up to limit
-        $library = Library::find($libraryId);
+        $library = Library::where('user_id', $user->id)
+            ->where('calibre_library_id', $calibreUuid)
+            ->firstOrFail();
         UserBook::factory()->count(50)->create([
             'user_id' => $user->id,
             'library_id' => $library->id,
@@ -70,7 +72,7 @@ class SubscriptionIntegrationTest extends TestCase
 
         // 4. Try to sync new book (should fail)
         $syncResponse = $this->postJson("/api/sync", [
-            'library_id' => $libraryId,
+            'library_id' => $library->id,
             'calibre_library_uuid' => $library->calibre_library_id,
             'changes' => [
                 [

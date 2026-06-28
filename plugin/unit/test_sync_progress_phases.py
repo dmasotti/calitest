@@ -418,3 +418,57 @@ class TestFileDownloadDeferral:
         # Phase 3 should still process files from batch 1 and 3
         assert len(all_files) == 2
         assert batch2_failed  # batch 2 failed but didn't prevent file accumulation
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Group A: API phase progress messages (regression for (83/83) stuck bug)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestApiPhaseProgressMessages:
+    """After collecting client inventory (83/83), the display must change
+    during the API call and server response phases instead of staying
+    stuck at 'Syncing book metadata... (83/83)'."""
+
+    def _make_aggregator(self):
+        from calibre_plugins.sync_calimob.action import _SyncProgressAggregator
+        return _SyncProgressAggregator()
+
+    def test_a1_sending_message_overrides_stale_metadata(self):
+        """Regression: 'Sending N books to server...' must appear
+        instead of 'Syncing book metadata... (83/83)'."""
+        agg = self._make_aggregator()
+        # Simulate: inventory collection done at 83/83
+        agg.handle('Preparing client inventory... (83/83)', 83, 83)
+        # Now API call starts
+        display, _, _ = agg.handle('Sending 83 books to server...', 0, 0)
+        assert 'Sending' in display
+        assert '(83/83)' not in display
+
+    def test_a2_server_response_message_shown(self):
+        """'Server responded: N updates, M missing' must be displayed."""
+        agg = self._make_aggregator()
+        agg.handle('Preparing client inventory... (83/83)', 83, 83)
+        agg.handle('Sending 83 books to server...', 0, 0)
+        display, _, _ = agg.handle('Server responded: 5 updates, 2 missing', 0, 0)
+        assert 'Server responded' in display
+        assert '5 updates' in display
+
+    def test_a3_api_phase_clears_on_next_regular_message(self):
+        """After API phase, regular messages resume normal presenter output."""
+        agg = self._make_aggregator()
+        agg.handle('Preparing client inventory... (83/83)', 83, 83)
+        agg.handle('Sending 83 books to server...', 0, 0)
+        agg.handle('Server responded: 5 updates, 0 missing', 0, 0)
+        # Normal message (verifying candidates) should go back to presenter
+        display, _, _ = agg.handle(
+            'Verifying server candidates (batch 1, item 3/5, book_uuid=abc, batch_uuids=x)',
+            3, 5,
+        )
+        assert 'Server responded' not in display
+
+    def test_a4_applying_updates_message_shown(self):
+        """'Applying updates...' must be displayed during apply phase."""
+        agg = self._make_aggregator()
+        agg.handle('Preparing client inventory... (83/83)', 83, 83)
+        display, _, _ = agg.handle('Applying updates... (1/10)', 1, 10)
+        assert 'Applying updates' in display

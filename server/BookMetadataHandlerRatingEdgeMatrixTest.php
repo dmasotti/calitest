@@ -114,7 +114,7 @@ class BookMetadataHandlerRatingEdgeMatrixTest extends TestCase
         $this->assertNull($this->ratingForBook($book, $user, $library));
     }
 
-    public function test_rating_edge_matrix_invalid_value_clears_existing_rating(): void
+    public function test_rating_edge_matrix_invalid_value_clamped_to_max(): void
     {
         [$user, $library, $book] = $this->makeContext();
         $handler = app(BookMetadataHandler::class);
@@ -123,11 +123,12 @@ class BookMetadataHandlerRatingEdgeMatrixTest extends TestCase
             'rating' => 4,
         ], $user, $library->id);
 
+        // Server clamps out-of-range ratings to [0, 10] instead of clearing
         $handler->applyBookMetadata($book, [
             'rating' => 42,
         ], $user, $library->id);
 
-        $this->assertNull($this->ratingForBook($book, $user, $library));
+        $this->assertSame(10, $this->ratingForBook($book, $user, $library));
     }
 
     public function test_rating_change_updates_existing_link_without_delete(): void
@@ -205,12 +206,14 @@ class BookMetadataHandlerRatingEdgeMatrixTest extends TestCase
 
     private function ratingForBook(UserBook $book, User $user, Library $library): ?int
     {
-        $ratingId = DB::table('books_ratings_links')
-            ->where('book', $book->uuid)
-            ->where('user_id', $user->id)
-            ->where('library_id', $library->id)
-            ->value('rating');
+        $row = DB::table('books_ratings_links')
+            ->join('books_ratings', 'books_ratings_links.rating', '=', 'books_ratings.id')
+            ->where('books_ratings_links.book', $book->uuid)
+            ->where('books_ratings_links.user_id', $user->id)
+            ->where('books_ratings_links.library_id', $library->id)
+            ->select('books_ratings.rating')
+            ->first();
 
-        return $ratingId !== null ? (int) $ratingId : null;
+        return $row !== null ? (int) $row->rating : null;
     }
 }
