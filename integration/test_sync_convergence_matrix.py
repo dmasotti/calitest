@@ -75,6 +75,18 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _hermetic_seed():
+    """Reset+seed the server ONCE before this module runs. Phase 0/1a/1b READ the
+    seed without resetting, so without this they'd inherit whatever a prior
+    (possibly FAILED) run left behind — e.g. a half-applied concurrent push —
+    and break on unexpected data. Phase 2/3 reset again per test as needed.
+    (`_reset_and_rebuild` is defined lower in the file; resolved at call time.)"""
+    if _server_up():
+        _reset_and_rebuild()
+    yield
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PHASE 0 — server + seed are correct (the foundation every later phase builds on)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -259,6 +271,10 @@ SCRIPTS_DIR = os.path.join(os.path.dirname(HTML_DIR), "scripts")
 
 UUID_NO_COVER = EXPECTED_SCENARIOS["no_cover"]            # 22222222… (no cover)
 UUID_CONVERGED = EXPECTED_SCENARIOS["converged_normal"]   # 11111111… (has cover)
+# A writer's edit lm is stamped this far in the future so it beats any wall-clock
+# app_modified the other device assigns when it pulls+applies the book mid-round
+# (the barrier delays sync by ~window_ms, so a "now" lm would already be stale).
+FUTURE_LM_MARGIN_MS = 600_000
 
 
 def _pg_env() -> dict:
@@ -325,6 +341,15 @@ def _run_concurrent(token, a_defines, b_defines, window_ms=160_000, stagger_s=45
     pb = _flutter_async(EMULATOR_B, b)
     out_a, err_a = pa.communicate(timeout=600)
     out_b, err_b = pb.communicate(timeout=600)
+    # Persist full device stdout for post-mortem (pytest truncates the assert
+    # msg). Name by scenario so 2a (push) and 2b (conflict) don't overwrite.
+    scn = a_defines.get("SCENARIO", "x")
+    for label, out in (("A", out_a), ("B", out_b)):
+        try:
+            with open(f"/tmp/phase2_device_{scn}_{label}.log", "w") as f:
+                f.write(out or "")
+        except OSError:
+            pass
     return (pa.returncode, out_a, err_a), (pb.returncode, out_b, err_b)
 
 
@@ -349,7 +374,14 @@ def test_phase2a_disjoint_concurrent_push():
     rebuilds (the live tree already equals a fresh rebuild)."""
     _reset_and_rebuild()
     token = _mint_token()
-    a_title, b_title, lm = "A-PUSH-NoCover", "B-PUSH-Converged", _host_ms()
+    # The writer's edit lm must beat any wall-clock app_modified the OTHER device
+    # stamps when it pulls+applies this book during the concurrent round. The
+    # barrier delays sync by ~window_ms, so a plain _host_ms() (set now) would be
+    # STALE by sync time → a pulled-and-restamped copy (app_modified≈real-now)
+    # could win and clobber this push (a real user edit is fresh, not stale). Use
+    # a comfortably-future lm so the writer is unambiguously newest.
+    a_title, b_title = "A-PUSH-NoCover", "B-PUSH-Converged"
+    lm = _host_ms() + FUTURE_LM_MARGIN_MS
     ra, rb = _run_concurrent(
         token,
         {"SCENARIO": "push", "TARGET_UUID": UUID_NO_COVER, "TARGET_HAS_COVER": 0,
@@ -391,7 +423,9 @@ def test_phase2b_same_book_conflict_lww():
     devices must converge to it — the loser adopts, no ping-pong."""
     _reset_and_rebuild()
     token = _mint_token()
-    winner, loser, base = "LWW-WINNER-A", "LWW-LOSER-B", _host_ms()
+    # Future base (see Phase 2a) so the writers' lm beats any pull-restamp clock;
+    # the +10s gap between A and B still decides the deterministic LWW winner.
+    winner, loser, base = "LWW-WINNER-A", "LWW-LOSER-B", _host_ms() + FUTURE_LM_MARGIN_MS
     ra, rb = _run_concurrent(
         token,
         {"SCENARIO": "conflict", "TARGET_UUID": UUID_NO_COVER, "TARGET_HAS_COVER": 0,
