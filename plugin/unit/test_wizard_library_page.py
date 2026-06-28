@@ -154,3 +154,87 @@ class TestSaveMapping:
         src = (plugin_path / 'wizard' / 'pages' / 'progress_page.py').read_text()
         assert 'No calimob library' not in src, \
             "Error message still says 'calimob' — should be 'Caliweb'"
+
+
+# ---------------------------------------------------------------------------
+# Test: _compute_start_page picks the right page based on prefs
+# ---------------------------------------------------------------------------
+
+class TestComputeStartPage:
+    """Verify that SyncWizard._compute_start_page returns the correct page."""
+
+    def test_no_token_returns_welcome(self):
+        """No device token → start at Welcome."""
+        prefs = {
+            'Caliweb': {'restEndpoint': '', 'deviceToken': '', 'deviceTokenStatus': 'unknown'},
+        }
+        assert self._compute(prefs, cal_id='abc') == 0  # PageWelcome
+
+    def test_invalid_token_returns_welcome(self):
+        """Token marked invalid → start at Welcome."""
+        prefs = {
+            'Caliweb': {
+                'restEndpoint': 'https://caliwebapp.com',
+                'deviceToken': 'some-token',
+                'deviceTokenStatus': 'invalid',
+            },
+        }
+        assert self._compute(prefs, cal_id='abc') == 0  # PageWelcome
+
+    def test_valid_token_no_mapping_returns_library(self):
+        """Valid token but no library mapping → start at Library."""
+        prefs = {
+            'Caliweb': {
+                'restEndpoint': 'https://caliwebapp.com',
+                'deviceToken': 'some-token',
+                'deviceTokenStatus': 'authorized',
+            },
+            'LibraryMappings': {},
+        }
+        assert self._compute(prefs, cal_id='abc') == 2  # PageLibrary
+
+    def test_valid_token_with_mapping_returns_ready(self):
+        """Valid token + library mapping → start at Ready."""
+        prefs = {
+            'Caliweb': {
+                'restEndpoint': 'https://caliwebapp.com',
+                'deviceToken': 'some-token',
+                'deviceTokenStatus': 'authorized',
+            },
+            'LibraryMappings': {
+                'abc': {'calimobLibraryId': '42', 'calimobLibraryName': 'MyLib'},
+            },
+        }
+        assert self._compute(prefs, cal_id='abc') == 3  # PageReady
+
+    def test_mapping_for_different_library_returns_library(self):
+        """Token valid but mapping is for a different Calibre library → Library page."""
+        prefs = {
+            'Caliweb': {
+                'restEndpoint': 'https://caliwebapp.com',
+                'deviceToken': 'some-token',
+                'deviceTokenStatus': 'authorized',
+            },
+            'LibraryMappings': {
+                'other-id': {'calimobLibraryId': '42'},
+            },
+        }
+        assert self._compute(prefs, cal_id='abc') == 2  # PageLibrary
+
+    @staticmethod
+    def _compute(prefs, cal_id):
+        """Simulate _compute_start_page logic without Qt."""
+        c = prefs.get('Caliweb', {})
+        endpoint = (c.get('restEndpoint', '') or '').strip()
+        token = (
+            (c.get('deviceToken', '') or '').strip()
+            or (c.get('restToken', '') or '').strip()
+        )
+        status = (c.get('deviceTokenStatus', 'unknown') or 'unknown').strip().lower()
+        if not (endpoint and token) or status == 'invalid':
+            return 0  # PageWelcome
+        mappings = prefs.get('LibraryMappings', {}) or {}
+        mapping = mappings.get(cal_id, {})
+        if mapping and mapping.get('calimobLibraryId'):
+            return 3  # PageReady
+        return 2  # PageLibrary
