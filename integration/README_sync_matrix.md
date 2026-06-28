@@ -100,9 +100,9 @@ the assertion.)
 |---|---|---|
 | Server (phpunit/PG) | `SyncV5SubscriptionLimitsTest` (9) | `DeletionSubscriptionSafetyTest` (3) + `CoverFileSettingsSafetyTest` (4) + PG-boolean regressions (2) |
 | Plugin (py unit) | 403 → warn+stop (no delete) | `test_mass_deletion_guard` (11): absence→delete guard |
-| App (calimob) | 403 → abort sync (no delete) | deletions are explicit-flag only; server tombstones soft-applied |
+| App (calimob) | 403 → abort sync (no delete) | unit `test/sync/deletion_settings_safety_test.dart`: payload `d` from explicit flag only, no-cover/no-file → null hashes (never a delete) |
 | e2e (HTTP/PG) | — | Phase 4a (deletion) + Phase 5a (multi-client settings) |
-| Device (emulator+PG) | TODO | TODO |
+| Device (emulator+PG) | — | Phase 6: real app sync keeps the plugin's uploaded file/cover |
 
 ### Phase 3 — multi-user (how it works)
 
