@@ -614,3 +614,58 @@ def test_phase4a_voluntary_delete_tombstones_partial_inventory_is_safe():
         "a partial inventory must not delete the omitted books (absence != delete)"
     assert not _is_tombstoned(UUID_PREFIXED), \
         "a book merely absent from the client inventory must not be tombstoned"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 5 — MULTI-CLIENT cover/file SETTINGS safety (end-to-end, live PG)
+#
+# The mobile app (metadata-only: covers/files OFF) and the Calibre plugin
+# (covers+files ON) sync the SAME library configured differently. A metadata-only
+# client must NOT make the server drop the covers/files the other client uploaded.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _sync_body_opts(library_uuid, books=None, deleted=None, options=None):
+    body = _sync_body(library_uuid, books=books, deleted=deleted)
+    body["options"] = options or {}
+    return body
+
+
+@phase3_skip
+def test_phase5a_metadata_only_client_keeps_other_clients_covers_and_files():
+    """Simulate the plugin having uploaded a file + the server holding a cover for
+    a book, then a metadata-only app client (covers/files OFF) syncs the same
+    library. The file and cover must SURVIVE — a metadata-only sync is not a
+    deletion of the other client's assets."""
+    _reset_and_rebuild()
+    token = _mint_token()
+    book = UUID_CONVERGED  # has_cover=1, cover_original_hash seeded
+
+    # The plugin's uploaded file (pull user_id/library_id straight from the book).
+    _psql(
+        "INSERT INTO books_files (user_id, library_id, book, format, "
+        "uncompressed_size, name, file_hash, is_uploaded, uuid, created_at, updated_at) "
+        "SELECT user_id, library_id, uuid, 'EPUB', 1024, 'x.epub', "
+        "'sha256:" + ('cd' * 32) + "', 1, 'ffffffff-0000-4000-8000-0000000000f1', "
+        f"now(), now() FROM books WHERE uuid = '{book}'")
+
+    def _uploaded_files():
+        return _psql(f"SELECT count(*) FROM books_files WHERE book = '{book}' "
+                     "AND is_uploaded = 1 AND deleted_at IS NULL")
+    def _cover_hash():
+        return _psql(f"SELECT COALESCE(cover_original_hash,'') FROM books WHERE uuid = '{book}'")
+
+    assert _uploaded_files() == "1", "precondition: the plugin's file is present"
+    cover_before = _cover_hash()
+    assert cover_before, "precondition: the book has a server cover"
+
+    # App-style metadata-only sync: covers/files OFF, no cover/file hash for the book.
+    status, _ = _api("/sync/v5", token, _sync_body_opts(
+        LIBRARY_UUID,
+        books={book: {"m": "check", "c": None, "f": None}},
+        options={"sync_files_enabled": False, "sync_covers_enabled": False}))
+    assert status == 200
+
+    assert _uploaded_files() == "1", \
+        "a metadata-only client must NOT drop the plugin's uploaded file"
+    assert _cover_hash() == cover_before, \
+        "a metadata-only client must NOT drop the server cover"
