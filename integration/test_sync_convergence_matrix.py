@@ -22,11 +22,18 @@ Design notes for whoever extends this (LLM or human):
     Merkle root per dimension (NOT logcat grep). Phase 1 wires the emulator side.
 """
 
-import json
+import hashlib
+import os
 import shutil
 import subprocess
 
 import pytest
+
+HTML_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "html",
+)
+LIBRARY_UUID = "42a0c170-23cf-11f1-93ec-391510e4e1b1"  # SyncMatrixSeeder default lib
 
 PG_CONTAINER = "caliweb_test_pg"
 PG_DB = "caliweb_test"
@@ -102,21 +109,93 @@ def test_phase0_users_are_isolated_by_default():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PHASE 1 — single-device convergence (TODO: wire the emulator)
+# PHASE 1a — server-side convergence (the protocol, on the REAL running server)
+#
+# Proves: after a Merkle rebuild, the server's COVER leaf for each seeded book
+# equals the leaf a RAW client (the Calibre plugin / calimob) computes —
+# SHA256( join(sorted( SHA256("uuid|has_cover|RAW_hash") )) ). The 'cover_prefixed'
+# scenario (cover_original_hash stored as 'sha256:…') is the H4 regression guard:
+# without the leaf-strip fix the server would produce SHA256(…|1|sha256:…) and the
+# raw client could NEVER match → covers never converge. This needs NO emulator —
+# it is the protocol-level convergence proof on the running PG server.
 # ─────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.skip(reason="Phase 1 — emulator orchestration not wired yet.")
-def test_phase1_single_device_convergence():
-    """For each scenario: point calimob (emulator → http://10.0.2.2:8081) at the
-    seeded server, run a backup/sync, then assert the device's Merkle root ==
-    the server's library-hash root for meta/covers/files (0 candidates).
+def _strip_prefix(h: str | None) -> str:
+    if not h:
+        return ""
+    return h[7:] if h.startswith("sha256:") else h
 
-    Implementation plan (see README):
-      1. push the matching LOCAL state onto the emulator (a device seeder / a
-         calimob integration_test driven via `flutter test ... -d <emulator>`),
-      2. trigger sync,
-      3. GET the server library-hash + read the client root, assert equality.
-    The 'cover_prefixed' scenario is the regression guard for the H4 fix.
+
+def _client_cover_item_hash(uuid: str, has_cover: bool, cover_hash: str | None) -> str:
+    """The per-book cover item_hash a RAW client sends: SHA256(uuid|hc|raw)."""
+    hc = "1" if has_cover else "0"
+    return hashlib.sha256(
+        f"{uuid}|{hc}|{_strip_prefix(cover_hash)}".encode()
+    ).hexdigest()
+
+
+def _leaf_id(uuid: str) -> int:
+    return int(uuid.replace("-", "").lower()[:2], 16)
+
+
+@pytest.fixture(scope="module")
+def rebuilt_server():
+    """Rebuild the seeded library's Merkle once on the docker PG (host artisan)."""
+    env = {**os.environ, "DB_HOST": "127.0.0.1", "DB_PORT": "5433",
+           "DB_DATABASE": "caliweb_test", "DB_USERNAME": "testuser",
+           "DB_PASSWORD": "testpass", "DB_CONNECTION": "pgsql"}
+    subprocess.run(
+        ["php", "artisan", "sync:rebuild-merkle", LIBRARY_UUID, "--env=test-server"],
+        cwd=HTML_DIR, env=env, check=True, capture_output=True, text=True,
+    )
+
+
+def test_phase1a_server_cover_leaves_match_raw_client(rebuilt_server):
+    """For every COVER leaf bucket, the server's leaf_hash == the leaf a RAW
+    client computes from the SAME books. Drives the real seeded server; fails
+    if the sha256: prefix ever leaks back into the leaf (H4 regression)."""
+    # Read what was actually seeded (authoritative), grouped into leaf buckets.
+    rows = _psql(
+        "SELECT uuid, has_cover, COALESCE(cover_original_hash,'') FROM books "
+        f"WHERE uuid IN ({','.join(repr(u) for u in EXPECTED_SCENARIOS.values())})"
+    )
+    buckets: dict[int, list[str]] = {}
+    for line in rows.splitlines():
+        uuid, has_cover, cover_hash = line.split("\t")
+        hc = has_cover in ("t", "true", "1")
+        buckets.setdefault(_leaf_id(uuid), []).append(
+            _client_cover_item_hash(uuid, hc, cover_hash or None)
+        )
+
+    assert buckets, "no seeded books — run scripts/reset-test-server.sh"
+    for leaf_id, items in buckets.items():
+        expected = hashlib.sha256("".join(sorted(items)).encode()).hexdigest()
+        server_leaf = _psql(
+            "SELECT leaf_hash FROM sync_merkle_leaves "
+            f"WHERE dimension='covers' AND leaf_id={leaf_id}"
+        )
+        assert server_leaf == expected, (
+            f"COVER leaf {leaf_id}: server={server_leaf[:16]}… != raw-client "
+            f"{expected[:16]}… — the cover_original_hash prefix is leaking into "
+            f"the leaf (H4 regression)."
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 1b — single-device convergence on a REAL emulator (TODO: wire calimob)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.skip(reason="Phase 1b — emulator orchestration not wired yet.")
+def test_phase1b_emulator_single_device_convergence():
+    """Point calimob (emulator → http://10.0.2.2:8081) at the seeded server, run a
+    backup/sync, then assert the device's Merkle root == the server's library-hash
+    root for meta/covers/files (0 candidates).
+
+    Plan (see README): (1) push the matching LOCAL state onto the emulator (device
+    seeder / a calimob integration_test via `flutter test ... -d <emulator>`),
+    (2) trigger sync, (3) GET the server library-hash + read the client root,
+    assert equality. 'cover_prefixed' is the H4 regression guard — and Phase 1a
+    already proves the server side of it on the real PG engine.
     """
 
 
