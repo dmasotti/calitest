@@ -92,6 +92,17 @@ the assertion.)
 - **Phase 2 (done)**: concurrency, two emulators, same user + library — `2a` + `2b` below.
 - **Phase 3 (done)**: multi-user — `3a` logical separation + `3b` concurrent load — HTTP-driven (no emulator).
 - **Phase 4 (done)**: deletion data-safety e2e — `4a` an explicit delete (`d` list) tombstones on the live PG server, but a partial/restored inventory (a client that omits books) never deletes the omitted ones (absence ≠ delete). Complements the phpunit Level-A `DeletionSubscriptionSafetyTest` (downgrade/over-quota never delete) and the plugin Level-B `test_mass_deletion_guard` (absence→delete guard: suppress headless / confirm manual).
+- **Phase 5 (done)**: multi-client cover/file SETTINGS safety e2e — `5a` the plugin uploads a file + the server holds a cover, then a metadata-only app client (covers/files OFF) syncs the SAME library; the file and cover SURVIVE (a metadata-only sync is not a deletion of the other client's assets). Complements phpunit `CoverFileSettingsSafetyTest` (metadata-only / hc=0 / file-off / downgrade never delete covers or files) and `SyncV5SubscriptionLimitsTest` (limit enforcement: over-limit → 403).
+
+## Deletion / subscription / settings data-safety matrix (cross-layer)
+
+| Layer | Subscription limits | Deletion + cover/file-settings safety |
+|---|---|---|
+| Server (phpunit/PG) | `SyncV5SubscriptionLimitsTest` (9) | `DeletionSubscriptionSafetyTest` (3) + `CoverFileSettingsSafetyTest` (4) + PG-boolean regressions (2) |
+| Plugin (py unit) | 403 → warn+stop (no delete) | `test_mass_deletion_guard` (11): absence→delete guard |
+| App (calimob) | 403 → abort sync (no delete) | deletions are explicit-flag only; server tombstones soft-applied |
+| e2e (HTTP/PG) | — | Phase 4a (deletion) + Phase 5a (multi-client settings) |
+| Device (emulator+PG) | TODO | TODO |
 
 ### Phase 3 — multi-user (how it works)
 
