@@ -275,7 +275,7 @@ class TestCompletePage:
     # ------------------------------------------------------------------
 
     def test_initialize_page_stores_sync_result(self):
-        """initializePage must store _sync_result for _on_view_details."""
+        """initializePage must store _sync_result for _on_toggle_details."""
         page = self._make_page()
         self._mock_labels(page)
         mock_wizard = Mock()
@@ -304,12 +304,26 @@ class TestCompletePage:
         assert page._sync_result == {}
 
     # ------------------------------------------------------------------
-    # _on_view_details
+    # _on_toggle_details (inline collapsible log)
     # ------------------------------------------------------------------
 
-    def test_on_view_details_no_crash_without_wizard(self):
-        """View details when wizard() returns None should not crash."""
+    def test_on_toggle_details_expands_log_area(self):
+        """Toggle details should expand the log area inline."""
         page = self._make_page()
-        page._sync_result = None
+        page.log_area = Mock()
+        page.log_area.maximumHeight = Mock(return_value=0)
+        page.log_area.toPlainText = Mock(return_value='')
+        page.detail_toggle = Mock()
+        page._sync_result = {'error': 'test error'}
         with patch.object(type(page), 'wizard', return_value=None):
-            page._on_view_details()
+            page._on_toggle_details()
+        page.log_area.setMaximumHeight.assert_called_with(200)
+
+    def test_on_toggle_details_collapses_log_area(self):
+        """Toggle details again should collapse."""
+        page = self._make_page()
+        page.log_area = Mock()
+        page.log_area.maximumHeight = Mock(return_value=200)
+        page.detail_toggle = Mock()
+        page._on_toggle_details()
+        page.log_area.setMaximumHeight.assert_called_with(0)

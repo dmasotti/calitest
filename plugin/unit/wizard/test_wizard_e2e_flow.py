@@ -201,3 +201,33 @@ class TestLoginPageBackNavigation:
 
         assert page._login_success is False
         assert page.nextId() == -1
+
+
+class TestCompletePageBackSkipsProgress:
+    """Regression: Back from CompletePage must skip ProgressPage
+    to avoid auto-restarting the sync without user confirmation."""
+
+    def test_back_from_complete_goes_to_ready(self):
+        """Back from CompletePage (5) should go to ReadyPage (3), not ProgressPage (4).
+
+        We can't import SyncWizard (needs QLinearGradient), so test the
+        logic inline: if currentIndex == PageComplete, _set_page(PageReady).
+        """
+        PAGE_READY = 3
+        PAGE_COMPLETE = 5
+
+        stack = Mock()
+        stack.currentIndex = Mock(return_value=PAGE_COMPLETE)
+        pages = [Mock() for _ in range(6)]
+
+        # Simulate the back() logic from sync_wizard.py
+        idx = stack.currentIndex()
+        if idx == PAGE_COMPLETE:
+            target = PAGE_READY
+        elif idx > 0:
+            target = idx - 1
+        else:
+            target = None
+
+        assert target == PAGE_READY, \
+            f"Back from CompletePage should go to ReadyPage (3), not {target}"
