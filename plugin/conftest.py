@@ -123,6 +123,12 @@ if 'calibre' not in sys.modules:
     sys.modules['calibre.gui2.actions'] = calibre.gui2.actions
     sys.modules['calibre.gui2.complete2'] = calibre.gui2.complete2
 
+    # calibre.customize.InterfaceActionBase — needed to import the sync_calimob
+    # package (__init__.py) in unit tests (e.g. the hash convergence golden test).
+    calibre.customize = types.ModuleType('calibre.customize')
+    calibre.customize.InterfaceActionBase = type('InterfaceActionBase', (), {})
+    sys.modules['calibre.customize'] = calibre.customize
+
     sys.modules['calibre'] = calibre
     sys.modules['calibre.utils'] = calibre.utils
     sys.modules['calibre.utils.date'] = calibre.utils.date

@@ -31,7 +31,7 @@ GOLDEN = [
         "rating": 8,
         "pubdate": "2023-01-15",
         "languages": ["eng"],
-        "expected_hash": "a4487ab0368efc3b53ebed3569e1b5536c814d10768dd052f922276c3c7be99c",
+        "expected_hash": "cec7af6f0911d31373efec64f09d84107623dbd2690758a969bc147a68caf5fa",
     },
     {
         "uuid": "aaaaaaaa-0002-4000-a000-000000000002",
@@ -51,7 +51,7 @@ GOLDEN = [
         "pubdate": "2019-03-20",
         "languages": ["eng"],
         "publisher": "Big Press",
-        "expected_hash": "0359ec1549caa3358b560a22ca020688bf89ae530c6e363165e7f60028fad812",
+        "expected_hash": "419f3f644f19e86b6e5fa66f95ec3edda22df16801e5969576279f64dd8905fb",
     },
     {
         "uuid": "aaaaaaaa-0004-4000-a000-000000000004",
@@ -60,7 +60,7 @@ GOLDEN = [
         "rating": 10,
         "languages": ["deu"],
         "description": "A <b>bold</b> description.",
-        "expected_hash": "7c6e24eea6e46b115ea6e6995adcf30e951044681a0ad642a7fcbf90ab68deb6",
+        "expected_hash": "442acce493774b74a8a082574ba0dc257970b730b4d968865e5d6c3cdf2b1c3c",
     },
 ]
 
@@ -76,16 +76,22 @@ def test_golden_hashes_match_cross_platform():
         )
 
 
-def test_rating_is_float_in_hash_payload():
-    """Rating must be emitted as float (8.0 not 8) in the hash payload."""
+def test_rating_is_integer_in_hash_payload():
+    """Rating must be emitted as INTEGER (8 not 8.0) in the hash payload.
+
+    CANONICAL DECISION (do NOT revert): rating is a whole 0-10 scale and is
+    encoded as an integer across the server VIEW books_hash_v2, all PHP hashers,
+    this plugin, and the Dart app. The earlier float form ("8.0") was WRONG and
+    caused permanent Merkle mismatch. series_index STAYS float ("1.0").
+    """
     from sync_calimob.sync_utils import build_metadata_hash_payload
     import json
 
     item = {"uuid": "test", "title": "Test", "rating": 8}
     payload = build_metadata_hash_payload(item)
     normalized = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-    assert '"rating":8.0' in normalized, (
-        f"Rating should be float 8.0 in payload, got: {normalized}"
+    assert '"rating":8' in normalized and '"rating":8.0' not in normalized, (
+        f"Rating should be integer 8 in payload, got: {normalized}"
     )
 
 
