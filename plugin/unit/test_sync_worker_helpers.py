@@ -4357,3 +4357,49 @@ def test_collect_candidates_filters_null_uuid(monkeypatch, tmp_path):
     assert '' not in uuids, "empty UUID should be filtered out"
     assert 'aaa-bbb' in uuids
     assert len(books) == 1
+
+
+def test_v5_push_missing_items_declares_cover_absent_when_client_has_no_cover():
+    """H3 escape hatch: asked for a cover we genuinely don't have → tell the server (no_cover)."""
+    worker = _make_worker()
+    worker.gui = object()
+    worker.client = Mock()
+    worker.client.declare_cover_absent = Mock()
+    # Client genuinely has NO cover locally for this book.
+    worker._read_cover_bytes_byte_only = Mock(return_value=(None, 'db', 'no_cover'))
+    worker._v5_get_sync_cache_field_by_uuid = Mock(return_value=None)
+
+    summary = {'books_created': 0, 'books_updated': 0, 'books_synced': 0,
+               'files_deleted_local': 0, 'errors': []}
+    to_upload = [{'uuid': 'u1', 'needs_metadata': False, 'needs_cover': True, 'needs_files': False}]
+
+    worker._v5_push_missing_items(
+        to_upload=to_upload, missing_id_map={'u1': 1}, uuids_deleted_locally=set(),
+        sync_library_path='/tmp/unused', sm=Mock(), summary=summary, updates_by_uuid={},
+    )
+
+    worker.client.declare_cover_absent.assert_called_once()
+    assert summary.get('covers_missing_real') == 1
+
+
+def test_v5_push_missing_items_does_not_declare_absent_on_transient_read_error():
+    """A transient cover-read error must NOT declare the cover absent — the book may still have one
+    (declaring absent would wrongly set has_cover=0 on the server and corrupt the Merkle leaf)."""
+    worker = _make_worker()
+    worker.gui = object()
+    worker.client = Mock()
+    worker.client.declare_cover_absent = Mock()
+    worker._read_cover_bytes_byte_only = Mock(return_value=(None, 'db', 'error:io'))
+    worker._v5_get_sync_cache_field_by_uuid = Mock(return_value=None)
+
+    summary = {'books_created': 0, 'books_updated': 0, 'books_synced': 0,
+               'files_deleted_local': 0, 'errors': []}
+    to_upload = [{'uuid': 'u1', 'needs_metadata': False, 'needs_cover': True, 'needs_files': False}]
+
+    worker._v5_push_missing_items(
+        to_upload=to_upload, missing_id_map={'u1': 1}, uuids_deleted_locally=set(),
+        sync_library_path='/tmp/unused', sm=Mock(), summary=summary, updates_by_uuid={},
+    )
+
+    worker.client.declare_cover_absent.assert_not_called()
+    assert summary.get('covers_read_errors') == 1
