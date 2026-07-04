@@ -4118,22 +4118,23 @@ def test_read_cover_bytes_byte_only_prefers_index_is_id():
     worker.db = CoverDb()
     data, method, status = worker._read_cover_bytes_byte_only(1)
     assert data == b'cover-bytes'
-    assert method == 'db.cover.index_is_id'
+    assert method == 'db.cover'
     assert status is None
 
 
-def test_read_cover_bytes_byte_only_reports_unavailable_for_non_bytes():
+def test_read_cover_bytes_byte_only_reports_unavailable_for_non_bytes(monkeypatch):
+    monkeypatch.setattr(sync_worker.time, "sleep", lambda *a, **k: None)
     worker = _make_worker()
     worker.gui = object()
 
     class CoverDb:
         def cover(self, book_id, index_is_id=True):
-            return '/tmp/cover.jpg'
+            return '/tmp/cover.jpg'  # non-bytes (path) → not usable as byte payload
 
     worker.db = CoverDb()
     data, method, status = worker._read_cover_bytes_byte_only(1)
     assert data is None
-    assert method == 'db.cover.index_is_id'
+    # non-bytes read can't be uploaded; with no determinable has_cover it is 'unavailable' (never nuke).
     assert status == 'unavailable'
 
 
@@ -4403,3 +4404,53 @@ def test_v5_push_missing_items_does_not_declare_absent_on_transient_read_error()
 
     worker.client.declare_cover_absent.assert_not_called()
     assert summary.get('covers_read_errors') == 1
+
+
+def test_cover_read_dataless_returns_unavailable_not_no_cover(monkeypatch):
+    """Dropbox online-only (dataless) cover.jpg → db.cover() empty but Calibre has_cover=1.
+    Must classify as 'unavailable' (transient skip), NEVER 'no_cover' (which nukes the cover)."""
+    monkeypatch.setattr(sync_worker.time, "sleep", lambda *a, **k: None)
+    worker = _make_worker()
+    worker.db.cover = Mock(return_value=None)  # dataless: reads empty both times
+    worker.db.get_metadata = Mock(return_value=SimpleNamespace(has_cover=True))
+    data, method, status = worker._read_cover_bytes_byte_only(1)
+    assert data is None
+    assert status == 'unavailable', "dataless cover (has_cover=1) must be 'unavailable', got %r" % status
+
+
+def test_cover_read_genuine_no_cover_when_has_cover_zero(monkeypatch):
+    """Empty read AND Calibre has_cover=0 → genuine 'no_cover' (deliberate deletion is allowed)."""
+    monkeypatch.setattr(sync_worker.time, "sleep", lambda *a, **k: None)
+    worker = _make_worker()
+    worker.db.cover = Mock(return_value=None)
+    worker.db.get_metadata = Mock(return_value=SimpleNamespace(has_cover=False))
+    _, _, status = worker._read_cover_bytes_byte_only(1)
+    assert status == 'no_cover'
+
+
+def test_cover_read_uncertain_has_cover_defaults_to_unavailable(monkeypatch):
+    """If has_cover can't be determined (get_metadata throws), default to 'unavailable' — never nuke."""
+    monkeypatch.setattr(sync_worker.time, "sleep", lambda *a, **k: None)
+    worker = _make_worker()
+    worker.db.cover = Mock(return_value=None)
+    worker.db.get_metadata = Mock(side_effect=Exception("db locked"))
+    _, _, status = worker._read_cover_bytes_byte_only(1)
+    assert status == 'unavailable'
+
+
+def test_cover_read_success_returns_bytes():
+    worker = _make_worker()
+    worker.db.cover = Mock(return_value=b'\xff\xd8coverbytes')
+    data, _, status = worker._read_cover_bytes_byte_only(1)
+    assert data == b'\xff\xd8coverbytes'
+    assert status is None
+
+
+def test_cover_read_retry_succeeds_when_materialized(monkeypatch):
+    """Empty on first read, bytes on retry (file just materialized) → returns bytes, no destruction."""
+    monkeypatch.setattr(sync_worker.time, "sleep", lambda *a, **k: None)
+    worker = _make_worker()
+    worker.db.cover = Mock(side_effect=[None, b'\xff\xd8now-here'])
+    data, _, status = worker._read_cover_bytes_byte_only(1)
+    assert data == b'\xff\xd8now-here'
+    assert status is None
