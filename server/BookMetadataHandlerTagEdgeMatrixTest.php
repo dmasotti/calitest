@@ -536,6 +536,31 @@ class BookMetadataHandlerTagEdgeMatrixTest extends TestCase
         );
     }
 
+    public function test_tags_calibre_client_id_zero_persists_pivot_link(): void
+    {
+        [$user, $library, $book] = $this->makeContext();
+        $handler = app(BookMetadataHandler::class);
+
+        $this->createTag($user, $library, 0, 'Giallo');
+
+        $handler->applyBookMetadata($book, [
+            'tags' => [
+                ['name' => 'Giallo', 'id' => 0, 'position' => 0],
+            ],
+        ], $user, $library->id);
+
+        $this->assertSame(['Giallo'], $this->tagNamesForBook($book, $user, $library));
+        $this->assertTrue(
+            DB::table('books_tags_link')
+                ->where('book', $book->uuid)
+                ->where('user_id', $user->id)
+                ->where('library_id', $library->id)
+                ->where('tag', 0)
+                ->exists(),
+            'Calibre client id=0 must not be treated as falsy when persisting tag pivot links'
+        );
+    }
+
     public function test_tags_sync_mappings_resolution_is_prefetched_not_one_query_per_tag(): void
     {
         [$user, $library, $book] = $this->makeContext();

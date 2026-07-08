@@ -346,6 +346,36 @@ class BookMetadataHandlerSeriesEdgeMatrixTest extends TestCase
         );
     }
 
+    public function test_series_calibre_client_id_zero_persists_pivot_link(): void
+    {
+        [$user, $library, $book] = $this->makeContext();
+        $handler = app(BookMetadataHandler::class);
+
+        $this->createSeries($user, $library, 0, 'Cycle Zero');
+
+        $handler->applyBookMetadata($book, [
+            'series' => [
+                'name' => 'Cycle Zero',
+                'id' => 0,
+                'index' => 1.0,
+            ],
+        ], $user, $library->id);
+
+        $this->assertSame(
+            ['name' => 'Cycle Zero', 'series_index' => 1.0],
+            $this->seriesStateForBook($book, $user, $library)
+        );
+        $this->assertTrue(
+            DB::table('books_series_link')
+                ->where('book', $book->uuid)
+                ->where('user_id', $user->id)
+                ->where('library_id', $library->id)
+                ->where('series', 0)
+                ->exists(),
+            'Calibre client id=0 must not be treated as falsy when persisting series pivot links'
+        );
+    }
+
     private function makeContext(): array
     {
         $user = User::factory()->create();

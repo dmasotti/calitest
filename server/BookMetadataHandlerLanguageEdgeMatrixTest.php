@@ -135,6 +135,29 @@ class BookMetadataHandlerLanguageEdgeMatrixTest extends TestCase
         $this->assertSame([], $this->languageCodesForBook($book, $user, $library));
     }
 
+    public function test_languages_entity_id_zero_persists_pivot_link(): void
+    {
+        [$user, $library, $book] = $this->makeContext();
+        $handler = app(BookMetadataHandler::class);
+
+        $this->createLanguage($user, $library, 0, 'und');
+
+        $handler->applyBookMetadata($book, [
+            'languages' => ['und'],
+        ], $user, $library->id);
+
+        $this->assertSame(['und'], $this->languageCodesForBook($book, $user, $library));
+        $this->assertSame(
+            0,
+            (int) DB::table('books_languages_link')
+                ->where('book', $book->uuid)
+                ->where('user_id', $user->id)
+                ->where('library_id', $library->id)
+                ->value('lang_code'),
+            'Language entity id=0 must persist in books_languages_link.lang_code'
+        );
+    }
+
     private function makeContext(): array
     {
         $user = User::factory()->create();

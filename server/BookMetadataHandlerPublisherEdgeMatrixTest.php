@@ -199,6 +199,29 @@ class BookMetadataHandlerPublisherEdgeMatrixTest extends TestCase
         $this->assertSame([], $linkUpdates, 'No-op publisher update must not issue pivot update');
     }
 
+    public function test_publisher_calibre_client_id_zero_persists_pivot_link(): void
+    {
+        [$user, $library, $book] = $this->makeContext();
+        $handler = app(BookMetadataHandler::class);
+
+        $this->createPublisher($user, $library, 0, 'Zero Press');
+
+        $handler->applyBookMetadata($book, [
+            'publisher' => ['name' => 'Zero Press', 'id' => 0],
+        ], $user, $library->id);
+
+        $this->assertSame('Zero Press', $this->publisherNameForBook($book, $user, $library));
+        $this->assertTrue(
+            DB::table('books_publishers_link')
+                ->where('book', $book->uuid)
+                ->where('user_id', $user->id)
+                ->where('library_id', $library->id)
+                ->where('publisher', 0)
+                ->exists(),
+            'Calibre client id=0 must not be treated as falsy when persisting publisher pivot links'
+        );
+    }
+
     private function makeContext(): array
     {
         $user = User::factory()->create();

@@ -357,6 +357,31 @@ class BookMetadataHandlerAuthorEdgeMatrixTest extends TestCase
         $this->assertSame(['AC/DC Writer', 'Marcus Sakey', 'H. G. Wells'], $this->authorNamesForBook($book, $user, $library));
     }
 
+    public function test_authors_calibre_client_id_zero_persists_pivot_link(): void
+    {
+        [$user, $library, $book] = $this->makeContext();
+        $handler = app(BookMetadataHandler::class);
+
+        $this->createAuthor($user, $library, 0, 'Author Zero');
+
+        $handler->applyBookMetadata($book, [
+            'authors' => [
+                ['name' => 'Author Zero', 'id' => 0, 'position' => 0],
+            ],
+        ], $user, $library->id);
+
+        $this->assertSame(['Author Zero'], $this->authorNamesForBook($book, $user, $library));
+        $this->assertTrue(
+            DB::table('books_authors_link')
+                ->where('book', $book->uuid)
+                ->where('user_id', $user->id)
+                ->where('library_id', $library->id)
+                ->where('author', 0)
+                ->exists(),
+            'Calibre client id=0 must not be treated as falsy when persisting author pivot links'
+        );
+    }
+
     private function makeContext(): array
     {
         $user = User::factory()->create();
