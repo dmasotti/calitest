@@ -23,6 +23,7 @@ Design notes for whoever extends this (LLM or human):
 """
 
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -30,25 +31,46 @@ import time
 
 import pytest
 
+from sync_matrix_verify import (
+    assert_book_files_seeded,
+    assert_file_tail_hash,
+    assert_files_leaves_match_raw_client,
+    load_registry,
+    scenario_by_key,
+    scenario_map,
+)
+
 HTML_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "html",
 )
+INTEGRATION_DIR = os.path.dirname(os.path.abspath(__file__))
+REGISTRY_PATH = os.path.join(INTEGRATION_DIR, "fixtures", "sync_matrix_registry.json")
 LIBRARY_UUID = "42a0c170-23cf-11f1-93ec-391510e4e1b1"  # SyncMatrixSeeder default lib
 
 PG_CONTAINER = "caliweb_test_pg"
 PG_DB = "caliweb_test"
 PG_USER = "testuser"
 
-# The scenarios SyncMatrixSeeder plants (key → uuid). Kept in sync with
-# SyncMatrixSeeder::SCENARIOS — the seeder is the source of truth; this is the
-# expected read-back used by the Phase-0 server assertions.
-EXPECTED_SCENARIOS = {
-    "converged_normal": "11111111-0000-4000-8000-000000000001",
-    "cover_prefixed": "1bed2112-83be-4979-8e26-0e901b0b1eb1",
-    "no_cover": "22222222-0000-4000-8000-000000000002",
-    "cover_only_no_local": "58659249-778e-414c-9d87-e4438d963b11",
-}
+
+def _load_expected_scenarios() -> dict[str, str]:
+    """key → uuid from exported registry (falls back if JSON missing)."""
+    if os.path.isfile(REGISTRY_PATH):
+        return scenario_map(load_registry(REGISTRY_PATH))
+    # Fallback when docker/export not run yet — keep minimal set for import-time safety.
+    return {
+        "converged_normal": "11111111-0000-4000-8000-000000000001",
+        "cover_prefixed": "1bed2112-83be-4979-8e26-0e901b0b1eb1",
+        "no_cover": "22222222-0000-4000-8000-000000000002",
+        "cover_only_no_local": "58659249-778e-414c-9d87-e4438d963b11",
+        "file_converged": "33333333-0000-4000-8000-000000000003",
+        "metadata_only_safe": "55555555-0000-4000-8000-000000000005",
+    }
+
+
+# The scenarios SyncMatrixSeeder plants (key → uuid). Loaded from exported JSON;
+# regenerate via scripts/export-sync-matrix-registry.php (also in reset-test-server.sh).
+EXPECTED_SCENARIOS = _load_expected_scenarios()
 
 
 def _psql(sql: str) -> str:
@@ -109,6 +131,17 @@ def test_phase0_matrix_seeded(key, uuid):
             "cover_prefixed must keep the literal prefix the leaf-fix normalises away"
     if key == "no_cover":
         assert has_cover in ("0", "f", "false"), "no_cover must have has_cover=0"
+
+
+@pytest.mark.parametrize("key", ["cover_prefixed", "file_converged", "metadata_only_safe"])
+def test_phase0_file_scenarios_seeded(key):
+    """File-dimension scenarios from SyncMatrixSeeder must have books_files rows."""
+    uuid = EXPECTED_SCENARIOS[key]
+    assert_book_files_seeded(uuid)
+    if os.path.isfile(REGISTRY_PATH):
+        sc = scenario_by_key(key, load_registry(REGISTRY_PATH))
+        if sc.get("files"):
+            assert_file_tail_hash(uuid, sc["files"][0]["tail_hash"])
 
 
 def test_phase0_users_are_isolated_by_default():
@@ -452,7 +485,6 @@ def test_phase2b_same_book_conflict_lww():
 #                   no corruption (per-user counts intact, Merkle still rebuilds).
 # ─────────────────────────────────────────────────────────────────────────────
 
-import json
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -553,7 +585,7 @@ def test_phase3b_concurrent_load_no_500s_no_corruption():
     assert not bad, f"{len(bad)}/{N} concurrent syncs were non-200: {sorted(set(bad))}"
 
     # No corruption: each user's library still has exactly its seeded books.
-    assert _book_count(LIBRARY_UUID) == "4", "user A book count changed under load"
+    assert _book_count(LIBRARY_UUID) == "6", "user A book count changed under load"
     assert _book_count(USER_B_LIBRARY_UUID) == "2", "user B book count changed under load"
     # And the tree is not torn — a rebuild must succeed for both libraries.
     _rebuild_merkle(LIBRARY_UUID)
@@ -604,9 +636,9 @@ def test_phase4a_voluntary_delete_tombstones_partial_inventory_is_safe():
         "an explicit delete must be confirmed by the server"
     assert _is_tombstoned(UUID_NO_COVER), "an explicit delete must soft-delete the server book"
 
-    # 2) Partial inventory: report only ONE of the 3 remaining books, NO 'd' list.
-    #    The two unmentioned (still-alive) books must NOT be tombstoned.
-    alive_before = _alive_count(LIBRARY_UUID)            # 3 after the delete
+    # 2) Partial inventory: report only ONE of the remaining books, NO 'd' list.
+    #    The unmentioned (still-alive) books must NOT be tombstoned.
+    alive_before = _alive_count(LIBRARY_UUID)
     status, _ = _api("/sync/v5", token,
                      _sync_body(LIBRARY_UUID, books={UUID_CONVERGED: {"m": "check"}}))
     assert status == 200
@@ -688,13 +720,16 @@ def test_phase5a_metadata_only_client_keeps_other_clients_covers_and_files():
 )
 def test_phase6_real_device_sync_keeps_plugin_uploaded_file():
     _reset_and_rebuild()
-    bk = UUID_PREFIXED  # the 'adopt' scenario book (1bed2112…)
-    _psql(
-        "INSERT INTO books_files (user_id, library_id, book, format, "
-        "uncompressed_size, name, file_hash, is_uploaded, uuid, created_at, updated_at) "
-        "SELECT user_id, library_id, uuid, 'EPUB', 1024, 'plugin.epub', "
-        "'sha256:" + ('cd' * 32) + "', 1, 'ffffffff-0000-4000-8000-0000000000f6', "
-        f"now(), now() FROM books WHERE uuid = '{bk}'")
+    bk = UUID_PREFIXED  # the 'adopt' scenario book (1bed2112…) — seeder plants EPUB
+    existing = _psql(f"SELECT count(*) FROM books_files WHERE book = '{bk}' "
+                     "AND is_uploaded = 1 AND deleted_at IS NULL")
+    if existing == "0":
+        _psql(
+            "INSERT INTO books_files (user_id, library_id, book, format, "
+            "uncompressed_size, name, file_hash, is_uploaded, uuid, created_at, updated_at) "
+            "SELECT user_id, library_id, uuid, 'EPUB', 1024, 'plugin.epub', "
+            "'sha256:" + ('cd' * 32) + "', 1, 'ffffffff-0000-4000-8000-0000000000f6', "
+            f"now(), now() FROM books WHERE uuid = '{bk}'")
 
     def _files():
         return _psql(f"SELECT count(*) FROM books_files WHERE book = '{bk}' "
@@ -721,3 +756,65 @@ def test_phase6_real_device_sync_keeps_plugin_uploaded_file():
     # The plugin's uploaded file must still be there after the app's real sync.
     assert _files() == "1", \
         "the real app's sync must NOT drop the plugin's uploaded file"
+
+
+def test_phase7a_server_files_leaves_match_raw_client(rebuilt_server):
+    """FILES dimension: server Merkle leaves == RAW client for seeded file rows
+    (MRK-06 server-side guard — no emulator)."""
+    uuids = [
+        EXPECTED_SCENARIOS["cover_prefixed"],
+        EXPECTED_SCENARIOS["file_converged"],
+        EXPECTED_SCENARIOS["metadata_only_safe"],
+    ]
+    assert_files_leaves_match_raw_client(uuids)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 7 — FILE dimension convergence (FIL-GHOST-01 / MRK-06)
+#
+# Server-side two-sync skeleton: client with no local file adopts server EPUB,
+# second sync reports zero real file gaps. Full device loop is Phase 1b/6.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@phase3_skip
+def test_phase7b_mrk06_two_sync_pulls_file_then_converges():
+    """FIL-GHOST-01: server FIL-OK + client FIL-NO → PULL-FIL, then adopt tail →
+    files_missing_real == 0 on the second sync."""
+    _reset_and_rebuild()
+    token = _mint_token()
+    book = EXPECTED_SCENARIOS["cover_prefixed"]
+
+    status, discover = _api("/sync/v5", token, _sync_body(LIBRARY_UUID))
+    assert status == 200, discover
+    meta_hash = None
+    for u in discover.get("updates_for_client") or []:
+        if u.get("uuid") == book:
+            meta_hash = u.get("metadata_hash")
+            break
+    assert meta_hash, "discover must return metadata_hash for cover_prefixed"
+
+    status, pull = _api(
+        "/sync/v5",
+        token,
+        _sync_body(
+            LIBRARY_UUID,
+            books={book: {"m": meta_hash, "c": None, "f": None, "ft": None}},
+        ),
+    )
+    assert status == 200, pull
+    updates = [u for u in (pull.get("updates_for_client") or []) if u.get("uuid") == book]
+    assert updates, "first sync must push server file (PULL-FIL)"
+    fmts = updates[0].get("formats") or []
+    assert fmts, "PULL-FIL must include formats"
+    tail = fmts[0].get("tail_hash") or fmts[0].get("file_hash")
+    assert tail, "format must expose tail_hash or file_hash"
+
+    status, converge = _api(
+        "/sync/v5",
+        token,
+        _sync_body(LIBRARY_UUID, books={book: {"m": meta_hash, "c": None, "f": tail}}),
+    )
+    assert status == 200, converge
+    missing = converge.get("files_missing_real")
+    if missing is not None:
+        assert missing == 0, f"second sync should converge files dimension, got {missing}"

@@ -72,9 +72,10 @@ docker compose -f docker-compose.test.yml down -v
 
 ## How to add an edge-case scenario (the whole point of "parameterized")
 
-Edit `SyncMatrixSeeder::SCENARIOS` — add one row with a stable `uuid`, the
-server-side fields (`has_cover`, `cover_original_hash`, …), and `edge`/`expect`
-notes. It is then seeded and asserted automatically. **Never randomise the uuid**
+Edit `SyncMatrixSeeder::SCENARIOS` — add one row with a stable `uuid`, `case_id`,
+the server-side fields (`has_cover`, `cover_original_hash`, optional `files` for
+`books_files`), and `edge`/`expect` notes. Re-export the registry JSON. It is then
+seeded and asserted automatically. **Never randomise the uuid**
 — the uuid is the book's identity (see the project memory on title+uuid).
 
 ## The convergence assertion (deterministic, not logcat-grep)
@@ -93,6 +94,20 @@ the assertion.)
 - **Phase 3 (done)**: multi-user — `3a` logical separation + `3b` concurrent load — HTTP-driven (no emulator).
 - **Phase 4 (done)**: deletion data-safety e2e — `4a` an explicit delete (`d` list) tombstones on the live PG server, but a partial/restored inventory (a client that omits books) never deletes the omitted ones (absence ≠ delete). Complements the phpunit Level-A `DeletionSubscriptionSafetyTest` (downgrade/over-quota never delete) and the plugin Level-B `test_mass_deletion_guard` (absence→delete guard: suppress headless / confirm manual).
 - **Phase 5 (done)**: multi-client cover/file SETTINGS safety e2e — `5a` the plugin uploads a file + the server holds a cover, then a metadata-only app client (covers/files OFF) syncs the SAME library; the file and cover SURVIVE (a metadata-only sync is not a deletion of the other client's assets). Complements phpunit `CoverFileSettingsSafetyTest` (metadata-only / hc=0 / file-off / downgrade never delete covers or files) and `SyncV5SubscriptionLimitsTest` (limit enforcement: over-limit → 403).
+- **Phase 7 (Sprint 1)**: file-dimension convergence — `7a` server FILES Merkle leaves == RAW client (no emulator); `7b` two-sync FIL-GHOST-01 / MRK-06 skeleton over HTTP (`PULL-FIL` then adopt `tail_hash`). Seeder now plants `books_files` for `cover_prefixed` (FIL-GHOST-01), `file_converged` (FIL-OK), `metadata_only_safe` (RLY-META). Registry exported to `tests/integration/fixtures/sync_matrix_registry.json` via `scripts/export-sync-matrix-registry.php` (also run by `reset-test-server.sh`). Shared assertions: `tests/integration/sync_matrix_verify.py`.
+
+## Registry export (`case_id` federation)
+
+`SyncMatrixSeeder::SCENARIOS` is the single source of truth. Each row has a stable
+`case_id` (and optional `case_ids` aliases) linking to
+`docs/server/sync/SYNC_V5_STATE_MATRIX.md`. After seeding:
+
+```bash
+php scripts/export-sync-matrix-registry.php
+# → tests/integration/fixtures/sync_matrix_registry.json
+```
+
+Pytest loads this file for `EXPECTED_SCENARIOS` and file assertions (Phase 0/7).
 
 ## Deletion / subscription / settings data-safety matrix (cross-layer)
 

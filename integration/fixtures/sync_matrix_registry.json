@@ -1,0 +1,108 @@
+{
+    "library_uuid": "42a0c170-23cf-11f1-93ec-391510e4e1b1",
+    "email": "sync-matrix@test.com",
+    "scenarios": [
+        {
+            "key": "converged_normal",
+            "case_id": "COV-BASE",
+            "case_ids": [
+                "COV-BASE"
+            ],
+            "uuid": "11111111-0000-4000-8000-000000000001",
+            "has_cover": 1,
+            "cover_original_hash": "aa11bb22cc33dd44ee55ff667788990011223344556677889900aabbccddeeff",
+            "files": [],
+            "edge": "Normal book: has_cover=1, RAW unprefixed cover hash.",
+            "expect": "Baseline \u2014 client matching this hash converges immediately."
+        },
+        {
+            "key": "cover_prefixed",
+            "case_id": "H4-COVER",
+            "case_ids": [
+                "H4-COVER",
+                "FIL-GHOST-01",
+                "MRK-06"
+            ],
+            "uuid": "1bed2112-83be-4979-8e26-0e901b0b1eb1",
+            "has_cover": 1,
+            "cover_original_hash": "sha256:6abc2e3776c525dade37241281c3d02ddf635ed1cddacdb77e4eb20cadb4e4b8",
+            "files": [
+                {
+                    "format": "EPUB",
+                    "name": "ghost.epub",
+                    "file_hash": "sha256:7a9b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f80a",
+                    "tail_hash": "6f8e4a2b1c3d5e7f9012345678abcdef0123456789abcdef0123456789abcdef"
+                }
+            ],
+            "edge": "cover_original_hash WITH sha256: prefix + server EPUB (FIL-GHOST-01).",
+            "expect": "Cover leaf-strip fix + client adopts server file by reference \u2192 converges."
+        },
+        {
+            "key": "no_cover",
+            "case_id": "COV-NONE",
+            "case_ids": [
+                "COV-NONE",
+                "DEL-PARTIAL"
+            ],
+            "uuid": "22222222-0000-4000-8000-000000000002",
+            "has_cover": 0,
+            "cover_original_hash": null,
+            "files": [],
+            "edge": "has_cover=0, no cover hash.",
+            "expect": "Leaf SHA256(uuid|0|\"\") \u2014 a client with no cover matches."
+        },
+        {
+            "key": "cover_only_no_local",
+            "case_id": "COV-GHOST-01",
+            "case_ids": [
+                "COV-GHOST-01"
+            ],
+            "uuid": "58659249-778e-414c-9d87-e4438d963b11",
+            "has_cover": 1,
+            "cover_original_hash": "sha256:6abc2e3776c525dade37241281c3d02ddf635ed1cddacdb77e4eb20cadb4e4b8",
+            "files": [],
+            "edge": "Ghost cover: server has a (prefixed) cover the device only holds as a 150-byte placeholder.",
+            "expect": "Client adopts by reference \u2192 converges; placeholder materialised later."
+        },
+        {
+            "key": "file_converged",
+            "case_id": "FIL-OK",
+            "case_ids": [
+                "FIL-OK"
+            ],
+            "uuid": "33333333-0000-4000-8000-000000000003",
+            "has_cover": 0,
+            "cover_original_hash": null,
+            "files": [
+                {
+                    "format": "EPUB",
+                    "name": "converged.epub",
+                    "file_hash": "sha256:c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef012",
+                    "tail_hash": "b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef01"
+                }
+            ],
+            "edge": "Server FIL-OK: EPUB with tail_hash, no cover.",
+            "expect": "Client matching tail_hash converges on files dimension."
+        },
+        {
+            "key": "metadata_only_safe",
+            "case_id": "RLY-META",
+            "case_ids": [
+                "RLY-META"
+            ],
+            "uuid": "55555555-0000-4000-8000-000000000005",
+            "has_cover": 1,
+            "cover_original_hash": "aa11bb22cc33dd44ee55ff667788990011223344556677889900aabbccddeeff",
+            "files": [
+                {
+                    "format": "EPUB",
+                    "name": "plugin.epub",
+                    "file_hash": "sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                    "tail_hash": "b3eae8d605d9cb41b53c25a153ce12df41379ec271e65e4ee30f92c69556b985"
+                }
+            ],
+            "edge": "Cover + file present for multi-client settings safety (Phase 5).",
+            "expect": "Metadata-only client sync must NOT drop cover or file."
+        }
+    ]
+}
