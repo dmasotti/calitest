@@ -111,6 +111,28 @@ Export after registry edits:
 cd calimob && dart run tool/export_v5_case_registry.dart
 ```
 
+## Sprint 5 — plugin federation + 3-way MRK-06
+
+Plugin behavioral rows (`A01`→`MRK-01`, `D01`→`MRK-05`, headless→`MRK-06`) are
+exported to `plugin_v5_case_registry.json`:
+
+```bash
+python3 scripts/export-plugin-v5-case-registry.py
+# (also runs from reset-test-server.sh)
+```
+
+Federation gate (fast, no emulator):
+
+```bash
+cd tests/integration && python3 -m pytest test_sync_matrix_registry_federation.py -v
+```
+
+**Phase 8** (`test_phase8_3way_plugin_emulator_mrk06`): plugin headless 2-sync on
+`1bed2112`, then device `SCENARIO=mrk06` — server `books_files` must survive both legs.
+
+`scripts/upTests --menu=60` runs federation + full conductor + plugin headless (when
+calibre-debug + docker PG are available).
+
 ## Registry export (`case_id` federation)
 
 `SyncMatrixSeeder::SCENARIOS` is the single source of truth. Each row has a stable

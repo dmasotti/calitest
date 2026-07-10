@@ -1,0 +1,104 @@
+{
+  "exported_at": "2026-07-10T12:18:18.544252Z",
+  "source": "scripts/export-plugin-v5-case-registry.py",
+  "entries": [
+    {
+      "plugin_case_id": "A01_meta_match_covers_diverge_calls_cover_drilldown",
+      "matrix_case_id": "MRK-01",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "A02_meta_match_files_diverge_calls_files_drilldown",
+      "matrix_case_id": "MRK-02",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "A03_all_three_match_short_circuit_done",
+      "matrix_case_id": "MRK-03",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "A04_meta_diverge_plus_covers_diverge_union_candidates",
+      "matrix_case_id": "MRK-01",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py",
+      "notes": "Union metadata+covers candidates"
+    },
+    {
+      "plugin_case_id": "B01_cover_hash_empty_warm_populates_cache",
+      "matrix_case_id": "MRK-04",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "B02_tail_hash_empty_warm_populates_cache",
+      "matrix_case_id": "MRK-04",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "B03_cover_cache_already_warm_noop",
+      "matrix_case_id": "MRK-04",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "B04_files_cache_already_warm_noop",
+      "matrix_case_id": "MRK-04",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "D01_covers_drilldown_enqueue_when_batch_missing_zero",
+      "matrix_case_id": "MRK-05",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "D02_files_drilldown_enqueue_when_batch_missing_zero",
+      "matrix_case_id": "MRK-05",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "D03_server_already_needs_cover_no_duplicate",
+      "matrix_case_id": "MRK-05",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "D04_no_covers_drilldown_noop",
+      "matrix_case_id": "MRK-05",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "D05_covers_and_files_drilldown_enqueue_both_dimensions",
+      "matrix_case_id": "MRK-05",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "E01_sync_v5_slice_metadata_only_drilldown_enqueue_triggers_phase2_upload",
+      "matrix_case_id": "MRK-05",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "E02_sync_v5_slice_files_drilldown_enqueue_triggers_phase3_upload",
+      "matrix_case_id": "MRK-05",
+      "layer": "BEH",
+      "file": "sync_calimob/tests/plugin/unit/test_sync_v5_channel_convergence_matrix.py"
+    },
+    {
+      "plugin_case_id": "headless_sync_matrix_mrk06",
+      "matrix_case_id": "MRK-06",
+      "layer": "E2E",
+      "file": "sync_calimob/tests/plugin/integration/headless_sync_matrix_mrk06.sh",
+      "notes": "2 plugin syncs on 1bed2112; PG books_files preserved"
+    }
+  ]
+}

@@ -862,3 +862,82 @@ def test_phase7d_emulator_filok_epub_bytes_on_disk():
     assert r.returncode == 0, (
         "FIL-OK device test failed:\n" + r.stdout[-3000:] + "\n" + r.stderr[-1500:]
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 8 — 3-way MRK-06 (Sprint 5): plugin headless → device emulator
+#
+# Plugin pushes/preserves server books_files on SyncMatrixSeeder UUIDs, then the
+# real calimob device runs MRK-06 on the same seeded PG — server file must survive
+# both legs (multi-client data-safety + convergence).
+# ─────────────────────────────────────────────────────────────────────────────
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(HTML_DIR))
+PLUGIN_MATRIX_SCRIPT = os.path.join(
+    PROJECT_ROOT,
+    "sync_calimob",
+    "tests",
+    "plugin",
+    "integration",
+    "headless_sync_matrix_mrk06.sh",
+)
+
+
+def _calibre_debug_available() -> bool:
+    path = os.environ.get(
+        "CALIBRE_DEBUG", "/Applications/calibre.app/Contents/MacOS/calibre-debug"
+    )
+    return os.path.isfile(path) and os.access(path, os.X_OK)
+
+
+@pytest.mark.skipif(
+    not _emulator_connected()
+    or not os.path.isdir(CALIMOB_DIR)
+    or not _calibre_debug_available(),
+    reason="Phase 8 needs emulator + CALIMOB_DIR + calibre-debug.",
+)
+def test_phase8_3way_plugin_emulator_mrk06():
+    """MRK-06 3-way: plugin 2-sync on matrix fixture, then device mrk06 — PG file intact."""
+    ghost = EXPECTED_SCENARIOS["cover_prefixed"]
+    _reset_and_rebuild()
+    assert_book_files_seeded(ghost)
+
+    scripts_dir = os.path.join(PROJECT_ROOT, "scripts")
+    pr = subprocess.run(
+        ["bash", PLUGIN_MATRIX_SCRIPT],
+        capture_output=True,
+        text=True,
+    )
+    if pr.stdout.strip().startswith("SKIP:") or "SKIP:" in pr.stderr:
+        pytest.skip(pr.stderr or pr.stdout)
+    assert pr.returncode == 0, (
+        "plugin leg failed:\n" + pr.stdout[-2000:] + "\n" + pr.stderr[-1000:]
+    )
+    assert_book_files_seeded(ghost)
+
+    token = _mint_token()
+    er = subprocess.run(
+        [
+            "flutter",
+            "test",
+            "integration_test/sync_matrix_convergence_test.dart",
+            "-d",
+            EMULATOR,
+            "--dart-define=TEST_SERVER_URL=http://10.0.2.2:8081/api",
+            f"--dart-define=TEST_TOKEN={token}",
+            "--dart-define=SCENARIO=mrk06",
+        ],
+        cwd=CALIMOB_DIR,
+        capture_output=True,
+        text=True,
+    )
+    assert er.returncode == 0, (
+        "device MRK-06 leg failed:\n" + er.stdout[-3000:] + "\n" + er.stderr[-1500:]
+    )
+    assert_book_files_seeded(ghost)
+    assert_file_tail_hash(
+        ghost,
+        scenario_by_key("cover_prefixed", load_registry(REGISTRY_PATH))["files"][0][
+            "tail_hash"
+        ],
+    )
