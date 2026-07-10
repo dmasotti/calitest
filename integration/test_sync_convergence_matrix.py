@@ -719,6 +719,66 @@ def test_phase5a_metadata_only_client_keeps_other_clients_covers_and_files():
         "a metadata-only client must NOT drop the server cover"
 
 
+@phase3_skip
+def test_phase5b_set06_calibre_full_then_metadata_only_client():
+    """case_id: SET-06 — Calibre plugin (covers+files ON) syncs first, then a
+    metadata-only mobile client syncs the same library. Server cover + uploaded
+    file must survive both legs (no cross-client deletion)."""
+    _reset_and_rebuild()
+    token = _mint_token()
+    book = EXPECTED_SCENARIOS["metadata_only_safe"]  # RLY-META: cover + EPUB seeded
+
+    cover_hash = _psql(f"SELECT COALESCE(cover_original_hash,'') FROM books WHERE uuid = '{book}'")
+    assert cover_hash, "precondition: seeded cover"
+    cover_client = cover_hash.removeprefix("sha256:")
+
+    tail = scenario_by_key(load_registry(REGISTRY_PATH), "metadata_only_safe")["files"][0]["tail_hash"]
+
+    status, discover = _api("/sync/v5", token, _sync_body(LIBRARY_UUID))
+    assert status == 200, discover
+    meta_hash = None
+    for u in discover.get("updates_for_client") or []:
+        if u.get("uuid") == book:
+            meta_hash = u.get("metadata_hash")
+            break
+    assert meta_hash, "discover must return metadata_hash for RLY-META"
+
+    # Leg 1 — Calibre-style full sync (covers + files enabled, hashes reported).
+    status, full = _api("/sync/v5", token, _sync_body_opts(
+        LIBRARY_UUID,
+        books={book: {
+            "m": meta_hash,
+            "c": cover_client,
+            "hc": 1,
+            "f": None,
+            "ft": tail,
+            "hf": 1,
+            "lm": now_ts := int(time.time()),
+        }},
+        options={"sync_files_enabled": True, "sync_covers_enabled": True}))
+    assert status == 200, full
+
+    def _uploaded_files():
+        return _psql(f"SELECT count(*) FROM books_files WHERE book = '{book}' "
+                     "AND is_uploaded = 1 AND deleted_at IS NULL")
+
+    assert _uploaded_files() == "1", "Calibre-full leg must keep the seeded EPUB"
+    cover_after_full = _psql(f"SELECT COALESCE(cover_original_hash,'') FROM books WHERE uuid = '{book}'")
+    assert cover_after_full == cover_hash
+
+    # Leg 2 — mobile metadata-only (covers/files OFF, no asset hashes).
+    status, meta_only = _api("/sync/v5", token, _sync_body_opts(
+        LIBRARY_UUID,
+        books={book: {"m": meta_hash, "c": None, "f": None, "lm": now_ts + 1}},
+        options={"sync_files_enabled": False, "sync_covers_enabled": False}))
+    assert status == 200, meta_only
+
+    assert _uploaded_files() == "1", \
+        "SET-06: metadata-only client must NOT drop the plugin's uploaded file"
+    assert _psql(f"SELECT COALESCE(cover_original_hash,'') FROM books WHERE uuid = '{book}'") == cover_hash, \
+        "SET-06: metadata-only client must NOT drop the server cover"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PHASE 6 — REAL DEVICE multi-client asset safety (emulator ↔ live PG)
 #

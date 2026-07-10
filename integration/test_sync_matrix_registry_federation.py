@@ -38,7 +38,10 @@ SEEDER_ONLY_CASE_IDS = frozenset({"COV-BASE", "COV-NONE", "RLY-META"})
 INT_CONDUCTOR_SOURCES = {
     "COV-BASE": ["test_phase0_seeded_books_match_scenarios"],
     "COV-NONE": ["test_phase0_seeded_books_match_scenarios"],
-    "RLY-META": ["test_phase5a_metadata_only_client_keeps_other_clients_covers_and_files"],
+    "RLY-META": [
+        "test_phase5a_metadata_only_client_keeps_other_clients_covers_and_files",
+        "test_phase5b_set06_calibre_full_then_metadata_only_client",
+    ],
     "FIL-GHOST-01": ["test_phase7b_mrk06_two_sync_pulls_file_then_converges"],
     "MRK-06": [
         "test_phase7b_mrk06_two_sync_pulls_file_then_converges",
