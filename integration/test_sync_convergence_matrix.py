@@ -49,6 +49,7 @@ REGISTRY_PATH = os.path.join(INTEGRATION_DIR, "fixtures", "sync_matrix_registry.
 LIBRARY_UUID = "42a0c170-23cf-11f1-93ec-391510e4e1b1"  # SyncMatrixSeeder default lib
 
 PG_CONTAINER = "caliweb_test_pg"
+APP_CONTAINER = "caliweb_test_app"
 PG_DB = "caliweb_test"
 PG_USER = "testuser"
 
@@ -90,10 +91,23 @@ def _server_up() -> bool:
     return r.returncode == 0 and r.stdout.strip() == "true"
 
 
+def _app_up() -> bool:
+    if not shutil.which("docker"):
+        return False
+    r = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", APP_CONTAINER],
+                       capture_output=True, text=True)
+    return r.returncode == 0 and r.stdout.strip() == "true"
+
+
+def _harness_ready() -> bool:
+    return _server_up() and _app_up()
+
+
 pytestmark = pytest.mark.skipif(
-    not _server_up(),
-    reason="Test server not up. Run: scripts/up-test-server.sh --pg-only && "
-           "scripts/reset-test-server.sh  (or ./scripts/upTests --menu=60).",
+    not _harness_ready(),
+    reason="Sync-matrix harness not ready. Run: scripts/up-test-server.sh && "
+           "scripts/reset-test-server.sh  (or ./scripts/upTests --menu=60). "
+           "Needs PG + docker app on :8081 — not host artisan serve.",
 )
 
 
@@ -104,7 +118,7 @@ def _hermetic_seed():
     (possibly FAILED) run left behind — e.g. a half-applied concurrent push —
     and break on unexpected data. Phase 2/3 reset again per test as needed.
     (`_reset_and_rebuild` is defined lower in the file; resolved at call time.)"""
-    if _server_up():
+    if _harness_ready():
         _reset_and_rebuild()
     yield
 
@@ -527,7 +541,7 @@ def _book_count(library_uuid: str) -> str:
 
 
 phase3_skip = pytest.mark.skipif(
-    not _server_up(), reason="Phase 3 needs the dockerized test server up.")
+    not _harness_ready(), reason="Phase 3 needs the dockerized test server + app on :8081.")
 
 
 @phase3_skip
@@ -872,7 +886,7 @@ def test_phase7d_emulator_filok_epub_bytes_on_disk():
 # both legs (multi-client data-safety + convergence).
 # ─────────────────────────────────────────────────────────────────────────────
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(HTML_DIR))
+PROJECT_ROOT = os.path.dirname(HTML_DIR)
 PLUGIN_MATRIX_SCRIPT = os.path.join(
     PROJECT_ROOT,
     "sync_calimob",

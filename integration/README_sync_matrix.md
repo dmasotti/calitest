@@ -44,21 +44,36 @@ app       → PG          postgres:5432          (compose network)
 ## Quick start
 
 ```bash
+# Recommended: menu 60 brings up PG+app, resets, runs pytest.
+./scripts/upTests --menu=60
+
+# Manual equivalent:
+scripts/up-test-server.sh              # PG + app (NOT --pg-only for HTTP/emulator phases)
+scripts/reset-test-server.sh           # migrate:fresh + SyncMatrixSeeder on caliweb_test
+cd tests/integration && python3 -m pytest test_sync_matrix_registry_federation.py \
+  test_sync_convergence_matrix.py test_plugin_sync_matrix_headless.py -v
+```
+
+**Do not** substitute `php artisan serve` on the host for the docker `app` service: CLI
+`--env=test-server` and HTTP bootstrap load different env files, so Sanctum tokens minted
+from the host often 401 against a host-served API. The app container uses `.env.test-server`
+and talks to `postgres:5432` on the compose network.
+
+`--pg-only` is only for seeding / `phpunit.testserver.xml` without building the app image:
+
+```bash
 cd html
 
-# 1) Bring up the server (PG + app built from local source). First build is slow.
-docker compose -f docker-compose.test.yml up -d --build
-
-# 2) (PG only, fast — for seeding / server unit tests without the app image)
+# PG only (no app on :8081)
 docker compose -f docker-compose.test.yml up -d postgres
 DB_HOST=127.0.0.1 DB_PORT=5433 DB_DATABASE=caliweb_test \
   php artisan migrate --force --env=test-server
 
-# 3) Seed the edge-case matrix
+# Seed the edge-case matrix
 DB_HOST=127.0.0.1 DB_PORT=5433 DB_DATABASE=caliweb_test \
   php artisan db:seed --class=SyncMatrixSeeder --force --env=test-server
 
-# 4) Verify the server fix on the real engine (PG)
+# Verify the server fix on the real engine (PG)
 php artisan test -c phpunit.testserver.xml tests/Unit/MerkleCoverHashPrefixNormalizationTest.php
 
 # Reset everything (drop the volume)
@@ -222,5 +237,10 @@ Two emulators are required (`emulator-5554` + `emulator-5556`, override via
 
 ## CI / upTests
 
-Wired into `scripts/upTests` (menu entry "Sync-Matrix"): it brings up the server,
-seeds, and runs the suite. See the `case "Sync-Matrix")` block there.
+Wired into `scripts/upTests` (menu **60** — Sync-Matrix): brings up **PG + app**
+(`up-test-server.sh`, not `--pg-only`), seeds via `reset-test-server.sh`, then runs
+federation + conductor + plugin headless. See the `case "Sync-Matrix")` block there.
+
+For PHPUnit against the docker PG only (no app image), use `phpunit.testserver.xml` —
+it binds explicitly to `127.0.0.1:5433` and avoids the `.env` override trap documented
+in `docs/agent-guides/testing.md`.
