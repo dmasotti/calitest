@@ -89,8 +89,10 @@ docker compose -f docker-compose.test.yml down -v
 
 Edit `SyncMatrixSeeder::SCENARIOS` — add one row with a stable `uuid`, `case_id`,
 the server-side fields (`has_cover`, `cover_original_hash`, optional `files` for
-`books_files`), and `edge`/`expect` notes. Re-export the registry JSON. It is then
-seeded and asserted automatically. **Never randomise the uuid**
+`books_files`), and `edge`/`expect` notes. For each `file_hash` in `files`, the seeder
+also upserts a matching `files_store` row (`ensureFilesStoreRow`) so `is_uploaded`
+stays true in sync payloads and FILES Merkle leaves use the real tail hash. Re-export
+the registry JSON. It is then seeded and asserted automatically. **Never randomise the uuid**
 — the uuid is the book's identity (see the project memory on title+uuid).
 
 ## The convergence assertion (deterministic, not logcat-grep)
@@ -109,7 +111,20 @@ the assertion.)
 - **Phase 3 (done)**: multi-user — `3a` logical separation + `3b` concurrent load — HTTP-driven (no emulator).
 - **Phase 4 (done)**: deletion data-safety e2e — `4a` an explicit delete (`d` list) tombstones on the live PG server, but a partial/restored inventory (a client that omits books) never deletes the omitted ones (absence ≠ delete). Complements the phpunit Level-A `DeletionSubscriptionSafetyTest` (downgrade/over-quota never delete) and the plugin Level-B `test_mass_deletion_guard` (absence→delete guard: suppress headless / confirm manual).
 - **Phase 5 (done)**: multi-client cover/file SETTINGS safety e2e — `5a` the plugin uploads a file + the server holds a cover, then a metadata-only app client (covers/files OFF) syncs the SAME library; the file and cover SURVIVE (a metadata-only sync is not a deletion of the other client's assets). Complements phpunit `CoverFileSettingsSafetyTest` (metadata-only / hc=0 / file-off / downgrade never delete covers or files) and `SyncV5SubscriptionLimitsTest` (limit enforcement: over-limit → 403).
-- **Phase 7 (Sprint 1–3)**: file-dimension convergence — `7a` server FILES Merkle leaves == RAW client (no emulator); `7b` two-sync FIL-GHOST-01 / MRK-06 skeleton over HTTP; **`7c` real emulator** (`SCENARIO=mrk06`) — two syncs, `FileSigCache` remote tail, `cover.jpg` on disk, files Merkle branches match; **`7d` FIL-OK** (`SCENARIO=filok`) — local `converged.epub` bytes preserved on disk (not by-reference ghost). Seeder plants `books_files` for FIL-GHOST-01 / FIL-OK / RLY-META. Registry JSON via `scripts/export-sync-matrix-registry.php`. Shared assertions: `sync_matrix_verify.py`. Dart: `lib/util/files_merkle.dart`.
+- **Phase 6 (implemented)**: real app sync must NOT drop a plugin-uploaded `books_files` row (`test_phase6_real_device_sync_keeps_plugin_uploaded_file`). Requires one emulator (`SCENARIO=adopt` default).
+- **Phase 7 (done, verified 2026-07-10)**: file-dimension convergence — `7a` server FILES Merkle leaves == RAW client (no emulator); `7b` two-sync FIL-GHOST-01 / MRK-06 skeleton over HTTP; **`7c` real emulator** (`SCENARIO=mrk06`) — two syncs, `FileSigCache` remote tail, files Merkle branches match; **`7d` FIL-OK** (`SCENARIO=filok`) — local `converged.epub` bytes preserved on disk (not by-reference ghost). Seeder plants `books_files` **and** matching `files_store` rows (without `files_store`, server Merkle orphans tail hashes). Registry JSON via `scripts/export-sync-matrix-registry.php`. Shared assertions: `sync_matrix_verify.py`. Dart: `lib/util/files_merkle.dart`. Calimob fixes: live-DB overlay on server updates, flat `has_cover` in `ChangeItem`, pre-push cover/file adopt.
+- **Phase 8 (implemented)**: 3-way MRK-06 — plugin headless 2-sync on `1bed2112`, then device `SCENARIO=mrk06`; server `books_files` must survive both legs. Requires emulator + **calibre-debug** (see Sprint 5 below).
+
+### Verification status (2026-07-10)
+
+| Phase | Code | Last known green |
+|---|---|---|
+| 0–1, 3–5, 7 | ✅ | 7c/7d verified after `files_store` seeder + calimob live-DB fixes |
+| 2 | ✅ | needs **two** emulators (`5554` + `5556`) — skips if either missing |
+| 6 | ✅ | needs one emulator |
+| 8 | ✅ | needs emulator + calibre-debug + plugin headless script |
+
+A full menu **60** run (federation + all conductor phases + plugin headless) has not been re-run end-to-end since the 7c/7d fix landed.
 
 ## Sprint 4 — Flutter v5 `case_id` federation (48/48)
 
@@ -144,6 +159,8 @@ cd tests/integration && python3 -m pytest test_sync_matrix_registry_federation.p
 
 **Phase 8** (`test_phase8_3way_plugin_emulator_mrk06`): plugin headless 2-sync on
 `1bed2112`, then device `SCENARIO=mrk06` — server `books_files` must survive both legs.
+Not yet verified in a single menu-60 run after Phase 7 landed; infra-dependent (emulator +
+calibre-debug).
 
 `scripts/upTests --menu=60` runs federation + full conductor + plugin headless (when
 calibre-debug + docker PG are available).
