@@ -54,6 +54,28 @@ def strip_sha256_prefix(h: str | None) -> str:
     return h[7:] if h.startswith("sha256:") else h
 
 
+def client_cover_item_hash(
+    uuid: str,
+    has_cover: bool,
+    cover_hash: str | None,
+    *,
+    cover_url: str | None = None,
+    cover_optimized_path: str | None = None,
+) -> str:
+    """Per-book cover item_hash a RAW client sends.
+
+    Mirrors MaterializedMerkleService covers SQL: when cover_url AND
+    cover_optimized_path are both NULL the server zeros the hash in the leaf
+    (orphan cover — bytes absent on storage).
+    """
+    hc = "1" if has_cover else "0"
+    if cover_url is None and cover_optimized_path is None:
+        raw = ""
+    else:
+        raw = strip_sha256_prefix(cover_hash)
+    return hashlib.sha256(f"{uuid}|{hc}|{raw}".encode()).hexdigest()
+
+
 def client_file_item_hash(uuid: str, format_: str, tail_hash: str | None) -> str:
     """Per-format files item_hash: SHA256(uuid|FORMAT|tail_hash)."""
     raw = tail_hash or ""

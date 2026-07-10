@@ -32,6 +32,7 @@ import time
 import pytest
 
 from sync_matrix_verify import (
+    client_cover_item_hash,
     assert_book_files_seeded,
     assert_file_tail_hash,
     assert_files_leaves_match_raw_client,
@@ -186,14 +187,6 @@ def _strip_prefix(h: str | None) -> str:
     return h[7:] if h.startswith("sha256:") else h
 
 
-def _client_cover_item_hash(uuid: str, has_cover: bool, cover_hash: str | None) -> str:
-    """The per-book cover item_hash a RAW client sends: SHA256(uuid|hc|raw)."""
-    hc = "1" if has_cover else "0"
-    return hashlib.sha256(
-        f"{uuid}|{hc}|{_strip_prefix(cover_hash)}".encode()
-    ).hexdigest()
-
-
 def _leaf_id(uuid: str) -> int:
     return int(uuid.replace("-", "").lower()[:2], 16)
 
@@ -216,15 +209,22 @@ def test_phase1a_server_cover_leaves_match_raw_client(rebuilt_server):
     if the sha256: prefix ever leaks back into the leaf (H4 regression)."""
     # Read what was actually seeded (authoritative), grouped into leaf buckets.
     rows = _psql(
-        "SELECT uuid, has_cover, COALESCE(cover_original_hash,'') FROM books "
+        "SELECT uuid, has_cover, COALESCE(cover_original_hash,''), "
+        "COALESCE(cover_url,''), COALESCE(cover_optimized_path,'') FROM books "
         f"WHERE uuid IN ({','.join(repr(u) for u in EXPECTED_SCENARIOS.values())})"
     )
     buckets: dict[int, list[str]] = {}
     for line in rows.splitlines():
-        uuid, has_cover, cover_hash = line.split("\t")
+        parts = line.split("\t")
+        parts.extend([""] * max(0, 5 - len(parts)))
+        uuid, has_cover, cover_hash, cover_url, cover_opt = parts[:5]
         hc = has_cover in ("t", "true", "1")
+        url = cover_url or None
+        opt = cover_opt or None
         buckets.setdefault(_leaf_id(uuid), []).append(
-            _client_cover_item_hash(uuid, hc, cover_hash or None)
+            client_cover_item_hash(
+                uuid, hc, cover_hash or None, cover_url=url, cover_optimized_path=opt
+            )
         )
 
     assert buckets, "no seeded books — run scripts/reset-test-server.sh"
@@ -548,14 +548,16 @@ phase3_skip = pytest.mark.skipif(
 def test_phase3a_multiuser_logical_separation():
     """User B must not see user A's library and vice versa — logical isolation
     across the sync API (Merkle root + a sync's updates_for_client)."""
-    _reset_and_rebuild()                       # seeds A (4 books) + B (2 books)
+    _reset_and_rebuild()                       # seeds A (6 books) + B (2 books)
     _rebuild_merkle(USER_B_LIBRARY_UUID)       # build B's tree too
     token_a = _mint_token()
     token_b = _mint_token(USER_B_EMAIL)
 
     # Each user sees ONLY their own library's book count.
     _, root_a = _api(f"/sync/v5/merkle-root?calibre_library_uuid={LIBRARY_UUID}", token_a)
-    assert root_a.get("total_books") == 4, f"user A should see 4 books, got {root_a}"
+    assert root_a.get("total_books") == len(EXPECTED_SCENARIOS), (
+        f"user A should see {len(EXPECTED_SCENARIOS)} books, got {root_a}"
+    )
     _, root_b = _api(f"/sync/v5/merkle-root?calibre_library_uuid={USER_B_LIBRARY_UUID}", token_b)
     assert root_b.get("total_books") == 2, f"user B should see 2 books, got {root_b}"
 
