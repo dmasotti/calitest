@@ -840,3 +840,25 @@ def test_phase7c_emulator_mrk06_files_converge():
     assert r.returncode == 0, (
         "MRK-06 device test failed:\n" + r.stdout[-3000:] + "\n" + r.stderr[-1500:]
     )
+
+
+@pytest.mark.skipif(
+    not _emulator_connected() or not os.path.isdir(CALIMOB_DIR),
+    reason=f"emulator {EMULATOR} not connected or CALIMOB_DIR missing.",
+)
+def test_phase7d_emulator_filok_epub_bytes_on_disk():
+    """FIL-OK / file_converged: client holds local EPUB bytes; sync preserves
+    converged.epub on disk (not FIL-GHOST by-reference)."""
+    _reset_and_rebuild()
+    token = _mint_token()
+    r = subprocess.run(
+        ["flutter", "test", "integration_test/sync_matrix_convergence_test.dart",
+         "-d", EMULATOR,
+         "--dart-define=TEST_SERVER_URL=http://10.0.2.2:8081/api",
+         f"--dart-define=TEST_TOKEN={token}",
+         "--dart-define=SCENARIO=filok"],
+        cwd=CALIMOB_DIR, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, (
+        "FIL-OK device test failed:\n" + r.stdout[-3000:] + "\n" + r.stderr[-1500:]
+    )

@@ -33,6 +33,23 @@ def test_flutter_v5_registry_covers_mrk06_and_fil_ghost():
   )
 
 
+def test_flutter_v5_registry_fil_ok_has_filok_scenario():
+  data = _load(FLUTTER_JSON)
+  entries = {e["case_id"]: e for e in data["entries"]}
+  assert "FIL-OK" in entries
+  assert entries["FIL-OK"].get("scenario") == "filok"
+  assert "web_sync_service_v5_test.dart" in " ".join(entries["FIL-OK"]["files"])
+
+
+def test_flutter_v5_web_sync_beh_coverage_count():
+  """Sprint 4: 48 BEH tests federated in v5_web_sync_test_case_ids.dart."""
+  data = _load(FLUTTER_JSON)
+  beh_files = {
+      f for e in data["entries"] if e.get("layer") == "BEH" for f in e.get("files", [])
+  }
+  assert "test/sync/web_sync_service_v5_test.dart" in beh_files
+
+
 def test_matrix_fil_ghost_uuid_in_seeder_registry():
   data = _load(MATRIX_JSON)
   prefixed = next(s for s in data["scenarios"] if s["key"] == "cover_prefixed")

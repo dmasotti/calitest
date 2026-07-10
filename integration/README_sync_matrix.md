@@ -94,7 +94,22 @@ the assertion.)
 - **Phase 3 (done)**: multi-user — `3a` logical separation + `3b` concurrent load — HTTP-driven (no emulator).
 - **Phase 4 (done)**: deletion data-safety e2e — `4a` an explicit delete (`d` list) tombstones on the live PG server, but a partial/restored inventory (a client that omits books) never deletes the omitted ones (absence ≠ delete). Complements the phpunit Level-A `DeletionSubscriptionSafetyTest` (downgrade/over-quota never delete) and the plugin Level-B `test_mass_deletion_guard` (absence→delete guard: suppress headless / confirm manual).
 - **Phase 5 (done)**: multi-client cover/file SETTINGS safety e2e — `5a` the plugin uploads a file + the server holds a cover, then a metadata-only app client (covers/files OFF) syncs the SAME library; the file and cover SURVIVE (a metadata-only sync is not a deletion of the other client's assets). Complements phpunit `CoverFileSettingsSafetyTest` (metadata-only / hc=0 / file-off / downgrade never delete covers or files) and `SyncV5SubscriptionLimitsTest` (limit enforcement: over-limit → 403).
-- **Phase 7 (Sprint 1–2)**: file-dimension convergence — `7a` server FILES Merkle leaves == RAW client (no emulator); `7b` two-sync FIL-GHOST-01 / MRK-06 skeleton over HTTP; **`7c` real emulator** (`SCENARIO=mrk06` in calimob `sync_matrix_convergence_test.dart`) — two syncs, `FileSigCache` remote tail, `cover.jpg` on disk, files Merkle branches match. Seeder plants `books_files` for FIL-GHOST-01 / FIL-OK / RLY-META. Registry JSON via `scripts/export-sync-matrix-registry.php`. Shared assertions: `sync_matrix_verify.py`. Dart: `lib/util/files_merkle.dart`.
+- **Phase 7 (Sprint 1–3)**: file-dimension convergence — `7a` server FILES Merkle leaves == RAW client (no emulator); `7b` two-sync FIL-GHOST-01 / MRK-06 skeleton over HTTP; **`7c` real emulator** (`SCENARIO=mrk06`) — two syncs, `FileSigCache` remote tail, `cover.jpg` on disk, files Merkle branches match; **`7d` FIL-OK** (`SCENARIO=filok`) — local `converged.epub` bytes preserved on disk (not by-reference ghost). Seeder plants `books_files` for FIL-GHOST-01 / FIL-OK / RLY-META. Registry JSON via `scripts/export-sync-matrix-registry.php`. Shared assertions: `sync_matrix_verify.py`. Dart: `lib/util/files_merkle.dart`.
+
+## Sprint 4 — Flutter v5 `case_id` federation (48/48)
+
+Every test in `calimob/test/sync/web_sync_service_v5_test.dart` carries a `// case_id:` comment
+linked to `v5_web_sync_test_case_ids.dart`. CI gate:
+
+```bash
+cd calimob && flutter test test/sync/v5_web_sync_case_coverage_test.dart
+```
+
+Export after registry edits:
+
+```bash
+cd calimob && dart run tool/export_v5_case_registry.dart
+```
 
 ## Registry export (`case_id` federation)
 
