@@ -109,6 +109,22 @@ php scripts/export-sync-matrix-registry.php
 
 Pytest loads this file for `EXPECTED_SCENARIOS` and file assertions (Phase 0/7).
 
+### Flutter v5 `case_id` registry (Sprint 3)
+
+`calimob/test/sync/v5_case_registry.dart` maps matrix `case_id` → Flutter test files.
+Export JSON:
+
+```bash
+cd calimob && dart run tool/export_v5_case_registry.dart
+# → tests/integration/fixtures/flutter_v5_case_registry.json
+```
+
+### Plugin headless matrix (Sprint 3)
+
+`sync_calimob/tests/plugin/integration/headless_sync_matrix_mrk06.sh` — plugin 2-sync
+against docker test server with Calibre fixture built from `sync_matrix_registry.json`.
+Pytest: `test_plugin_sync_matrix_headless.py`.
+
 ## Deletion / subscription / settings data-safety matrix (cross-layer)
 
 | Layer | Subscription limits | Deletion + cover/file-settings safety |
