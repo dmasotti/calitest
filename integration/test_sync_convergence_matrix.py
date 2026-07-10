@@ -818,3 +818,25 @@ def test_phase7b_mrk06_two_sync_pulls_file_then_converges():
     missing = converge.get("files_missing_real")
     if missing is not None:
         assert missing == 0, f"second sync should converge files dimension, got {missing}"
+
+
+@pytest.mark.skipif(
+    not _emulator_connected() or not os.path.isdir(CALIMOB_DIR),
+    reason=f"emulator {EMULATOR} not connected or CALIMOB_DIR missing.",
+)
+def test_phase7c_emulator_mrk06_files_converge():
+    """MRK-06 / FIL-GHOST-01 on a REAL device: full matrix inventory, target
+    1bed2112 adopts server EPUB by reference, second sync → files Merkle match."""
+    _reset_and_rebuild()
+    token = _mint_token()
+    r = subprocess.run(
+        ["flutter", "test", "integration_test/sync_matrix_convergence_test.dart",
+         "-d", EMULATOR,
+         "--dart-define=TEST_SERVER_URL=http://10.0.2.2:8081/api",
+         f"--dart-define=TEST_TOKEN={token}",
+         "--dart-define=SCENARIO=mrk06"],
+        cwd=CALIMOB_DIR, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, (
+        "MRK-06 device test failed:\n" + r.stdout[-3000:] + "\n" + r.stderr[-1500:]
+    )
