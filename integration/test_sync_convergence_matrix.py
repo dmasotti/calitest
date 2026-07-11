@@ -48,6 +48,8 @@ HTML_DIR = os.path.join(
 INTEGRATION_DIR = os.path.dirname(os.path.abspath(__file__))
 REGISTRY_PATH = os.path.join(INTEGRATION_DIR, "fixtures", "sync_matrix_registry.json")
 LIBRARY_UUID = "42a0c170-23cf-11f1-93ec-391510e4e1b1"  # SyncMatrixSeeder default lib
+LARGE_POOL_LIBRARY_UUID = "ccccaaaa-0000-4000-8000-000000000050"
+LARGE_POOL_COUNT = 50
 
 PG_CONTAINER = "caliweb_test_pg"
 APP_CONTAINER = "caliweb_test_app"
@@ -1017,3 +1019,41 @@ def test_phase8_3way_plugin_emulator_mrk06():
             "tail_hash"
         ],
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 9 — Large metadata pool (CalibreLargeLocal N=50): empty device → pull → noop
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _large_pool_server_count() -> int:
+    return int(_psql(
+        "SELECT COUNT(*) FROM books b "
+        "JOIN libraries l ON l.id = b.library_id "
+        f"WHERE l.calibre_library_id = '{LARGE_POOL_LIBRARY_UUID}'"
+    ))
+
+
+@pytest.mark.skipif(
+    not _emulator_connected() or not os.path.isdir(CALIMOB_DIR),
+    reason=f"emulator {EMULATOR} not connected or CALIMOB_DIR missing.",
+)
+def test_phase9_emulator_large_pool_pull_and_noop():
+    """Phase 9: server holds 50 real-metadata books; empty device pulls all,
+    second sync is a no-op (count unchanged)."""
+    _reset_and_rebuild()
+    assert _large_pool_server_count() == LARGE_POOL_COUNT
+
+    token = _mint_token()
+    r = subprocess.run(
+        ["flutter", "test", "integration_test/sync_matrix_convergence_test.dart",
+         "-d", EMULATOR,
+         "--dart-define=TEST_SERVER_URL=http://10.0.2.2:8081/api",
+         f"--dart-define=TEST_TOKEN={token}",
+         "--dart-define=SCENARIO=large_pull"],
+        cwd=CALIMOB_DIR, capture_output=True, text=True,
+    )
+    assert r.returncode == 0, (
+        "large_pull device test failed:\n" + r.stdout[-3000:] + "\n" + r.stderr[-1500:]
+    )
+    assert _large_pool_server_count() == LARGE_POOL_COUNT
