@@ -114,7 +114,27 @@ the assertion.)
 - **Phase 6 (implemented)**: real app sync must NOT drop a plugin-uploaded `books_files` row (`test_phase6_real_device_sync_keeps_plugin_uploaded_file`). Requires one emulator (`SCENARIO=adopt` default).
 - **Phase 7 (done, verified 2026-07-10)**: file-dimension convergence — `7a` server FILES Merkle leaves == RAW client (no emulator); `7b` two-sync FIL-GHOST-01 / MRK-06 skeleton over HTTP; **`7c` real emulator** (`SCENARIO=mrk06`) — two syncs, `FileSigCache` remote tail, files Merkle branches match; **`7d` FIL-OK** (`SCENARIO=filok`) — local `converged.epub` bytes preserved on disk (not by-reference ghost). Seeder plants `books_files` **and** matching `files_store` rows (without `files_store`, server Merkle orphans tail hashes). Registry JSON via `scripts/export-sync-matrix-registry.php`. Shared assertions: `sync_matrix_verify.py`. Dart: `lib/util/files_merkle.dart`. Calimob fixes: live-DB overlay on server updates, flat `has_cover` in `ChangeItem`, pre-push cover/file adopt.
 - **Phase 8 (implemented)**: 3-way MRK-06 — plugin headless 2-sync on `1bed2112`, then device `SCENARIO=mrk06`; server `books_files` must survive both legs. Requires emulator + **calibre-debug** (see Sprint 5 below).
-- **Phase 9 (implemented)**: large metadata pull — server seeds **N=100** real books from `tests/plugin/fixtures/CalibreLargeLocal/metadata.db` on library `ccccaaaa-0000-4000-8000-000000000050` (separate from the 6-book edge matrix). **`9a`** (HTTP): metadata Merkle leaves match `books_hash_v2`, discover lists full pool. **`9b`** (device, `SCENARIO=large_pull`): empty client pulls all 100, metadata Merkle converges, second sync no-op. **`9c`** (HTTP): explicit delete tombstones one pool book without touching the rest. Seeder raises test-user subscription caps (106+ books > free tier 50). Reuses `CalibreFixtureMetadataReader` + existing conductor/Dart harness.
+- **Phase 9 (implemented)**: large metadata pull — server seeds **N** real books from `tests/plugin/fixtures/CalibreLargeLocal/metadata.db` on library `ccccaaaa-0000-4000-8000-000000000050` (separate from the 6-book edge matrix). Default **N=100** (menu 60 / device-friendly). **`9a`** (HTTP): metadata Merkle leaves match `books_hash_v2`, discover lists full pool. **`9b`** (device, `SCENARIO=large_pull`): empty client pulls all 100, metadata Merkle converges, second sync no-op — **skipped when N>100**. **`9c`** (HTTP): explicit delete tombstones one pool book without touching the rest. **`9d`** (HTTP, opt-in stress): `SYNC_MATRIX_STRESS_N>=500` — sampled Merkle leaf checks + cursor-paged discover at scale. Seeder raises test-user subscription caps (`largePoolCount()` + edge matrix > free tier 50). Reuses `CalibreFixtureMetadataReader` + existing conductor/Dart harness.
+
+### Phase 9 stress tiers (HTTP-only scale-up)
+
+| Tier | N | How to run | Notes |
+|---|---|---|---|
+| Default | 100 | `scripts/reset-test-server.sh` (menu 60) | Full Merkle leaf walk in 9a; device 9b |
+| Medium | 500 | `SYNC_MATRIX_STRESS_N=500 scripts/reset-test-server.sh --large-pool=500` then `pytest -k phase9d` | Sampled full-leaf checks; discover via batch + Merkle candidates |
+| Large | 1000 | `--large-pool=1000` + `SYNC_MATRIX_STRESS_N=1000` | Single empty-client batch (max 1000); no device |
+| Full fixture | 9067 | `--large-pool=9067` + `SYNC_MATRIX_STRESS_N=9067` | Empty-client batch 1000 + candidate-chunk discover |
+
+Env knobs:
+
+- `SYNC_MATRIX_LARGE_POOL_N` — books seeded by `SyncMatrixSeeder` (1…9067, default 100).
+- `SYNC_MATRIX_STRESS_N` — enables **9d** when ≥500; should match `--large-pool` for that run.
+
+```bash
+# Example: medium stress (HTTP only)
+SYNC_MATRIX_STRESS_N=500 scripts/reset-test-server.sh --large-pool=500
+cd tests/integration && python3 -m pytest test_sync_convergence_matrix.py::test_phase9d_stress_large_pool_scale_up -v -s
+```
 
 ### Verification status (2026-07-10)
 
@@ -124,7 +144,7 @@ the assertion.)
 | 2 | ✅ | needs **two** emulators (`5554` + `5556`) — skips if either missing |
 | 6 | ✅ | needs one emulator |
 | 8 | ✅ | needs emulator + calibre-debug + plugin headless script |
-| 9 | ✅ | 9a/9b/9c; seeder overrides free-tier book cap (106 > 50) |
+| 9 | ✅ | 9a/9b/9c; seeder overrides free-tier book cap; **9d** opt-in stress (N≥500) |
 
 A full menu **60** run (federation + all conductor phases + plugin headless) has not been re-run end-to-end since the 7c/7d fix landed.
 

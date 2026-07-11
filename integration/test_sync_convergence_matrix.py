@@ -36,9 +36,12 @@ from sync_matrix_verify import (
     assert_book_files_seeded,
     assert_file_tail_hash,
     assert_files_leaves_match_raw_client,
+    assert_metadata_hashes_present,
     assert_metadata_leaves_match_server_view,
+    assert_sampled_metadata_leaves_match_server_view,
     load_registry,
     merkle_leaf_hash,
+    sample_large_pool_uuids,
     scenario_by_key,
     scenario_map,
 )
@@ -51,7 +54,11 @@ INTEGRATION_DIR = os.path.dirname(os.path.abspath(__file__))
 REGISTRY_PATH = os.path.join(INTEGRATION_DIR, "fixtures", "sync_matrix_registry.json")
 LIBRARY_UUID = "42a0c170-23cf-11f1-93ec-391510e4e1b1"  # SyncMatrixSeeder default lib
 LARGE_POOL_LIBRARY_UUID = "ccccaaaa-0000-4000-8000-000000000050"
-LARGE_POOL_COUNT = 100
+LARGE_POOL_DEFAULT = 100
+LARGE_POOL_FIXTURE_MAX = 9067
+LARGE_POOL_COUNT = int(os.environ.get("SYNC_MATRIX_LARGE_POOL_N", LARGE_POOL_DEFAULT))
+STRESS_N = int(os.environ.get("SYNC_MATRIX_STRESS_N", "0"))
+STRESS_MIN_N = 500
 
 PG_CONTAINER = "caliweb_test_pg"
 APP_CONTAINER = "caliweb_test_app"
@@ -342,11 +349,19 @@ def _mint_token(email: str = "sync-matrix@test.com") -> str:
     return out
 
 
-def _reset_and_rebuild():
+def _reset_and_rebuild(*, large_pool_n: int | None = None):
     """Fresh seed + Merkle rebuild → each Phase-2 test starts from the clean
     matrix (isolates 2a's server mutations from 2b)."""
-    subprocess.run([os.path.join(SCRIPTS_DIR, "reset-test-server.sh")],
-                   capture_output=True, text=True, check=True)
+    env = os.environ.copy()
+    if large_pool_n is not None:
+        env["SYNC_MATRIX_LARGE_POOL_N"] = str(large_pool_n)
+    subprocess.run(
+        [os.path.join(SCRIPTS_DIR, "reset-test-server.sh")],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+    )
 
 
 def _rebuild_merkle(library_uuid: str = LIBRARY_UUID):
@@ -1046,6 +1061,55 @@ def _large_pool_uuids() -> list[str]:
     return []
 
 
+def _discover_pool_uuids(
+    token: str,
+    library_uuid: str,
+    *,
+    expected: int,
+    registry_uuids: list[str] | None = None,
+) -> set[str]:
+    """Discover server books: one empty-client batch (capped at batch_size), then
+    Merkle-candidate chunks for anything still missing (server has no has_more paging)."""
+    found: set[str] = set()
+    batch = min(1000, expected)
+
+    body = _empty_sync_body(library_uuid)
+    body["batch_size"] = batch
+    status, resp = _api("/sync/v5", token, body)
+    assert status == 200, resp
+    for u in resp.get("updates_for_client") or []:
+        uid = u.get("uuid")
+        if uid:
+            found.add(uid)
+
+    if len(found) >= expected:
+        return found
+
+    pool = registry_uuids or []
+    for i in range(0, len(pool), 40):
+        cand = [u for u in pool[i:i + 40] if u not in found]
+        if not cand:
+            continue
+        body = _empty_sync_body(library_uuid)
+        body["batch_size"] = 1000
+        body["options"] = {"metadata_candidate_uuids": cand}
+        status, resp = _api("/sync/v5", token, body)
+        assert status == 200, resp
+        for u in resp.get("updates_for_client") or []:
+            uid = u.get("uuid")
+            if uid:
+                found.add(uid)
+        if len(found) >= expected:
+            break
+    return found
+
+
+stress_skip = pytest.mark.skipif(
+    STRESS_N < STRESS_MIN_N,
+    reason=f"Phase 9d stress is opt-in: SYNC_MATRIX_STRESS_N>={STRESS_MIN_N}",
+)
+
+
 @phase3_skip
 def test_phase9a_large_pool_metadata_merkle_and_discover():
     """Phase 9a (HTTP): 100 real-metadata books — Merkle metadata leaves match
@@ -1078,6 +1142,10 @@ def test_phase9a_large_pool_metadata_merkle_and_discover():
 @pytest.mark.skipif(
     not _emulator_connected() or not os.path.isdir(CALIMOB_DIR),
     reason=f"emulator {EMULATOR} not connected or CALIMOB_DIR missing.",
+)
+@pytest.mark.skipif(
+    LARGE_POOL_COUNT > LARGE_POOL_DEFAULT,
+    reason="Phase 9b device pull is capped at N=100; use HTTP-only stress (9d) for larger pools.",
 )
 def test_phase9b_emulator_large_pool_pull_merkle_and_noop():
     """Phase 9b: empty device pulls 100 books; metadata Merkle converges; 2nd sync noop."""
@@ -1117,3 +1185,42 @@ def test_phase9c_large_pool_explicit_delete_tombstones_one_book():
     assert _is_tombstoned(target), "explicit delete must tombstone the target book"
     assert _large_pool_server_count() == LARGE_POOL_COUNT - 1
     assert not _is_tombstoned(uuids[0]), "other pool books must remain alive"
+
+
+@stress_skip
+@phase3_skip
+def test_phase9d_stress_large_pool_scale_up():
+    """Phase 9d (HTTP, opt-in): scale N beyond menu-60 default — sampled Merkle + paged discover."""
+    t0 = time.time()
+    _reset_and_rebuild(large_pool_n=STRESS_N)
+    seed_s = time.time() - t0
+
+    assert _large_pool_server_count() == STRESS_N
+    uuids = _large_pool_uuids()
+    assert len(uuids) == STRESS_N
+
+    sample = sample_large_pool_uuids(uuids)
+    assert_metadata_hashes_present(sample, calibre_library_uuid=LARGE_POOL_LIBRARY_UUID)
+    assert_sampled_metadata_leaves_match_server_view(
+        sample, calibre_library_uuid=LARGE_POOL_LIBRARY_UUID,
+    )
+
+    token = _mint_token()
+    _, root = _api(
+        f"/sync/v5/merkle-root?calibre_library_uuid={LARGE_POOL_LIBRARY_UUID}", token,
+    )
+    assert root.get("total_books") == STRESS_N, root
+
+    t1 = time.time()
+    discovered = _discover_pool_uuids(
+        token, LARGE_POOL_LIBRARY_UUID, expected=STRESS_N, registry_uuids=uuids,
+    )
+    discover_s = time.time() - t1
+    assert len(discovered) >= STRESS_N, (
+        f"empty client should discover full pool via cursor paging, got {len(discovered)}/{STRESS_N}"
+    )
+
+    print(
+        f"Phase 9d stress N={STRESS_N}: seed+rebuild {seed_s:.1f}s, "
+        f"discover {discover_s:.1f}s, sample_leaves={len(sample)}",
+    )
