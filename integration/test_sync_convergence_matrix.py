@@ -1032,7 +1032,8 @@ def _large_pool_server_count() -> int:
     return int(_psql(
         "SELECT COUNT(*) FROM books b "
         "JOIN libraries l ON l.id = b.library_id "
-        f"WHERE l.calibre_library_id = '{LARGE_POOL_LIBRARY_UUID}'"
+        f"WHERE l.calibre_library_id = '{LARGE_POOL_LIBRARY_UUID}' "
+        "AND b.deleted_at IS NULL"
     ))
 
 
@@ -1094,3 +1095,22 @@ def test_phase9b_emulator_large_pool_pull_merkle_and_noop():
         "large_pull device test failed:\n" + r.stdout[-3000:] + "\n" + r.stderr[-1500:]
     )
     assert _large_pool_server_count() == LARGE_POOL_COUNT
+
+
+@phase3_skip
+def test_phase9c_large_pool_explicit_delete_tombstones_one_book():
+    """Phase 9c (HTTP): voluntary delete on the large pool — one tombstone, rest intact."""
+    _reset_and_rebuild()
+    assert _large_pool_server_count() == LARGE_POOL_COUNT
+    uuids = _large_pool_uuids()
+    assert uuids, "registry must list large-pool uuids"
+    target = uuids[-1]
+    token = _mint_token()
+    status, resp = _api(
+        "/sync/v5", token, _sync_body(LARGE_POOL_LIBRARY_UUID, deleted=[target]),
+    )
+    assert status == 200, f"large-pool delete sync failed: {status} {resp}"
+    assert target in (resp.get("deleted_confirmed") or []), resp
+    assert _is_tombstoned(target), "explicit delete must tombstone the target book"
+    assert _large_pool_server_count() == LARGE_POOL_COUNT - 1
+    assert not _is_tombstoned(uuids[0]), "other pool books must remain alive"
