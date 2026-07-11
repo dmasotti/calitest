@@ -160,3 +160,36 @@ def assert_files_leaves_match_raw_client(
         assert server_leaf == expected, (
             f"FILES leaf {lid}: server={server_leaf[:16]}… != raw-client {expected[:16]}…"
         )
+
+
+def assert_metadata_leaves_match_server_view(
+    uuids: list[str],
+    *,
+    calibre_library_uuid: str = DEFAULT_MATRIX_LIBRARY_UUID,
+) -> None:
+    """Server METADATA Merkle leaves == aggregation of books_hash_v2 per leaf bucket."""
+    if not uuids:
+        raise AssertionError("no uuids to check")
+    lib_id = library_id_for_calibre_uuid(calibre_library_uuid)
+    in_list = ",".join(repr(u) for u in uuids)
+    rows = psql(
+        "SELECT b.uuid, h.metadata_hash FROM books b "
+        "JOIN books_hash_v2 h ON h.uuid = b.uuid AND h.library_id = b.library_id "
+        f"AND h.user_id = b.user_id "
+        f"WHERE b.library_id = {lib_id} AND b.uuid IN ({in_list}) "
+        "AND h.metadata_hash IS NOT NULL AND TRIM(h.metadata_hash) <> ''"
+    )
+    buckets: dict[int, list[str]] = {}
+    for line in rows.splitlines():
+        if not line.strip():
+            continue
+        uuid, meta_hash = line.split("\t", 1)
+        buckets.setdefault(leaf_id(uuid), []).append(meta_hash)
+
+    assert buckets, "no metadata hashes for merkle check"
+    for lid, items in buckets.items():
+        expected = hashlib.sha256("".join(sorted(items)).encode()).hexdigest()
+        server_leaf = merkle_leaf_hash("metadata", lid, calibre_library_uuid=calibre_library_uuid)
+        assert server_leaf == expected, (
+            f"METADATA leaf {lid}: server={server_leaf[:16]}… != view {expected[:16]}…"
+        )

@@ -36,6 +36,7 @@ from sync_matrix_verify import (
     assert_book_files_seeded,
     assert_file_tail_hash,
     assert_files_leaves_match_raw_client,
+    assert_metadata_leaves_match_server_view,
     load_registry,
     merkle_leaf_hash,
     scenario_by_key,
@@ -50,7 +51,7 @@ INTEGRATION_DIR = os.path.dirname(os.path.abspath(__file__))
 REGISTRY_PATH = os.path.join(INTEGRATION_DIR, "fixtures", "sync_matrix_registry.json")
 LIBRARY_UUID = "42a0c170-23cf-11f1-93ec-391510e4e1b1"  # SyncMatrixSeeder default lib
 LARGE_POOL_LIBRARY_UUID = "ccccaaaa-0000-4000-8000-000000000050"
-LARGE_POOL_COUNT = 50
+LARGE_POOL_COUNT = 100
 
 PG_CONTAINER = "caliweb_test_pg"
 APP_CONTAINER = "caliweb_test_app"
@@ -1023,7 +1024,7 @@ def test_phase8_3way_plugin_emulator_mrk06():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PHASE 9 — Large metadata pool (CalibreLargeLocal N=50): empty device → pull → noop
+# PHASE 9 — Large metadata pool (CalibreLargeLocal N=100)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -1035,13 +1036,47 @@ def _large_pool_server_count() -> int:
     ))
 
 
+def _large_pool_uuids() -> list[str]:
+    if os.path.isfile(REGISTRY_PATH):
+        return list(load_registry(REGISTRY_PATH)["large_pool"]["uuids"])
+    return []
+
+
+@phase3_skip
+def test_phase9a_large_pool_metadata_merkle_and_discover():
+    """Phase 9a (HTTP): 100 real-metadata books — Merkle metadata leaves match
+    books_hash_v2 and an empty client discover lists the full pool."""
+    _reset_and_rebuild()
+    assert _large_pool_server_count() == LARGE_POOL_COUNT
+
+    uuids = _large_pool_uuids()
+    assert len(uuids) == LARGE_POOL_COUNT
+    assert_metadata_leaves_match_server_view(
+        uuids, calibre_library_uuid=LARGE_POOL_LIBRARY_UUID,
+    )
+
+    token = _mint_token()
+    _, root = _api(
+        f"/sync/v5/merkle-root?calibre_library_uuid={LARGE_POOL_LIBRARY_UUID}", token,
+    )
+    assert root.get("total_books") == LARGE_POOL_COUNT, root
+
+    body = _empty_sync_body(LARGE_POOL_LIBRARY_UUID)
+    body["batch_size"] = 200
+    status, resp = _api("/sync/v5", token, body)
+    assert status == 200, resp
+    update_uuids = {u.get("uuid") for u in resp.get("updates_for_client") or []}
+    assert len(update_uuids) >= LARGE_POOL_COUNT, (
+        f"empty client should discover all pool books, got {len(update_uuids)}"
+    )
+
+
 @pytest.mark.skipif(
     not _emulator_connected() or not os.path.isdir(CALIMOB_DIR),
     reason=f"emulator {EMULATOR} not connected or CALIMOB_DIR missing.",
 )
-def test_phase9_emulator_large_pool_pull_and_noop():
-    """Phase 9: server holds 50 real-metadata books; empty device pulls all,
-    second sync is a no-op (count unchanged)."""
+def test_phase9b_emulator_large_pool_pull_merkle_and_noop():
+    """Phase 9b: empty device pulls 100 books; metadata Merkle converges; 2nd sync noop."""
     _reset_and_rebuild()
     assert _large_pool_server_count() == LARGE_POOL_COUNT
 
@@ -1051,7 +1086,8 @@ def test_phase9_emulator_large_pool_pull_and_noop():
          "-d", EMULATOR,
          "--dart-define=TEST_SERVER_URL=http://10.0.2.2:8081/api",
          f"--dart-define=TEST_TOKEN={token}",
-         "--dart-define=SCENARIO=large_pull"],
+         "--dart-define=SCENARIO=large_pull",
+         f"--dart-define=LARGE_POOL_COUNT={LARGE_POOL_COUNT}"],
         cwd=CALIMOB_DIR, capture_output=True, text=True,
     )
     assert r.returncode == 0, (

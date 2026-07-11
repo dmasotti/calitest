@@ -114,7 +114,7 @@ the assertion.)
 - **Phase 6 (implemented)**: real app sync must NOT drop a plugin-uploaded `books_files` row (`test_phase6_real_device_sync_keeps_plugin_uploaded_file`). Requires one emulator (`SCENARIO=adopt` default).
 - **Phase 7 (done, verified 2026-07-10)**: file-dimension convergence — `7a` server FILES Merkle leaves == RAW client (no emulator); `7b` two-sync FIL-GHOST-01 / MRK-06 skeleton over HTTP; **`7c` real emulator** (`SCENARIO=mrk06`) — two syncs, `FileSigCache` remote tail, files Merkle branches match; **`7d` FIL-OK** (`SCENARIO=filok`) — local `converged.epub` bytes preserved on disk (not by-reference ghost). Seeder plants `books_files` **and** matching `files_store` rows (without `files_store`, server Merkle orphans tail hashes). Registry JSON via `scripts/export-sync-matrix-registry.php`. Shared assertions: `sync_matrix_verify.py`. Dart: `lib/util/files_merkle.dart`. Calimob fixes: live-DB overlay on server updates, flat `has_cover` in `ChangeItem`, pre-push cover/file adopt.
 - **Phase 8 (implemented)**: 3-way MRK-06 — plugin headless 2-sync on `1bed2112`, then device `SCENARIO=mrk06`; server `books_files` must survive both legs. Requires emulator + **calibre-debug** (see Sprint 5 below).
-- **Phase 9 (implemented)**: large metadata pull — server seeds **N=50** real books from `tests/plugin/fixtures/CalibreLargeLocal/metadata.db` on library `ccccaaaa-0000-4000-8000-000000000050` (separate from the 6-book edge matrix). Empty device (`SCENARIO=large_pull`) pulls all 50; second sync is a no-op. Reuses `CalibreFixtureMetadataReader` + existing conductor/Dart harness (no new shell script).
+- **Phase 9 (implemented)**: large metadata pull — server seeds **N=100** real books from `tests/plugin/fixtures/CalibreLargeLocal/metadata.db` on library `ccccaaaa-0000-4000-8000-000000000050` (separate from the 6-book edge matrix). **`9a`** (HTTP): metadata Merkle leaves match `books_hash_v2`, discover lists full pool. **`9b`** (device, `SCENARIO=large_pull`): empty client pulls all 100, metadata Merkle converges, second sync no-op. Reuses `CalibreFixtureMetadataReader` + existing conductor/Dart harness.
 
 ### Verification status (2026-07-10)
 
@@ -234,7 +234,7 @@ ONE compiled calimob APK serves every phase; the `SCENARIO` is chosen by
 | `conflict` (2b) | same book, both newer, different titles | converges to `EXPECTED_WINNER_TITLE` (loser adopts) |
 | `mrk06` (7c) | full 6-book matrix; target ghost file/cover | two syncs → files Merkle match |
 | `filok` (7d) | full matrix + local EPUB bytes for FIL-OK | converged.epub preserved on disk |
-| `large_pull` (9) | **empty** local library | pull 50 real-metadata books; second sync noop |
+| `large_pull` (9b) | **empty** local library | pull 100 real-metadata books; metadata Merkle match; 2nd sync noop |
 
 **Barrier.** Two devices must hit `sync()` together. The conductor measures each
 emulator's clock skew (`adb shell date`) and passes a per-device `GO_AT_MS` (a
