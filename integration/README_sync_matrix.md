@@ -256,6 +256,13 @@ the winner (the loser adopted it; no ping-pong).
 
 Two emulators are required (`emulator-5554` + `emulator-5556`, override via
 `ANDROID_EMULATOR_A` / `ANDROID_EMULATOR_B`); the tests skip if either is absent.
+Start the second instance on port 5556, e.g.:
+
+```bash
+$HOME/Library/Android/sdk/emulator/emulator -avd Pixel_8_Screenshot \
+  -dns-server 8.8.8.8,8.8.4.4 -no-snapshot-load -port 5556 &
+adb -s emulator-5556 wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 2; done'
+```
 
 ## CI / upTests
 

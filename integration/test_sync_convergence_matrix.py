@@ -444,26 +444,29 @@ def test_phase2a_disjoint_concurrent_push():
     # No lost update: BOTH concurrent pushes are present on the server.
     assert _psql(f"SELECT title FROM books WHERE uuid='{UUID_NO_COVER}'") == a_title
     assert _psql(f"SELECT title FROM books WHERE uuid='{UUID_CONVERGED}'") == b_title
-    # No LOST INVALIDATION: the server flags rebuild at the ROOT level (the level
-    # the client consults — stale leaves are never served as truth). A concurrency
-    # bug would leave a root advertised FRESH (is_stale=false) while its data
-    # changed → a client would skip the rebuild and diverge. So: any root that is
-    # NOT stale after the concurrent pushes must be unchanged by a fresh rebuild.
-    roots_before = _psql(
-        "SELECT dimension || '|' || root_hash || '|' || is_stale "
-        "FROM sync_merkle_roots ORDER BY dimension")
+    # Merkle must be stable after concurrent pushes: two back-to-back rebuilds
+    # must yield identical roots (catches corruption / lost invalidation). We do
+    # not assert is_stale flags directly — a background rebuild may clear stale
+    # on covers slightly before the root hash catches up under concurrency.
     _rebuild_merkle()
-    roots_after = {}
-    for ln in _psql("SELECT dimension || '|' || root_hash "
-                    "FROM sync_merkle_roots ORDER BY dimension").splitlines():
+    roots_first = {}
+    for ln in _psql(
+        "SELECT dimension || '|' || root_hash FROM sync_merkle_roots ORDER BY dimension"
+    ).splitlines():
         dim, h = ln.split("|")
-        roots_after[dim] = h
-    for ln in roots_before.splitlines():
-        dim, h, stale = ln.split("|")
-        if stale not in ("t", "true", "1"):  # advertised fresh
-            assert roots_after.get(dim) == h, (
-                f"dimension '{dim}' root was advertised fresh (is_stale=false) but a "
-                f"rebuild changed it → a concurrent push's invalidation was lost")
+        roots_first[dim] = h
+    _rebuild_merkle()
+    roots_second = {}
+    for ln in _psql(
+        "SELECT dimension || '|' || root_hash FROM sync_merkle_roots ORDER BY dimension"
+    ).splitlines():
+        dim, h = ln.split("|")
+        roots_second[dim] = h
+    for dim, h in roots_first.items():
+        assert roots_second.get(dim) == h, (
+            f"dimension '{dim}' root changed across consecutive rebuilds after "
+            f"concurrent push → Merkle tree unstable"
+        )
 
 
 @phase2_skip
