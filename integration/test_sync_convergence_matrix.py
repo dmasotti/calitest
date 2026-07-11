@@ -746,6 +746,7 @@ def test_phase5b_set06_calibre_full_then_metadata_only_client():
     assert meta_hash, "discover must return metadata_hash for RLY-META"
 
     # Leg 1 — Calibre-style full sync (covers + files enabled, hashes reported).
+    now_ts = int(time.time())
     status, full = _api("/sync/v5", token, _sync_body_opts(
         LIBRARY_UUID,
         books={book: {
@@ -755,7 +756,7 @@ def test_phase5b_set06_calibre_full_then_metadata_only_client():
             "f": None,
             "ft": tail,
             "hf": 1,
-            "lm": now_ts := int(time.time()),
+            "lm": now_ts,
         }},
         options={"sync_files_enabled": True, "sync_covers_enabled": True}))
     assert status == 200, full
