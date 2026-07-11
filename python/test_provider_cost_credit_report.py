@@ -4,7 +4,9 @@ import unittest
 from pathlib import Path
 
 from scripts.provider_cost_credit_report import (
+    _apply_r2_snapshot_to_providers,
     _load_accounts_config,
+    _normalize_r2_usage_row,
     _run_credit_adapter,
 )
 
@@ -45,6 +47,51 @@ class ProviderCostCreditReportTest(unittest.TestCase):
         self.assertEqual(result.status, "ok")
         self.assertEqual(result.credit_usd, 12.5)
         self.assertEqual(result.payload.get("subscription_type"), "pro")
+
+    def test_normalize_r2_usage_row_parses_metadata_json(self):
+        row = {
+            "logged_at": "2026-07-11 00:00:00",
+            "cost_usd": "0.397807",
+            "metric_type": "monthly_usage_snapshot",
+            "metadata": json.dumps(
+                {
+                    "storage_gb": 25.5342,
+                    "class_a_operations": 2030,
+                    "class_b_operations": 15720,
+                }
+            ),
+        }
+        snapshot = _normalize_r2_usage_row(row)
+        self.assertEqual(snapshot["total_cost_month_usd"], 0.397807)
+        self.assertEqual(snapshot["storage_gb"], 25.5342)
+        self.assertEqual(snapshot["class_a_operations"], 2030)
+        self.assertEqual(snapshot["operations_total"], 17750)
+
+    def test_apply_r2_snapshot_updates_cloudflare_provider(self):
+        snapshot = {
+            "source": "service_usage_logs",
+            "logged_at": "2026-07-11 00:00:00",
+            "metric_type": "monthly_usage_snapshot",
+            "total_cost_month_usd": 0.4,
+            "storage_gb": 25.5,
+            "class_a_operations": 2000,
+            "class_b_operations": 15000,
+            "operations_total": 17000,
+        }
+        internal_costs = {"cloudflare": 0.0}
+        providers = {
+            "cloudflare": {
+                "configured": True,
+                "internal_cost_usd": 0.0,
+                "budget_usd": 10.0,
+                "residual_budget_usd": 10.0,
+            }
+        }
+        _apply_r2_snapshot_to_providers(internal_costs, providers, snapshot)
+        self.assertEqual(internal_costs["cloudflare"], 0.4)
+        self.assertEqual(providers["cloudflare"]["internal_cost_usd"], 0.4)
+        self.assertEqual(providers["cloudflare"]["residual_budget_usd"], 9.6)
+        self.assertEqual(providers["cloudflare"]["r2_usage"]["storage_gb"], 25.5)
 
 
 if __name__ == "__main__":
