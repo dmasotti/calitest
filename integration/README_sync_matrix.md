@@ -30,7 +30,8 @@ asserts:
 | `html/phpunit.testserver.xml` | phpunit bound EXPLICITLY to the docker PG (no `.env` override-trap) — runs server unit/feature tests against the prod engine. |
 | `html/database/seeders/SyncMatrixSeeder.php` | **parameterized** edge-case seed. The matrix is the `SCENARIOS` const — add a row, it flows everywhere. |
 | `tests/integration/test_sync_convergence_matrix.py` | the pytest conductor (Phase 1+; orchestrates seed → drive emulator → assert). |
-| `scripts/up-test-server.sh` / `reset-test-server.sh` | bring up / reset+seed the server. |
+| `scripts/up-test-server.sh` / `reset-test-server.sh` | bring up / reset+seed the server (`--large-pool=N` for Phase 9 stress). |
+| `tests/integration/sync_matrix_verify.py` | shared PG/Merkle assertions; stress helpers: `sample_large_pool_uuids`, `assert_sampled_metadata_leaves_match_server_view`. |
 
 ## Reachability (memorise this)
 
@@ -49,7 +50,8 @@ app       → PG          postgres:5432          (compose network)
 
 # Manual equivalent:
 scripts/up-test-server.sh              # PG + app (NOT --pg-only for HTTP/emulator phases)
-scripts/reset-test-server.sh           # migrate:fresh + SyncMatrixSeeder on caliweb_test
+scripts/reset-test-server.sh           # migrate:fresh + SyncMatrixSeeder (default N=100)
+scripts/reset-test-server.sh --large-pool=500   # Phase 9 stress seed
 cd tests/integration && python3 -m pytest test_sync_matrix_registry_federation.py \
   test_sync_convergence_matrix.py test_plugin_sync_matrix_headless.py -v
 ```
@@ -107,23 +109,29 @@ the assertion.)
 
 - **Phase 0 (done)**: local server + parameterized seeder + PG-verified fix + this doc + `upTests` wiring.
 - **Phase 1 (done)**: single-device convergence. `1a` server-side leaf == raw-client (H4 guard, no emulator); `1b` real emulator adopts the server cover (`has_cover 0→1`) and re-sync is idempotent.
-- **Phase 2 (done)**: concurrency, two emulators, same user + library — `2a` + `2b` below.
+- **Phase 2 (done, verified 2026-07-11)**: concurrency, two emulators, same user + library — **`2a`** disjoint concurrent push + **`2b`** same-book LWW. See [Phase 2 — verification](#phase-2--verification-2026-07-11) below.
 - **Phase 3 (done)**: multi-user — `3a` logical separation + `3b` concurrent load — HTTP-driven (no emulator).
 - **Phase 4 (done)**: deletion data-safety e2e — `4a` an explicit delete (`d` list) tombstones on the live PG server, but a partial/restored inventory (a client that omits books) never deletes the omitted ones (absence ≠ delete). Complements the phpunit Level-A `DeletionSubscriptionSafetyTest` (downgrade/over-quota never delete) and the plugin Level-B `test_mass_deletion_guard` (absence→delete guard: suppress headless / confirm manual).
 - **Phase 5 (done)**: multi-client cover/file SETTINGS safety e2e — `5a` metadata-only HTTP client; **`5b` SET-06** Calibre-full then metadata-only two-leg sequence on RLY-META (`metadata_only_safe`). Complements phpunit `CoverFileSettingsSafetyTest` and Phase 6 device path.
 - **Phase 6 (implemented)**: real app sync must NOT drop a plugin-uploaded `books_files` row (`test_phase6_real_device_sync_keeps_plugin_uploaded_file`). Requires one emulator (`SCENARIO=adopt` default).
 - **Phase 7 (done, verified 2026-07-10)**: file-dimension convergence — `7a` server FILES Merkle leaves == RAW client (no emulator); `7b` two-sync FIL-GHOST-01 / MRK-06 skeleton over HTTP; **`7c` real emulator** (`SCENARIO=mrk06`) — two syncs, `FileSigCache` remote tail, files Merkle branches match; **`7d` FIL-OK** (`SCENARIO=filok`) — local `converged.epub` bytes preserved on disk (not by-reference ghost). Seeder plants `books_files` **and** matching `files_store` rows (without `files_store`, server Merkle orphans tail hashes). Registry JSON via `scripts/export-sync-matrix-registry.php`. Shared assertions: `sync_matrix_verify.py`. Dart: `lib/util/files_merkle.dart`. Calimob fixes: live-DB overlay on server updates, flat `has_cover` in `ChangeItem`, pre-push cover/file adopt.
-- **Phase 8 (implemented)**: 3-way MRK-06 — plugin headless 2-sync on `1bed2112`, then device `SCENARIO=mrk06`; server `books_files` must survive both legs. Requires emulator + **calibre-debug** (see Sprint 5 below).
-- **Phase 9 (implemented)**: large metadata pull — server seeds **N** real books from `tests/plugin/fixtures/CalibreLargeLocal/metadata.db` on library `ccccaaaa-0000-4000-8000-000000000050` (separate from the 6-book edge matrix). Default **N=100** (menu 60 / device-friendly). **`9a`** (HTTP): metadata Merkle leaves match `books_hash_v2`, discover lists full pool. **`9b`** (device, `SCENARIO=large_pull`): empty client pulls all 100, metadata Merkle converges, second sync no-op — **skipped when N>100**. **`9c`** (HTTP): explicit delete tombstones one pool book without touching the rest. **`9d`** (HTTP, opt-in stress): `SYNC_MATRIX_STRESS_N>=500` — sampled Merkle leaf checks + cursor-paged discover at scale. Seeder raises test-user subscription caps (`largePoolCount()` + edge matrix > free tier 50). Reuses `CalibreFixtureMetadataReader` + existing conductor/Dart harness.
+- **Phase 8 (done, verified 2026-07-11)**: 3-way MRK-06 — plugin headless 2-sync on `1bed2112`, then device `SCENARIO=mrk06`; server `books_files` must survive both legs. See [Phase 8 — verification](#phase-8--verification-2026-07-11) below.
+- **Phase 9 (implemented, verified 2026-07-12)**: large metadata pull — server seeds **N** real books from `tests/plugin/fixtures/CalibreLargeLocal/metadata.db` on library `ccccaaaa-0000-4000-8000-000000000050` (separate from the 6-book edge matrix). Default **N=100** (menu 60 / device-friendly). **`9a`** (HTTP): metadata Merkle leaves match `books_hash_v2`, discover lists full pool. **`9b`** (device, `SCENARIO=large_pull`): empty client pulls all 100, metadata Merkle converges, second sync no-op — **skipped when N>100**. **`9c`** (HTTP): explicit delete tombstones one pool book without touching the rest. **`9d`** (HTTP, opt-in stress): `SYNC_MATRIX_STRESS_N>=500` — sampled metadata hashes, **full Merkle leaf per touched bucket** (`assert_sampled_metadata_leaves_match_server_view`), Merkle-root count, discover via empty-client batch (max 1000) + `metadata_candidate_uuids` chunks (server Merkle path has no `has_more` paging). Seeder: `SyncMatrixSeeder::largePoolCount()` via `SYNC_MATRIX_LARGE_POOL_N`; subscription override scales with N. Reuses `CalibreFixtureMetadataReader` + conductor/Dart harness.
 
 ### Phase 9 stress tiers (HTTP-only scale-up)
 
 | Tier | N | How to run | Notes |
 |---|---|---|---|
 | Default | 100 | `scripts/reset-test-server.sh` (menu 60) | Full Merkle leaf walk in 9a; device 9b |
-| Medium | 500 | `SYNC_MATRIX_STRESS_N=500 scripts/reset-test-server.sh --large-pool=500` then `pytest -k phase9d` | Sampled full-leaf checks; discover via batch + Merkle candidates |
-| Large | 1000 | `--large-pool=1000` + `SYNC_MATRIX_STRESS_N=1000` | Single empty-client batch (max 1000); no device |
-| Full fixture | 9067 | `--large-pool=9067` + `SYNC_MATRIX_STRESS_N=9067` | Empty-client batch 1000 + candidate-chunk discover |
+| Medium | 500 | `SYNC_MATRIX_STRESS_N=500 scripts/reset-test-server.sh --large-pool=500` then `pytest -k phase9d` | **Verified 2026-07-12** — seed ~8s, discover ~1s, test ~21s |
+| Large | 1000 | `--large-pool=1000` + `SYNC_MATRIX_STRESS_N=1000` | Single empty-client batch (max 1000); no device; **not yet benchmarked** |
+| Full fixture | 9067 | `--large-pool=9067` + `SYNC_MATRIX_STRESS_N=9067` | **Verified 2026-07-12** — seed ~60s, discover ~18s, test ~87s |
+
+**9d is not part of menu 60** (skipped unless `SYNC_MATRIX_STRESS_N>=500`). After a stress run, reset back to N=100 for device phases:
+
+```bash
+scripts/reset-test-server.sh   # restores default large pool
+```
 
 Env knobs:
 
@@ -136,17 +144,61 @@ SYNC_MATRIX_STRESS_N=500 scripts/reset-test-server.sh --large-pool=500
 cd tests/integration && python3 -m pytest test_sync_convergence_matrix.py::test_phase9d_stress_large_pool_scale_up -v -s
 ```
 
-### Verification status (2026-07-10)
+### Verification status (2026-07-12)
 
 | Phase | Code | Last known green |
 |---|---|---|
-| 0–1, 3–5, 7 | ✅ | 7c/7d verified after `files_store` seeder + calimob live-DB fixes |
-| 2 | ✅ | needs **two** emulators (`5554` + `5556`) — skips if either missing |
+| 0–1, 3–5, 7 | ✅ | 7c/7d verified 2026-07-10 (`files_store` seeder + calimob live-DB fixes) |
+| 2 | ✅ | 2a + 2b verified 2026-07-11 with emulators `5554` + `5556` (skips if either missing) |
 | 6 | ✅ | needs one emulator |
-| 8 | ✅ | needs emulator + calibre-debug + plugin headless script |
-| 9 | ✅ | 9a/9b/9c; seeder overrides free-tier book cap; **9d** opt-in stress (N≥500) |
+| 8 | ✅ | plugin headless + device `mrk06` verified 2026-07-11 (emulator + calibre-debug) |
+| 9 | ✅ | 9a/9b/9c at N=100; subscription override; **9d** stress at N=500 + N=9067 (2026-07-12) |
 
-A full menu **60** run (federation + all conductor phases + plugin headless) has not been re-run end-to-end since the 7c/7d fix landed.
+**Per-phase runs are green** with the usual infra (docker PG+app, emulator(s), calibre-debug for Phase 8).
+
+**Still open:**
+
+| Item | Why it matters |
+|---|---|
+| **Full menu 60 in one shot** | Federation + all conductor tests + plugin headless together — not re-run end-to-end since Phase 7 landed; recommended before declaring CI-safe |
+| **Tier N=1000** | Documented but not benchmarked (500 and 9067 are) |
+| **9b at N>100** | Intentionally skipped — device large_pull impractical without timeout strategy |
+| **Deploy / staging verify** | Local matrix green ≠ production; see `docs/server/sync/SYNC_V5_STATE_MATRIX.md` §12 (deploy GAP) |
+| **Push** | Submodule commits on 2026-07-12 (`html` `ddc23374`, `tests` `aa1eac7`, `scripts` `d431509`) — not pushed at last check |
+| **Re-run 2 + 8 post-9d** | Per-phase green 2026-07-11; not re-run after Phase 9d stress commits |
+
+### Phase 2 — verification (2026-07-11)
+
+| Test | Asserts | Infra |
+|---|---|---|
+| **`test_phase2a_disjoint_concurrent_push`** | (1) both concurrent title pushes land on PG; (2) **two back-to-back `sync:rebuild-merkle`** yield identical roots per dimension (catches Merkle corruption / lost invalidation) | **Two** emulators (`5554` + `5556`), `CALIMOB_DIR` |
+| **`test_phase2b_same_book_conflict_lww`** | Same book, divergent titles; server elects higher-`app_modified` winner; both devices exit 0 | Same |
+
+**2a assertion history:** an earlier version asserted `is_stale=false` Merkle snapshots unchanged after concurrent push. That **flaked** under covers-dimension rebuild races (background rebuild clears `is_stale` before root hash catches up). The conductor now uses **rebuild idempotency** only — do not reintroduce the `is_stale` snapshot check without a concurrency-safe hook.
+
+**Skip rule:** `@phase2_skip` when either emulator is absent — the tests are skipped, not failed.
+
+```bash
+# Manual 2a+2b (after reset-test-server.sh + both emulators up)
+cd tests/integration && python3 -m pytest test_sync_convergence_matrix.py::test_phase2a_disjoint_concurrent_push test_sync_convergence_matrix.py::test_phase2b_same_book_conflict_lww -v
+```
+
+### Phase 8 — verification (2026-07-11)
+
+| Leg | Script / test | Asserts |
+|---|---|---|
+| **Plugin** | `sync_calimob/tests/plugin/integration/headless_sync_matrix_mrk06.sh` | 2-sync on `1bed2112`; `books_files` row survives |
+| **Device** | `test_phase8_3way_plugin_emulator_mrk06` → `SCENARIO=mrk06` | Same `books_files` + tail hash still matches registry after device sync |
+
+**Infra:** docker PG + app (`:8081`), **one** emulator, **`calibre-debug`** on PATH (macOS default: `/Applications/calibre.app/Contents/MacOS/calibre-debug`). Headless script falls back to `tests/plugin/.calibre-config/plugins/sync_calimob.json` when `~/.config/calibre/plugins/sync_calimob.json` is missing.
+
+**Skip rule:** skipped without emulator, `CALIMOB_DIR`, or calibre-debug; plugin leg may `pytest.skip` with `SKIP:` if fixture prerequisites are absent.
+
+```bash
+cd tests/integration && python3 -m pytest test_sync_convergence_matrix.py::test_phase8_3way_plugin_emulator_mrk06 -v
+```
+
+**Not covered here:** production/staging deploy verification (see `SYNC_V5_STATE_MATRIX.md` MRK-06 deploy GAP).
 
 ## Sprint 4 — Flutter v5 `case_id` federation (48/48)
 
@@ -179,10 +231,7 @@ Federation gate (fast, no emulator):
 cd tests/integration && python3 -m pytest test_sync_matrix_registry_federation.py -v
 ```
 
-**Phase 8** (`test_phase8_3way_plugin_emulator_mrk06`): plugin headless 2-sync on
-`1bed2112`, then device `SCENARIO=mrk06` — server `books_files` must survive both legs.
-Not yet verified in a single menu-60 run after Phase 7 landed; infra-dependent (emulator +
-calibre-debug).
+**Phase 8** (`test_phase8_3way_plugin_emulator_mrk06`): see [Phase 8 — verification](#phase-8--verification-2026-07-11) above. Included in the **menu 60 still-open** checklist.
 
 `scripts/upTests --menu=60` runs federation + full conductor + plugin headless (when
 calibre-debug + docker PG are available).
@@ -264,9 +313,10 @@ before `sync()`, so both fire within ~1s. Builds are **staggered** (so two
 
 **`test_phase2a_disjoint_concurrent_push`** — A writes book P (`no_cover`), B
 writes book Q (`converged_normal`), concurrently. Asserts: (1) **no lost update**
-— both titles present on the server; (2) **no lost invalidation** — any Merkle
-root left `is_stale=false` after the concurrent pushes must be unchanged by a
-fresh rebuild (else a push's invalidation was dropped → clients would diverge).
+— both titles present on the server; (2) **Merkle rebuild idempotency** — two
+consecutive `sync:rebuild-merkle` runs after the concurrent round must yield
+identical roots per dimension (replaces the old `is_stale=false` snapshot check,
+which flaked under covers rebuild races).
 
 **`test_phase2b_same_book_conflict_lww`** — both devices rewrite the SAME book
 with different titles/lm. The higher-lm writer is the winner (`NEW_LM_MS` gap, so
