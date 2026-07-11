@@ -19,6 +19,7 @@ REGISTRY_PATH = os.path.join(FIXTURES_DIR, "sync_matrix_registry.json")
 PG_CONTAINER = os.environ.get("SYNC_MATRIX_PG_CONTAINER", "caliweb_test_pg")
 PG_DB = os.environ.get("SYNC_MATRIX_PG_DB", "caliweb_test")
 PG_USER = os.environ.get("SYNC_MATRIX_PG_USER", "testuser")
+DEFAULT_MATRIX_LIBRARY_UUID = "42a0c170-23cf-11f1-93ec-391510e4e1b1"
 
 
 def load_registry(path: str = REGISTRY_PATH) -> dict[str, Any]:
@@ -29,6 +30,30 @@ def load_registry(path: str = REGISTRY_PATH) -> dict[str, Any]:
 def scenario_map(registry: dict[str, Any] | None = None) -> dict[str, str]:
     reg = registry or load_registry()
     return {s["key"]: s["uuid"] for s in reg["scenarios"]}
+
+
+def library_id_for_calibre_uuid(calibre_library_uuid: str) -> int:
+    row = psql(
+        "SELECT id FROM libraries "
+        f"WHERE calibre_library_id = '{calibre_library_uuid}' LIMIT 1"
+    )
+    assert row, f"library not found: {calibre_library_uuid}"
+    return int(row)
+
+
+def merkle_leaf_hash(
+    dimension: str,
+    leaf_id: int,
+    *,
+    calibre_library_uuid: str = DEFAULT_MATRIX_LIBRARY_UUID,
+) -> str:
+    """Single leaf hash for one library (avoids cross-library collisions after Phase 9)."""
+    lib_id = library_id_for_calibre_uuid(calibre_library_uuid)
+    return psql(
+        "SELECT leaf_hash FROM sync_merkle_leaves "
+        f"WHERE dimension='{dimension}' AND leaf_id={leaf_id} "
+        f"AND library_id={lib_id} LIMIT 1"
+    )
 
 
 def scenario_by_key(key: str, registry: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -102,17 +127,22 @@ def assert_file_tail_hash(uuid: str, expected_tail: str, *, format_: str = "EPUB
     assert row == expected_tail, f"book {uuid} tail_hash mismatch: {row!r} != {expected_tail!r}"
 
 
-def assert_files_leaves_match_raw_client(uuids: list[str]) -> None:
+def assert_files_leaves_match_raw_client(
+    uuids: list[str],
+    *,
+    calibre_library_uuid: str = DEFAULT_MATRIX_LIBRARY_UUID,
+) -> None:
     """Server FILES Merkle leaves == RAW client computation for the given books."""
     if not uuids:
         raise AssertionError("no uuids to check")
+    lib_id = library_id_for_calibre_uuid(calibre_library_uuid)
     in_list = ",".join(repr(u) for u in uuids)
     rows = psql(
         "SELECT b.uuid, bf.format, COALESCE(bf.tail_hash, '') "
         "FROM books b "
         "INNER JOIN books_files bf ON bf.book = b.uuid "
         "AND bf.deleted_at IS NULL AND bf.is_uploaded = 1 AND bf.tail_hash IS NOT NULL "
-        f"WHERE b.uuid IN ({in_list})"
+        f"WHERE b.library_id = {lib_id} AND b.uuid IN ({in_list})"
     )
     buckets: dict[int, list[str]] = {}
     for line in rows.splitlines():
@@ -126,10 +156,7 @@ def assert_files_leaves_match_raw_client(uuids: list[str]) -> None:
     assert buckets, "no file rows for merkle check"
     for lid, items in buckets.items():
         expected = hashlib.sha256("".join(sorted(items)).encode()).hexdigest()
-        server_leaf = psql(
-            "SELECT leaf_hash FROM sync_merkle_leaves "
-            f"WHERE dimension='files' AND leaf_id={lid}"
-        )
+        server_leaf = merkle_leaf_hash("files", lid, calibre_library_uuid=calibre_library_uuid)
         assert server_leaf == expected, (
             f"FILES leaf {lid}: server={server_leaf[:16]}… != raw-client {expected[:16]}…"
         )

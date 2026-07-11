@@ -37,6 +37,7 @@ from sync_matrix_verify import (
     assert_file_tail_hash,
     assert_files_leaves_match_raw_client,
     load_registry,
+    merkle_leaf_hash,
     scenario_by_key,
     scenario_map,
 )
@@ -211,9 +212,11 @@ def test_phase1a_server_cover_leaves_match_raw_client(rebuilt_server):
     if the sha256: prefix ever leaks back into the leaf (H4 regression)."""
     # Read what was actually seeded (authoritative), grouped into leaf buckets.
     rows = _psql(
-        "SELECT uuid, has_cover, COALESCE(cover_original_hash,''), "
-        "COALESCE(cover_url,''), COALESCE(cover_optimized_path,'') FROM books "
-        f"WHERE uuid IN ({','.join(repr(u) for u in EXPECTED_SCENARIOS.values())})"
+        "SELECT b.uuid, b.has_cover, COALESCE(b.cover_original_hash,''), "
+        "COALESCE(b.cover_url,''), COALESCE(b.cover_optimized_path,'') FROM books b "
+        "JOIN libraries l ON l.id = b.library_id "
+        f"WHERE l.calibre_library_id = '{LIBRARY_UUID}' "
+        f"AND b.uuid IN ({','.join(repr(u) for u in EXPECTED_SCENARIOS.values())})"
     )
     buckets: dict[int, list[str]] = {}
     for line in rows.splitlines():
@@ -232,10 +235,7 @@ def test_phase1a_server_cover_leaves_match_raw_client(rebuilt_server):
     assert buckets, "no seeded books — run scripts/reset-test-server.sh"
     for leaf_id, items in buckets.items():
         expected = hashlib.sha256("".join(sorted(items)).encode()).hexdigest()
-        server_leaf = _psql(
-            "SELECT leaf_hash FROM sync_merkle_leaves "
-            f"WHERE dimension='covers' AND leaf_id={leaf_id}"
-        )
+        server_leaf = merkle_leaf_hash("covers", leaf_id, calibre_library_uuid=LIBRARY_UUID)
         assert server_leaf == expected, (
             f"COVER leaf {leaf_id}: server={server_leaf[:16]}… != raw-client "
             f"{expected[:16]}… — the cover_original_hash prefix is leaking into "
@@ -734,7 +734,7 @@ def test_phase5b_set06_calibre_full_then_metadata_only_client():
     assert cover_hash, "precondition: seeded cover"
     cover_client = cover_hash.removeprefix("sha256:")
 
-    tail = scenario_by_key(load_registry(REGISTRY_PATH), "metadata_only_safe")["files"][0]["tail_hash"]
+    tail = scenario_by_key("metadata_only_safe", load_registry(REGISTRY_PATH))["files"][0]["tail_hash"]
 
     status, discover = _api("/sync/v5", token, _sync_body(LIBRARY_UUID))
     assert status == 200, discover
